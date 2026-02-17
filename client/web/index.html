@@ -9,14 +9,18 @@
   <body>
     <main>
       <h1>Maple Web Offline Debug Client</h1>
-      <form id="chat-form" class="chat-form">
-        <label for="chat-input">Chat Bubble</label>
-        <input id="chat-input" name="chat" value="Hello Maple!" maxlength="60" />
-        <button type="submit">Send Bubble</button>
-      </form>
-
       <section class="layout">
-        <canvas id="map-canvas" width="1280" height="720" tabindex="0"></canvas>
+        <div class="canvas-wrapper">
+          <canvas id="map-canvas" width="1280" height="720" tabindex="0"></canvas>
+
+          <div id="chat-log" class="chat-log collapsed">
+            <div id="chat-log-messages" class="chat-log-messages"></div>
+          </div>
+
+          <div id="chat-bar" class="chat-bar hidden">
+            <input id="chat-input" type="text" maxlength="70" placeholder="Press Enter to chat…" autocomplete="off" />
+          </div>
+        </div>
 
         <aside id="debug-panel">
           <header class="debug-panel-header">

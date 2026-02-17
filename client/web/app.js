@@ -7,8 +7,10 @@ const teleportFormEl = document.getElementById("teleport-form");
 const teleportXInputEl = document.getElementById("teleport-x-input");
 const teleportYInputEl = document.getElementById("teleport-y-input");
 const teleportButtonEl = document.getElementById("teleport-button");
-const chatFormEl = document.getElementById("chat-form");
+const chatBarEl = document.getElementById("chat-bar");
 const chatInputEl = document.getElementById("chat-input");
+const chatLogEl = document.getElementById("chat-log");
+const chatLogMessagesEl = document.getElementById("chat-log-messages");
 const debugOverlayToggleEl = document.getElementById("debug-overlay-toggle");
 const debugRopesToggleEl = document.getElementById("debug-ropes-toggle");
 const debugFootholdsToggleEl = document.getElementById("debug-footholds-toggle");
@@ -101,6 +103,11 @@ const runtime = {
     down: false,
     jumpHeld: false,
     jumpQueued: false,
+  },
+  chat: {
+    inputActive: false,
+    history: [],
+    maxHistory: 200,
   },
   debug: {
     overlayEnabled: true,
@@ -372,6 +379,92 @@ function applyStatInputChange() {
   runtime.player.stats.jump = clampedJump;
 
   saveCachedPlayerStats(clampedSpeed, clampedJump);
+}
+
+function openChatInput() {
+  runtime.chat.inputActive = true;
+  chatBarEl?.classList.remove("hidden");
+  chatLogEl?.classList.add("expanded");
+  chatLogEl?.classList.remove("collapsed");
+  resetGameplayInput();
+  if (chatInputEl) {
+    chatInputEl.value = "";
+    chatInputEl.focus();
+  }
+}
+
+function closeChatInput() {
+  runtime.chat.inputActive = false;
+  chatBarEl?.classList.add("hidden");
+  chatLogEl?.classList.remove("expanded");
+  chatLogEl?.classList.add("collapsed");
+  resetGameplayInput();
+  canvasEl.focus();
+}
+
+function sendChatMessage(text) {
+  if (!text || !text.trim()) return;
+  const trimmed = text.trim();
+
+  const msg = {
+    name: "Player",
+    text: trimmed,
+    timestamp: Date.now(),
+    type: "normal",
+  };
+
+  runtime.chat.history.push(msg);
+  if (runtime.chat.history.length > runtime.chat.maxHistory) {
+    runtime.chat.history.shift();
+  }
+
+  appendChatLogMessage(msg);
+
+  runtime.player.bubbleText = trimmed;
+  runtime.player.bubbleExpiresAt = performance.now() + 8000;
+
+  playSfx("UI", "BtMouseOver");
+}
+
+function addSystemChatMessage(text) {
+  const msg = {
+    name: "",
+    text,
+    timestamp: Date.now(),
+    type: "system",
+  };
+
+  runtime.chat.history.push(msg);
+  if (runtime.chat.history.length > runtime.chat.maxHistory) {
+    runtime.chat.history.shift();
+  }
+
+  appendChatLogMessage(msg);
+}
+
+function appendChatLogMessage(msg) {
+  if (!chatLogMessagesEl) return;
+
+  const el = document.createElement("div");
+  el.className = msg.type === "system" ? "chat-msg chat-msg-system" : "chat-msg";
+
+  if (msg.type === "system") {
+    el.textContent = msg.text;
+  } else {
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "chat-msg-name";
+    nameSpan.textContent = msg.name + ": ";
+    el.appendChild(nameSpan);
+    el.appendChild(document.createTextNode(msg.text));
+  }
+
+  chatLogMessagesEl.appendChild(el);
+
+  while (chatLogMessagesEl.children.length > runtime.chat.maxHistory) {
+    chatLogMessagesEl.removeChild(chatLogMessagesEl.firstChild);
+  }
+
+  chatLogMessagesEl.scrollTop = chatLogMessagesEl.scrollHeight;
 }
 
 function resetGameplayInput() {
@@ -3192,7 +3285,8 @@ async function loadMap(mapId, spawnPortalName = null, spawnFromPortalTransfer = 
     params.set("mapId", runtime.mapId);
     history.replaceState(null, "", `?${params.toString()}`);
 
-    setStatus(`Loaded map ${runtime.mapId}. Click/hover canvas to control. Controls: ←/→ move, Space jump, ↑ (or ↓ at top) to grab rope, ↑/↓ climb, Space+←/→ jump off rope, ↓ crouch on ground.`);
+    setStatus(`Loaded map ${runtime.mapId}. Click/hover canvas to control. Controls: ←/→ move, Space jump, ↑ grab rope, ↑/↓ climb, ↓ crouch, Enter to chat.`);
+    addSystemChatMessage(`[Welcome] Loaded map ${runtime.mapId}. Press Enter to chat.`);
   } catch (error) {
     if (loadToken === runtime.mapLoadToken) {
       runtime.loading.active = false;
@@ -3226,6 +3320,35 @@ function bindInput() {
   });
 
   window.addEventListener("keydown", (event) => {
+    if (event.code === "Enter") {
+      if (runtime.chat.inputActive) {
+        event.preventDefault();
+        const text = chatInputEl?.value ?? "";
+        if (text.trim()) {
+          sendChatMessage(text);
+        }
+        closeChatInput();
+        return;
+      }
+
+      if (runtime.input.enabled) {
+        const active = document.activeElement;
+        if (!active || active === canvasEl || active === document.body) {
+          event.preventDefault();
+          openChatInput();
+          return;
+        }
+      }
+    }
+
+    if (event.code === "Escape" && runtime.chat.inputActive) {
+      event.preventDefault();
+      closeChatInput();
+      return;
+    }
+
+    if (runtime.chat.inputActive) return;
+
     if (!runtime.input.enabled) return;
 
     const active = document.activeElement;
@@ -3256,6 +3379,8 @@ function bindInput() {
   });
 
   window.addEventListener("keyup", (event) => {
+    if (runtime.chat.inputActive) return;
+
     if (!runtime.input.enabled) return;
 
     const active = document.activeElement;
@@ -3300,12 +3425,10 @@ teleportButtonEl?.addEventListener("click", () => {
   teleportFormEl?.requestSubmit();
 });
 
-chatFormEl.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const text = chatInputEl.value.trim();
-  runtime.player.bubbleText = text;
-  runtime.player.bubbleExpiresAt = performance.now() + 8000;
-  playSfx("UI", "BtMouseOver");
+chatInputEl?.addEventListener("blur", () => {
+  if (runtime.chat.inputActive) {
+    closeChatInput();
+  }
 });
 
 for (const toggle of [debugOverlayToggleEl, debugRopesToggleEl, debugFootholdsToggleEl, debugLifeToggleEl]) {

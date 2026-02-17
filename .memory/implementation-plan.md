@@ -12,6 +12,41 @@ Every step includes:
 No step is complete unless both pass.
 
 ## Execution Status (Live)
+- 2026-02-18: In-canvas chat system matching C++ UIChatBar behavior.
+  - Reference scan (read-only):
+    - `MapleStory-Client/IO/UITypes/UIChatBar.cpp` — chat bar with input field, message history, Enter toggles input
+    - `MapleStory-Client/IO/UI.cpp` — Enter key routes to chatbar `send_key`, which opens input; Escape closes
+    - `MapleStory-Client/IO/UITypes/UIChatBar.h` — MessageGroup, MessageType, message_history, user_message_history
+  - Removed:
+    - Old external chat form (above canvas) — `<form id="chat-form">` with label, input, and Send Bubble button
+  - Added to `client/web/index.html`:
+    - `<div class="canvas-wrapper">` wrapping canvas + chat overlay elements
+    - `<div id="chat-bar">` with text input at bottom of canvas (hidden by default)
+    - `<div id="chat-log">` with scrollable message history overlay
+  - Added to `client/web/styles.css`:
+    - `.canvas-wrapper` — relative positioning container for canvas + overlays
+    - `.chat-bar` — semi-transparent bar at bottom of canvas, hidden/shown via class toggle
+    - `.chat-log` — semi-transparent history panel, collapsed (faded) or expanded mode
+    - `.chat-msg`, `.chat-msg-name`, `.chat-msg-system` — message styling
+  - Added to `client/web/app.js`:
+    - `runtime.chat` state: `inputActive`, `history[]`, `maxHistory`
+    - `openChatInput()` / `closeChatInput()` — toggle chat bar visibility, focus, expand log
+    - `sendChatMessage(text)` — adds to history, appends DOM element, sets bubble, plays sfx
+    - `addSystemChatMessage(text)` — yellow system messages (used for map load welcome)
+    - `appendChatLogMessage(msg)` — DOM append + auto-scroll
+    - Enter key handler: opens chat when canvas focused, sends/closes when chat active
+    - Escape key closes chat input
+    - While chat is active, all movement keys are suppressed
+    - Chat input blur event auto-closes chat
+  - Behavior:
+    - Enter while playing → opens chat bar, focuses input, expands log, character stops moving
+    - Type message + Enter → sends bubble + adds to history log, closes chat, returns to gameplay
+    - Enter with empty input → closes chat, returns to gameplay (matches C++ `input_text_enter_callback`)
+    - Escape → closes chat without sending
+    - Chat log shows historical messages with semi-transparent background when expanded
+    - When collapsed, last few messages visible with fade-out gradient mask
+    - System messages shown in yellow italic (map load welcome)
+  - ✅ `bun run ci`, ✅ route smoke
 - 2026-02-18: Slope landing tangent projection — on landing, velocity is projected onto the foothold tangent.
   - Reference: half-web port `Physics.ts` line 381: `dot = (vx * fx + vy * fy) / (fx² + fy²); vx = dot * fx`
   - Before projection, downward velocity is capped at `PHYS_MAX_LAND_SPEED = 162.5 px/s` to prevent extreme slope pushes at terminal fall speed

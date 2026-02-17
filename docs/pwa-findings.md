@@ -28,6 +28,26 @@ The docs UI includes sidebar navigation for markdown files under `docs/`.
 
 ---
 
+## 2026-02-18 08:12 (GMT+11)
+### Summary
+- In-canvas chat system matching C++ UIChatBar: Enter toggles chat input at bottom of canvas, message history overlay with expand/collapse.
+
+### Files changed
+- `client/web/index.html` — removed old external chat form, added canvas-wrapper with chat-bar and chat-log overlays
+- `client/web/styles.css` — canvas-wrapper positioning, chat-bar/chat-log styling (semi-transparent, fade gradient)
+- `client/web/app.js` — chat state management, Enter/Escape key routing, message history, input focus suppresses movement
+
+### Behavior
+- **Enter** while playing → opens chat bar at bottom of canvas, expands message log, character stops
+- **Type + Enter** → sends bubble over character head + adds to chat log, closes input, resumes gameplay
+- **Enter with empty** → closes chat (C++ parity: `input_text_enter_callback`)
+- **Escape** → closes chat without sending
+- Chat log: semi-transparent overlay, shows last messages with fade when collapsed, full scrollable history when expanded
+- System messages (yellow italic) for map load events
+
+### Validation
+- `bun run ci` ✅, route smoke ✅
+
 ## 2026-02-18 07:57 (GMT+11)
 ### Summary
 - Slope landing tangent velocity projection: when landing on a sloped foothold, the incoming velocity vector is projected onto the foothold tangent. This converts downward momentum into horizontal push along the slope.
