@@ -45,6 +45,7 @@ body:has(.canvas-wrapper.fixed-169) {
 .canvas-wrapper.fixed-169 #map-canvas {
   width: 100%;
   height: 100%;
+  image-rendering: auto;
 }
 
 /* ── Settings button (gear icon) ── */

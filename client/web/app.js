@@ -736,16 +736,18 @@ function applyFixed169() {
   if (runtime.settings.fixed169) {
     const vw = window.innerWidth || DEFAULT_CANVAS_WIDTH;
     const vh = window.innerHeight || DEFAULT_CANVAS_HEIGHT;
-    let w, h;
+
+    // Fit 16:9 display within viewport (CSS display size)
+    let displayW, displayH;
     if (vw / vh > 16 / 9) {
-      h = vh;
-      w = Math.round(vh * 16 / 9);
+      displayH = vh;
+      displayW = Math.round(vh * 16 / 9);
     } else {
-      w = vw;
-      h = Math.round(vw * 9 / 16);
+      displayW = vw;
+      displayH = Math.round(vw * 9 / 16);
     }
-    wrapper.style.setProperty("--fixed-w", w + "px");
-    wrapper.style.setProperty("--fixed-h", h + "px");
+    wrapper.style.setProperty("--fixed-w", displayW + "px");
+    wrapper.style.setProperty("--fixed-h", displayH + "px");
     wrapper.classList.add("fixed-169");
   } else {
     wrapper.classList.remove("fixed-169");
@@ -761,13 +763,21 @@ function syncCanvasResolution() {
   if (runtime.settings.fixed169) {
     const vw = window.innerWidth || DEFAULT_CANVAS_WIDTH;
     const vh = window.innerHeight || DEFAULT_CANVAS_HEIGHT;
-    // Fit 16:9 within viewport
-    if (vw / vh > 16 / 9) {
-      nextHeight = vh;
-      nextWidth = Math.round(vh * 16 / 9);
+
+    // If viewport >= recommended resolution, lock canvas buffer to 1920×1080
+    // and let CSS scale the display. If smaller, use viewport size.
+    if (vw >= FIXED_16_9_WIDTH && vh >= FIXED_16_9_HEIGHT) {
+      nextWidth = FIXED_16_9_WIDTH;
+      nextHeight = FIXED_16_9_HEIGHT;
     } else {
-      nextWidth = vw;
-      nextHeight = Math.round(vw * 9 / 16);
+      // Smaller viewport: use actual size, fitted to 16:9
+      if (vw / vh > 16 / 9) {
+        nextHeight = vh;
+        nextWidth = Math.round(vh * 16 / 9);
+      } else {
+        nextWidth = vw;
+        nextHeight = Math.round(vw * 9 / 16);
+      }
     }
   } else {
     nextWidth = window.innerWidth || DEFAULT_CANVAS_WIDTH;
