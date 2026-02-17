@@ -262,6 +262,269 @@ No step is complete unless both pass.
   - Validation status:
     - ✅ `bun run ci`
     - ✅ `CLIENT_WEB_PORT=5210 bun run client:web` route smoke (`GET /?mapId=100020000` => 200)
+- 2026-02-17: Updated rope/ladder visual layering per latest request.
+  - Changed render order so rope/ladder guides are drawn after map+character pass.
+  - Result: rope/ladder lines now render in front of the character.
+  - File: `client/web/app.js`
+  - Validation status:
+    - ✅ `bun run ci`
+    - ✅ `CLIENT_WEB_PORT=5210 bun run client:web` route smoke (`GET /?mapId=100020000` => 200)
+- 2026-02-17: Switched climbing animation to rope-specific action when attached to rope.
+  - Updated action selection in `client/web/app.js`:
+    - climbing on ladder (`l=1`) -> `ladder` action
+    - climbing on rope (`l=0`) -> `rope` action (fallback to `ladder` if `rope` frames unavailable)
+  - Confirmed interactable overlay layering remains aligned with C++ stage intent:
+    - back backgrounds first
+    - map/interactable passes
+    - foreground backgrounds last (only explicitly-front content overlays)
+  - Validation status:
+    - ✅ `bun run ci`
+    - ✅ `CLIENT_WEB_PORT=5210 bun run client:web` route smoke (`GET /?mapId=100020000` => 200)
+- 2026-02-17: Updated default map ID for web debug client startup.
+  - Default map changed from `100020000` to `104040000`.
+  - Updated files:
+    - `client/web/index.html` (default form input)
+    - `client/web/app.js` (fallback `initialMapId`)
+    - `README.md` (default URL)
+  - Validation status:
+    - ✅ `bun run ci`
+    - ✅ `CLIENT_WEB_PORT=5210 bun run client:web` route smoke (`GET /` => 200, `GET /resources/Map.wz/Map/Map1/104040000.img.json` => 200)
+- 2026-02-17: Adjusted object/rope/character draw ordering per latest layering feedback.
+  - Updated render order in `client/web/app.js`:
+    - map layers and interactable objects render before character
+    - rope/ladder guides render before character
+    - character now renders after those objects
+  - Removed character interleave-in-layer draw path from `drawMapLayers()`.
+  - Added object sorting by map `z` value within each layer to better mirror C++ `TilesObjs` z-bucket ordering.
+  - Validation status:
+    - ✅ `bun run ci`
+    - ✅ `CLIENT_WEB_PORT=5210 bun run client:web` route smoke (`GET /?mapId=104040000` => 200)
+- 2026-02-17: Fixed incline foothold traversal so player follows uneven platforms instead of falling through.
+  - Reference alignment target:
+    - C++ `FootholdTree::update_fh` keeps grounded objects snapped to foothold ground and transitions to linked footholds when crossing edges.
+  - Updated web client movement logic in `client/web/app.js`:
+    - added slope-ground projection (`groundYOnFoothold`) for grounded horizontal movement
+    - added linked foothold traversal resolver (`resolveFootholdForX`) for prev/next foothold transitions
+    - split grounded-vs-airborne integration path so gravity is only applied when not grounded
+    - preserved wall limiting via `resolveWallCollision` while grounded and airborne
+  - Result:
+    - walking up/down inclined footholds now tracks ground height properly
+    - no immediate fall-through on uneven surfaces
+  - Validation status:
+    - ✅ `bun run ci`
+    - ✅ `CLIENT_WEB_PORT=5210 bun run client:web` route smoke (`GET /?mapId=104040000` => 200)
+- 2026-02-17: Added deeper C++-style foothold edge/slope transition handling for uneven surfaces.
+  - Reference alignment details from `FootholdTree::update_fh`:
+    - edge crossing checks use `floor(x) > r` and `ceil(x) < l`
+    - prev/next transitions should follow linked footholds rather than dropping immediately
+    - wall-adjacent linked footholds should clamp movement instead of causing ground-loss flicker
+  - Updated `client/web/app.js`:
+    - `resolveFootholdForX` now uses floor/ceil edge logic and multi-step linked traversal
+    - wall-adjacent transitions now clamp `x` to foothold edge and keep grounded state
+    - `findFootholdBelow` now includes small tolerance (`minY - 1`) to reduce precision loss on slope snaps
+  - Result:
+    - improved continuity over chained uneven footholds
+    - reduced slope edge drop-through and wall-edge ground loss
+  - Validation status:
+    - ✅ `bun run ci`
+    - ✅ `CLIENT_WEB_PORT=5210 bun run client:web` route smoke (`GET /?mapId=104040000` => 200)
+- 2026-02-17: Tuned rope margin and added C++-style rope-jump/down-jump behavior refinements.
+  - Updated `client/web/app.js`:
+    - rope/ladder attach horizontal margin increased slightly (`±12`) so player need not be pixel-perfect on rope X
+    - rope side jump now uses reduced vertical launch (`vy=-360`) to mirror C++ climb jump (`-jumpforce/1.5`) behavior
+    - added down-jump flow on foothold when pressing `jump + down` and foothold exists below within 600px (C++ `enablejd/groundbelow` style)
+      - sets position just below current ground (`ground + 1`), enters fall, then lands on below foothold
+  - Validation status:
+    - ✅ `bun run ci`
+    - ✅ `CLIENT_WEB_PORT=5210 bun run client:web` route smoke (`GET /?mapId=104040000` => 200)
+- 2026-02-17: Refined down-jump gating + foothold-edge release behavior.
+  - Updated `client/web/app.js`:
+    - down-jump now strictly requires a **different** foothold below current foothold within 600px
+    - down-jump now applies a small hop impulse (`vy=-190`) to better match expected visual hop/fall transition
+    - down-jump horizontal speed forced to zero for consistent drop-through behavior
+    - adjusted edge traversal to avoid clamping on non-blocking wall-linked edges, reducing "stuck at foothold end" cases
+  - Validation status:
+    - ✅ `bun run ci`
+    - ✅ `CLIENT_WEB_PORT=5210 bun run client:web` route smoke (`GET /?mapId=104040000` => 200)
+- 2026-02-17: Fixed down-jump landing exclusion and ladder-facing stabilization.
+  - Updated `client/web/app.js`:
+    - climbing now locks to default facing sprite (`facing=-1`) and remains centered on rope x-axis
+    - down-jump now marks current foothold as temporarily excluded landing target (prevents re-landing on same foothold after hop)
+    - landing checks now honor exclusion window (`~260ms`) for down-jump pass-through reliability
+    - down-jump detection now excludes current foothold when searching for a valid foothold below
+  - Result:
+    - down+jump can again reach lower foothold reliably when available
+    - down+jump with no valid below foothold falls back to normal jump instead of silent prone no-op
+  - Validation status:
+    - ✅ `bun run ci`
+    - ✅ `CLIENT_WEB_PORT=5210 bun run client:web` route smoke (`GET /?mapId=104040000` => 200)
+- 2026-02-17: Fixed angled-jump landings on uneven footholds (swept landing collision).
+  - Root cause:
+    - landing detection used end-of-frame x only, so diagonal motion could miss sloped foothold intersections.
+  - Updated `client/web/app.js`:
+    - replaced scalar x-based landing check with swept segment intersection (`oldX,oldY -> newX,newY` vs foothold segment)
+    - keeps down-jump exclusion support via optional foothold exclusion parameter
+  - Result:
+    - jumping diagonally into inclined footholds now lands reliably instead of passing through.
+  - Validation status:
+    - ✅ `bun run ci`
+    - ✅ `CLIENT_WEB_PORT=5210 bun run client:web` route smoke (`GET /?mapId=104040000` => 200)
+- 2026-02-17: Fixed rope alignment offset and mid-air ladder re-attach behavior.
+  - Updated `client/web/app.js`:
+    - added climb snap offset (`x = rope.x - 1`) to correct ~1px right drift while climbing
+    - allowed climb re-attach while airborne even during climb cooldown (supports re-grabbing ladder mid-jump)
+  - Result:
+    - climbing sprite appears centered on rope/ladder
+    - jumping off mid-ladder can re-attach mid-air when pressing climb input
+  - Validation status:
+    - ✅ `bun run ci`
+    - ✅ `CLIENT_WEB_PORT=5210 bun run client:web` route smoke (`GET /?mapId=104040000` => 200)
+- 2026-02-17: Relaxed down-climb attach detection around ladders/ropes.
+  - Updated `client/web/app.js` (`ladderInRange`):
+    - keeps climb-up attach behavior unchanged
+    - broadens climb-down attach envelope to allow "around ladder" captures:
+      - horizontal margin `±16` (down) vs `±12` (up)
+      - vertical buffer for down attach (`top -18`, `bottom +12`)
+  - Result:
+    - pressing down to climb from near/around ladder top is less strict and more forgiving.
+  - Validation status:
+    - ✅ `bun run ci`
+    - ✅ `CLIENT_WEB_PORT=5210 bun run client:web` route smoke (`GET /?mapId=104040000` => 200)
+- 2026-02-17: Increased down-climb horizontal capture margin further.
+  - Updated `client/web/app.js` (`ladderInRange`):
+    - climb-down horizontal margin increased from `±16` to `±20`
+  - Result:
+    - easier ladder/rope down-climb attach when player is near (not exactly centered) around ladder x-axis.
+  - Validation status:
+    - ✅ `bun run ci`
+    - ✅ `CLIENT_WEB_PORT=5210 bun run client:web` route smoke (`GET /?mapId=104040000` => 200)
+- 2026-02-17: Added minimum short reattach lock after ladder/rope jump-off.
+  - Updated `client/web/app.js`:
+    - new `reattachLockUntil` timer on player state
+    - set `reattachLockUntil = now + 200ms` when jump-off/canceling climb
+    - attach checks now require lock to expire before re-climbing
+    - retains airborne reattach support after lock window (prevents instant same-frame regrab)
+  - Note: C++ uses a larger climb cooldown (`set_climb_cooldown(1000ms)`); this tuned value follows requested short lock behavior while preserving mid-air regrab flow.
+  - Validation status:
+    - ✅ `bun run ci`
+    - ✅ `CLIENT_WEB_PORT=5210 bun run client:web` route smoke (`GET /?mapId=104040000` => 200)
+- 2026-02-17: Scoped reattach lock to same rope only.
+  - Updated `client/web/app.js`:
+    - added `reattachLockRopeKey` tracking on detach
+    - reattach lock now blocks only if candidate rope matches detached rope key
+    - jumping across to a different rope can reattach immediately (even within lock window)
+    - same-rope reattach still waits 200ms
+  - Validation status:
+    - ✅ `bun run ci`
+    - ✅ `CLIENT_WEB_PORT=5210 bun run client:web` route smoke (`GET /?mapId=104040000` => 200)
+- 2026-02-17: Fixed input/down-jump/background/portal regressions and improved interaction gating.
+  - Updated `client/web/app.js`:
+    - `jump + down` now always ignores lateral movement input (`vx=0`)
+    - `jump + down` with no valid foothold below now performs no jump (stays grounded, no upward jump)
+    - increased facial animation playback speed (faster blink cadence + lower per-frame delays)
+    - fixed background/scenery/cloud loading by handling `Back/*.img` `back/ani` direct `$canvas` children
+    - added animated portal rendering from `Map.wz/MapHelper.img.json` (`pv/ph/psh`) and integrated into render pass
+    - keyboard gameplay input now only works when canvas is entered/focused/clicked; input resets on leave/blur
+  - Updated `client/web/index.html`:
+    - made canvas focusable via `tabindex="0"` for focus-based keyboard gating
+  - Updated `README.md`:
+    - added controls note that keyboard input requires canvas hover/focus
+  - Validation status:
+    - ✅ `bun run ci`
+    - ✅ `CLIENT_WEB_PORT=5210 bun run client:web` route smoke (`GET /?mapId=104040000` => 200)
+- 2026-02-17: Fixed jump SFX parity against C++ and surfaced active SFX in debug panel.
+  - Reference scan (read-only) findings:
+    - C++ `Character/PlayerStates.cpp`: `play_jumpsound()` is used for stand/walk/down-jump and ladder jump-off.
+    - C++ `Audio/Audio.cpp`: `Sound::Name::JUMP` maps to `Sound.wz/Game.img/Jump`.
+    - Half web reference `TypeScript-Client/src/MapleCharacter.ts`: jump also uses `Sound.wz/Game.img/Jump`.
+  - Updated `client/web/app.js`:
+    - replaced jump-related SFX trigger from `Game/Portal2` to `Game/Jump` for:
+      - normal ground jump
+      - down-jump
+      - rope/ladder jump-off
+    - added debug audio telemetry (`runtime.audioDebug`) and included audio section in map summary panel:
+      - `currentBgm`
+      - `lastSfx`
+      - `lastSfxAgeMs`
+      - `sfxPlayCount`
+  - Validation status:
+    - ✅ `bun run ci`
+    - ✅ `CLIENT_WEB_PORT=5210 bun run client:web` route smoke (`GET /?mapId=104040000` => 200)
+- 2026-02-17: Locked horizontal movement during successful down-jump until landing.
+  - Updated `client/web/app.js`:
+    - added player state flags:
+      - `downJumpControlLock`
+      - `downJumpTargetFootholdId`
+    - on successful `jump + down`, movement lock now activates and records target foothold below
+    - while lock is active and airborne, left/right input is ignored (`effectiveMove = 0`)
+    - lock clears on landing (or reset paths: map load/respawn/other jump paths)
+    - exposed lock state in debug panel summary under `player.downJumpControlLock` and `player.downJumpTargetFootholdId`
+  - Behavior result:
+    - after `jump + down`, user cannot apply directional input until landing on the next foothold.
+  - Validation status:
+    - ✅ `bun run ci`
+    - ✅ `CLIENT_WEB_PORT=5210 bun run client:web` route smoke (`GET /?mapId=104040000` => 200)
+- 2026-02-17: Reworked background rendering to follow C++ tiling/parallax behavior (fixes dark scene patches).
+  - Reference scan (read-only) findings:
+    - C++ `Gameplay/MapleMap/MapBackgrounds.cpp`:
+      - uses `type` to derive horizontal/vertical tiling counts (`VWIDTH/cx + 3`, `VHEIGHT/cy + 3`)
+      - uses `rx/ry` for parallax or motion depending on background type
+      - supports per-frame alpha (`a0/a1`) and animated background frames
+      - can fill black when map background root is marked empty (`black`)
+    - C++ stage draw order confirms backgrounds are drawn in a dedicated pass before map layers (`Gameplay/Stage.cpp`).
+  - Updated `client/web/app.js`:
+    - expanded parsed background metadata: `index`, `type`, `rx`, `ry`, `cx`, `cy`, `flipped`
+    - added map-level `blackBackground` detection from back index `0`
+    - replaced single-canvas background draw path with source/frame loader:
+      - resolves direct `$canvas` and frame children for `Back/*.img`
+      - caches frame metadata and images
+      - supports animated frame delays + `a0/a1` blending
+    - implemented C++-style screen-space background draw behavior:
+      - type-driven tiling coverage (horizontal/vertical/both)
+      - parallax/motion handling based on `type` + `rx/ry`
+      - origin and flip-aware placement for each tile
+      - optional black screen fill for black-background maps
+  - Expected behavior result:
+    - background layers now continuously cover the viewport (no intermittent dark patch gaps) and track camera more faithfully.
+  - Validation status:
+    - ✅ `bun run ci`
+    - ✅ `CLIENT_WEB_PORT=5210 bun run client:web` route smoke (`GET /?mapId=104040000` => 200)
+- 2026-02-17: Fixed regression where scene stopped rendering after background renderer overhaul.
+  - Root issue:
+    - new full background pipeline introduced a runtime regression causing map scene to disappear.
+  - Updated `client/web/app.js`:
+    - restored stable background meta loading path (`requestBackgroundMeta`) so scene renders reliably again
+    - kept background schema enrichment (`type/cx/cy/rx/ry/flipped`) from C++ parity pass
+    - added safe tiled background repetition based on `type` + `cx/cy` to reduce uncovered dark patches without breaking core render
+    - fixed flipped draw call to pass `{ flipped: background.flipped }` into `drawWorldImage`
+  - Behavior result:
+    - scene rendering restored
+    - tiled backgrounds now cover viewport more consistently
+  - Validation status:
+    - ✅ `bun run ci`
+    - ✅ `CLIENT_WEB_PORT=5210 bun run client:web` route smoke (`GET /?mapId=104040000` => 200)
+- 2026-02-17: Corrected portal visibility/type mapping to match C++ semantics.
+  - Reference scan (read-only) findings:
+    - C++ `Gameplay/MapleMap/Portal.cpp`: hidden portals (`type == HIDDEN`, id 10) draw only when touched by player bounds.
+    - C++ `Gameplay/MapleMap/MapPortals.cpp`: regular portal animation uses `pv`; hidden uses `ph/default/portalContinue`.
+    - Half web `TypeScript-Client/src/Portal.ts`: visible/invisible type gating differs by `pt`; regular uses `pv`.
+  - Updated `client/web/app.js`:
+    - portal map parsing now stores `id` and `image`
+    - removed incorrect style mapping that swapped regular/hidden visuals
+    - added type-aware portal render policy:
+      - draw always: `2`, `4`, `7` (and `11` scripted hidden style)
+      - draw only when touched: `10` hidden
+      - do not draw: spawn/invisible/touch-only and other non-visual types
+    - portal assets now loaded by C++-style paths:
+      - regular: `portal/game/pv`
+      - hidden: `portal/game/ph/default/portalContinue`
+      - scripted hidden: `portal/game/psh/<image>/portalContinue` (fallback `default`)
+  - Behavior result:
+    - visible portals now render correctly
+    - hidden portals no longer render unless player is inside portal touch bounds.
+  - Validation status:
+    - ✅ `bun run ci`
+    - ✅ `CLIENT_WEB_PORT=5210 bun run client:web` route smoke (`GET /?mapId=104040000` => 200)
 
 ---
 

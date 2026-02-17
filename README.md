@@ -164,7 +164,7 @@ bun run client:web
 ```
 
 Open:
-- default: `http://127.0.0.1:5173/?mapId=100020000`
+- default: `http://127.0.0.1:5173/?mapId=104040000`
 - if 5173 is busy, use the URL printed in terminal.
 
 Current debug-client capabilities:
@@ -175,6 +175,7 @@ Current debug-client capabilities:
 - supports BGM + SFX after clicking **Enable Audio**
 
 Controls:
+- keyboard controls are active only when the game canvas is hovered/focused (click canvas to focus)
 - `←` / `→` (or `A` / `D`) move
 - `Space` jump
 - `↑` (or `W`) grabs nearby rope/ladder; at ladder top, `↓` (or `S`) can also grab to climb down

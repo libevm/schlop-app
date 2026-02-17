@@ -11,7 +11,7 @@
       <h1>Maple Web Offline Debug Client</h1>
       <form id="map-form">
         <label for="map-id-input">Map ID</label>
-        <input id="map-id-input" name="mapId" value="100020000" />
+        <input id="map-id-input" name="mapId" value="104040000" />
         <button type="submit">Load Map</button>
         <button id="audio-enable-button" type="button">Enable Audio</button>
       </form>
@@ -22,10 +22,10 @@
         <button type="submit">Send Bubble</button>
       </form>
 
-      <p id="status">Ready. Controls: ←/→ move, Space jump, ↑ (or ↓ at top) to grab rope, ↑/↓ climb, Space+←/→ jump off rope, ↓ crouch on ground.</p>
+      <p id="status">Ready. Click or hover the canvas to enable controls. Controls: ←/→ move, Space jump, ↑ (or ↓ at top) to grab rope, ↑/↓ climb, Space+←/→ jump off rope, ↓ crouch on ground.</p>
 
       <section class="layout">
-        <canvas id="map-canvas" width="1280" height="640"></canvas>
+        <canvas id="map-canvas" width="1280" height="640" tabindex="0"></canvas>
         <pre id="map-summary"></pre>
       </section>
     </main>

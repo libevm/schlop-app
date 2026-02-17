@@ -16,6 +16,8 @@ const imagePromiseCache = new Map();
 const soundDataUriCache = new Map();
 const soundDataPromiseCache = new Map();
 
+const FACE_ANIMATION_SPEED = 1.6;
+
 const runtime = {
   map: null,
   mapId: null,
@@ -29,6 +31,12 @@ const runtime = {
     climbing: false,
     climbRope: null,
     climbCooldownUntil: 0,
+    downJumpIgnoreFootholdId: null,
+    downJumpIgnoreUntil: 0,
+    downJumpControlLock: false,
+    downJumpTargetFootholdId: null,
+    reattachLockUntil: 0,
+    reattachLockRopeKey: null,
     footholdId: null,
     footholdLayer: 3,
     facing: -1,
@@ -39,6 +47,7 @@ const runtime = {
     bubbleExpiresAt: 0,
   },
   input: {
+    enabled: false,
     left: false,
     right: false,
     up: false,
@@ -60,11 +69,26 @@ const runtime = {
   audioUnlocked: false,
   bgmAudio: null,
   currentBgmPath: null,
+  audioDebug: {
+    lastSfx: null,
+    lastSfxAtMs: 0,
+    sfxPlayCount: 0,
+    lastBgm: null,
+  },
   previousTimestampMs: null,
 };
 
 function setStatus(text) {
   statusEl.textContent = text;
+}
+
+function resetGameplayInput() {
+  runtime.input.left = false;
+  runtime.input.right = false;
+  runtime.input.up = false;
+  runtime.input.down = false;
+  runtime.input.jumpHeld = false;
+  runtime.input.jumpQueued = false;
 }
 
 function safeNumber(value, fallback = 0) {
@@ -339,19 +363,31 @@ function resolveNodeByUol(root, basePath, uolValue) {
 function parseMapData(raw) {
   const info = imgdirLeafRecord(childByName(raw, "info"));
 
-  const backgrounds = imgdirChildren(childByName(raw, "back")).map((entry) => {
-    const row = imgdirLeafRecord(entry);
-    return {
-      key: `back:${row.bS}:${row.no}:${row.ani ?? 0}`,
-      bS: String(row.bS ?? ""),
-      no: String(row.no ?? "0"),
-      ani: safeNumber(row.ani, 0),
-      front: safeNumber(row.front, 0),
-      x: safeNumber(row.x, 0),
-      y: safeNumber(row.y, 0),
-      alpha: safeNumber(row.a, 255) / 255,
-    };
-  });
+  const backgrounds = imgdirChildren(childByName(raw, "back"))
+    .map((entry) => {
+      const row = imgdirLeafRecord(entry);
+      const index = safeNumber(entry.$imgdir, 0);
+      return {
+        index,
+        key: `back:${row.bS}:${row.no}:${row.ani ?? 0}`,
+        bS: String(row.bS ?? ""),
+        no: String(row.no ?? "0"),
+        ani: safeNumber(row.ani, 0),
+        front: safeNumber(row.front, 0),
+        type: safeNumber(row.type, 0),
+        rx: safeNumber(row.rx, 0),
+        ry: safeNumber(row.ry, 0),
+        cx: safeNumber(row.cx, 0),
+        cy: safeNumber(row.cy, 0),
+        flipped: safeNumber(row.f, 0) === 1,
+        x: safeNumber(row.x, 0),
+        y: safeNumber(row.y, 0),
+        alpha: safeNumber(row.a, 255) / 255,
+      };
+    })
+    .sort((a, b) => a.index - b.index);
+
+  const blackBackground = backgrounds.length > 0 && backgrounds[0].bS.length === 0;
 
   const layers = [];
   for (let layerIndex = 0; layerIndex <= 7; layerIndex += 1) {
@@ -373,21 +409,23 @@ function parseMapData(raw) {
       };
     });
 
-    const objects = imgdirChildren(childByName(layerNode, "obj")).map((entry) => {
-      const row = imgdirLeafRecord(entry);
-      const frameNo = String(row.f ?? "0");
-      return {
-        x: safeNumber(row.x, 0),
-        y: safeNumber(row.y, 0),
-        oS: String(row.oS ?? ""),
-        l0: String(row.l0 ?? ""),
-        l1: String(row.l1 ?? ""),
-        l2: String(row.l2 ?? ""),
-        frameNo,
-        z: safeNumber(row.z, 0),
-        key: `obj:${row.oS}:${row.l0}:${row.l1}:${row.l2}:${frameNo}`,
-      };
-    });
+    const objects = imgdirChildren(childByName(layerNode, "obj"))
+      .map((entry) => {
+        const row = imgdirLeafRecord(entry);
+        const frameNo = String(row.f ?? "0");
+        return {
+          x: safeNumber(row.x, 0),
+          y: safeNumber(row.y, 0),
+          oS: String(row.oS ?? ""),
+          l0: String(row.l0 ?? ""),
+          l1: String(row.l1 ?? ""),
+          l2: String(row.l2 ?? ""),
+          frameNo,
+          z: safeNumber(row.z, 0),
+          key: `obj:${row.oS}:${row.l0}:${row.l1}:${row.l2}:${frameNo}`,
+        };
+      })
+      .sort((a, b) => a.z - b.z);
 
     layers.push({ layerIndex, tileSet, tiles, objects });
   }
@@ -406,8 +444,10 @@ function parseMapData(raw) {
   const portalEntries = imgdirChildren(childByName(raw, "portal")).map((entry) => {
     const row = imgdirLeafRecord(entry);
     return {
+      id: safeNumber(entry.$imgdir, -1),
       name: String(row.pn ?? ""),
       type: safeNumber(row.pt, 0),
+      image: String(row.image ?? "default"),
       x: safeNumber(row.x, 0),
       y: safeNumber(row.y, 0),
       targetMapId: safeNumber(row.tm, 0),
@@ -418,6 +458,7 @@ function parseMapData(raw) {
   const ladderRopes = imgdirChildren(childByName(raw, "ladderRope")).map((entry) => {
     const row = imgdirLeafRecord(entry);
     return {
+      key: String(entry.$imgdir ?? `${row.x}:${row.y1}:${row.y2}:${row.l ?? 0}`),
       x: safeNumber(row.x, 0),
       y1: safeNumber(row.y1, 0),
       y2: safeNumber(row.y2, 0),
@@ -503,6 +544,7 @@ function parseMapData(raw) {
   return {
     info,
     backgrounds,
+    blackBackground,
     layers,
     lifeEntries,
     portalEntries,
@@ -517,14 +559,17 @@ function parseMapData(raw) {
 }
 
 function requestBackgroundMeta(entry) {
-  if (!entry.key) return;
+  if (!entry.key || !entry.bS) return;
 
   requestMeta(entry.key, async () => {
     const path = `/resources/Map.wz/Back/${entry.bS}.img.json`;
     const json = await fetchJson(path);
     const group = childByName(json, entry.ani === 1 ? "ani" : "back");
-    const node = childByName(group, entry.no);
-    const canvasNode = pickCanvasNode(node, "0");
+
+    const directCanvasNode = (group?.$$ ?? []).find((child) => child.$canvas === entry.no);
+    const node = childByName(group, entry.no) ?? directCanvasNode;
+    const canvasNode = pickCanvasNode(node, "0") ?? directCanvasNode;
+
     return canvasMetaFromNode(canvasNode);
   });
 }
@@ -551,6 +596,73 @@ function requestObjectMeta(obj) {
     const canvasNode = pickCanvasNode(target, obj.frameNo);
     return canvasMetaFromNode(canvasNode);
   });
+}
+
+function portalVisibilityMode(portal) {
+  switch (portal.type) {
+    case 2:
+    case 4:
+    case 7:
+      return "always";
+    case 10:
+      return "touched";
+    case 11:
+      return "always";
+    default:
+      return "none";
+  }
+}
+
+function portalBoundsContainsPlayer(portal) {
+  const player = runtime.player;
+  return (
+    player.x >= portal.x - 25 &&
+    player.x <= portal.x + 25 &&
+    player.y >= portal.y - 100 &&
+    player.y <= portal.y + 25
+  );
+}
+
+function portalNodePath(portal) {
+  switch (portal.type) {
+    case 2:
+    case 4:
+    case 7:
+      return ["portal", "game", "pv"];
+    case 10:
+      return ["portal", "game", "ph", "default", "portalContinue"];
+    case 11:
+      return ["portal", "game", "psh", portal.image || "default", "portalContinue"];
+    default:
+      return null;
+  }
+}
+
+function requestPortalMeta(portal, frameNo) {
+  const path = portalNodePath(portal);
+  if (!path) return null;
+
+  const imageKey = portal.image || "default";
+  const key = `portal:${portal.type}:${imageKey}:${frameNo}`;
+
+  requestMeta(key, async () => {
+    const json = await fetchJson("/resources/Map.wz/MapHelper.img.json");
+
+    let portalNode = findNodeByPath(json, path);
+    if (!portalNode && portal.type === 11 && imageKey !== "default") {
+      portalNode = findNodeByPath(json, ["portal", "game", "psh", "default", "portalContinue"]);
+    }
+
+    const requested = String(frameNo);
+    const directCanvas =
+      (portalNode?.$$ ?? []).find((child) => child.$canvas === requested) ??
+      (portalNode?.$$ ?? []).find((child) => child.$canvas === "0");
+    const canvasNode = pickCanvasNode(portalNode, requested) ?? directCanvas;
+
+    return canvasMetaFromNode(canvasNode);
+  });
+
+  return key;
 }
 
 function buildZMapOrder(zMapJson) {
@@ -615,7 +727,7 @@ function getHeadFrameMeta(action, frameIndex) {
 }
 
 function randomBlinkCooldownMs() {
-  return 1800 + Math.random() * 3200;
+  return 1200 + Math.random() * 2200;
 }
 
 function getFaceExpressionFrames(expression) {
@@ -659,7 +771,8 @@ function getFaceFrameDelayMs(expression, expressionFrameIndex) {
 
   const frameNode = frames[expressionFrameIndex % frames.length];
   const leaf = imgdirLeafRecord(frameNode);
-  return safeNumber(leaf.delay, 120);
+  const baseDelay = safeNumber(leaf.delay, 120);
+  return Math.max(35, baseDelay / FACE_ANIMATION_SPEED);
 }
 
 function updateFaceAnimation(dt) {
@@ -768,27 +881,39 @@ function requestCharacterPartImage(key, meta) {
   requestImageByKey(key);
 }
 
-function findGroundLanding(oldY, newY, x, map) {
+function findGroundLanding(oldX, oldY, newX, newY, map, excludedFootholdId = null) {
+  const moveX = newX - oldX;
+  const moveY = newY - oldY;
+  if (moveY < 0) return null;
+
   let best = null;
+  let bestT = Number.POSITIVE_INFINITY;
 
   for (const line of map.footholdLines) {
-    const minX = Math.min(line.x1, line.x2);
-    const maxX = Math.max(line.x1, line.x2);
-    if (x < minX - 1 || x > maxX + 1) continue;
+    if (excludedFootholdId && String(line.id) === String(excludedFootholdId)) continue;
+    if (isWallFoothold(line)) continue;
 
-    const dx = line.x2 - line.x1;
-    const dy = line.y2 - line.y1;
-    if (Math.abs(dx) < 0.01) continue;
+    const segX = line.x2 - line.x1;
+    const segY = line.y2 - line.y1;
 
-    const t = (x - line.x1) / dx;
-    if (t < -0.01 || t > 1.01) continue;
+    const denom = moveX * segY - moveY * segX;
+    if (Math.abs(denom) < 1e-6) continue;
 
-    const yAtX = line.y1 + dy * t;
-    if (oldY <= yAtX && newY >= yAtX) {
-      if (!best || yAtX < best.y) {
-        best = { y: yAtX, line };
-      }
-    }
+    const relX = line.x1 - oldX;
+    const relY = line.y1 - oldY;
+
+    const t = (relX * segY - relY * segX) / denom;
+    const u = (relX * moveY - relY * moveX) / denom;
+
+    if (t < -0.0001 || t > 1.0001) continue;
+    if (u < -0.0001 || u > 1.0001) continue;
+    if (t > bestT) continue;
+
+    const hitX = oldX + moveX * t;
+    const hitY = oldY + moveY * t;
+
+    bestT = t;
+    best = { y: hitY, x: hitX, line };
   }
 
   return best;
@@ -823,12 +948,13 @@ function findFootholdById(map, footholdId) {
   return map.footholdById?.get(String(footholdId)) ?? null;
 }
 
-function findFootholdBelow(map, x, minY) {
+function findFootholdBelow(map, x, minY, excludedFootholdId = null) {
   let best = null;
   let bestY = Number.POSITIVE_INFINITY;
 
   for (const line of map.footholdLines ?? []) {
     if (isWallFoothold(line)) continue;
+    if (excludedFootholdId && String(line.id) === String(excludedFootholdId)) continue;
 
     const minX = Math.min(line.x1, line.x2);
     const maxX = Math.max(line.x1, line.x2);
@@ -841,7 +967,7 @@ function findFootholdBelow(map, x, minY) {
     if (t < -0.01 || t > 1.01) continue;
 
     const yAtX = line.y1 + (line.y2 - line.y1) * t;
-    if (yAtX < minY) continue;
+    if (yAtX < minY - 1) continue;
 
     if (yAtX < bestY) {
       bestY = yAtX;
@@ -921,12 +1047,64 @@ function resolveWallCollision(oldX, newX, nextY, map, footholdId) {
   return collision ? wallX : newX;
 }
 
+function groundYOnFoothold(foothold, x) {
+  const dx = foothold.x2 - foothold.x1;
+  if (Math.abs(dx) < 0.01) {
+    return Math.min(foothold.y1, foothold.y2);
+  }
+
+  const t = (x - foothold.x1) / dx;
+  return foothold.y1 + (foothold.y2 - foothold.y1) * t;
+}
+
+function resolveFootholdForX(map, foothold, x) {
+  let current = foothold;
+  let resolvedX = x;
+
+  for (let step = 0; step < 8 && current; step += 1) {
+    const left = footholdLeft(current);
+    const right = footholdRight(current);
+
+    if (Math.floor(resolvedX) > right) {
+      const next = findFootholdById(map, current.nextId);
+      if (!next || isWallFoothold(next)) {
+        return { foothold: null, x: resolvedX };
+      }
+
+      current = next;
+      continue;
+    }
+
+    if (Math.ceil(resolvedX) < left) {
+      const prev = findFootholdById(map, current.prevId);
+      if (!prev || isWallFoothold(prev)) {
+        return { foothold: null, x: resolvedX };
+      }
+
+      current = prev;
+      continue;
+    }
+
+    return { foothold: current, x: resolvedX };
+  }
+
+  return { foothold: current, x: resolvedX };
+}
+
 function ladderInRange(rope, x, y, upwards) {
   const y1 = Math.min(rope.y1, rope.y2);
   const y2 = Math.max(rope.y1, rope.y2);
   const yProbe = upwards ? y - 5 : y + 5;
 
-  return Math.abs(x - rope.x) <= 10 && yProbe >= y1 && yProbe <= y2;
+  const horizontalMargin = upwards ? 12 : 20;
+  const topBuffer = upwards ? 0 : 18;
+  const bottomBuffer = upwards ? 0 : 12;
+
+  return (
+    Math.abs(x - rope.x) <= horizontalMargin &&
+    yProbe >= y1 - topBuffer &&
+    yProbe <= y2 + bottomBuffer
+  );
 }
 
 function ladderFellOff(rope, y, downwards) {
@@ -954,6 +1132,10 @@ function findAttachableRope(map, x, y, upwards) {
   return best;
 }
 
+function climbSnapX(rope) {
+  return rope.x - 1;
+}
+
 function updatePlayer(dt) {
   if (!runtime.map) return;
 
@@ -967,27 +1149,36 @@ function updatePlayer(dt) {
 
   const nowMs = performance.now();
   const climbOnCooldown = nowMs < player.climbCooldownUntil;
+  const canReattachMidAir = !player.onGround;
+  const reattachLocked = nowMs < player.reattachLockUntil;
   const wantsClimbUp = runtime.input.up && !runtime.input.down;
   const wantsClimbDown = runtime.input.down;
 
   const crouchRequested = runtime.input.down && player.onGround && !player.climbing;
-  const effectiveMove = crouchRequested ? 0 : move;
+  const downJumpMovementLocked = player.downJumpControlLock && !player.onGround;
+  const effectiveMove = crouchRequested || downJumpMovementLocked ? 0 : move;
 
-  if (effectiveMove !== 0) {
+  if (!player.climbing && effectiveMove !== 0) {
     player.facing = effectiveMove > 0 ? 1 : -1;
   }
 
-  if (!player.climbing && !climbOnCooldown) {
+  if (!player.climbing && (!climbOnCooldown || canReattachMidAir)) {
     const rope = wantsClimbUp
       ? findAttachableRope(map, player.x, player.y, true)
       : wantsClimbDown
         ? findAttachableRope(map, player.x, player.y, false)
         : null;
 
-    if (rope) {
+    const blockedByReattachLock =
+      !!rope &&
+      reattachLocked &&
+      player.reattachLockRopeKey !== null &&
+      rope.key === player.reattachLockRopeKey;
+
+    if (rope && !blockedByReattachLock) {
       player.climbing = true;
       player.climbRope = rope;
-      player.x = rope.x;
+      player.x = climbSnapX(rope);
       player.vx = 0;
       player.vy = 0;
       player.onGround = false;
@@ -998,15 +1189,25 @@ function updatePlayer(dt) {
   if (player.climbing && player.climbRope) {
     const sideJumpRequested = jumpRequested && move !== 0;
 
+    player.facing = -1;
+
     if (sideJumpRequested) {
+      const detachedRopeKey = player.climbRope?.key ?? null;
+
       player.climbing = false;
       player.climbRope = null;
-      player.vy = -430;
-      player.vx = move * 170;
+      player.vy = -360;
+      player.vx = move * 190;
       player.onGround = false;
       player.footholdId = null;
+      player.downJumpIgnoreFootholdId = null;
+      player.downJumpIgnoreUntil = 0;
+      player.downJumpControlLock = false;
+      player.downJumpTargetFootholdId = null;
+      player.reattachLockRopeKey = detachedRopeKey;
+      player.reattachLockUntil = nowMs + 200;
       player.climbCooldownUntil = nowMs + 1000;
-      playSfx("Game", "Portal2");
+      playSfx("Game", "Jump");
     } else {
       const rope = player.climbRope;
       const climbSpeed = 130;
@@ -1014,7 +1215,7 @@ function updatePlayer(dt) {
       const movingUp = runtime.input.up && !runtime.input.down;
       const movingDown = runtime.input.down && !runtime.input.up;
 
-      player.x = rope.x;
+      player.x = climbSnapX(rope);
       player.y += (movingDown ? 1 : movingUp ? -1 : 0) * climbSpeed * dt;
       player.vx = 0;
       player.vy = movingDown ? climbSpeed : movingUp ? -climbSpeed : 0;
@@ -1024,6 +1225,12 @@ function updatePlayer(dt) {
         player.climbing = false;
         player.climbRope = null;
         player.footholdId = null;
+        player.downJumpIgnoreFootholdId = null;
+        player.downJumpIgnoreUntil = 0;
+        player.downJumpControlLock = false;
+        player.downJumpTargetFootholdId = null;
+        player.reattachLockRopeKey = rope.key ?? null;
+        player.reattachLockUntil = nowMs + 200;
         player.climbCooldownUntil = nowMs + 1000;
       }
     }
@@ -1032,37 +1239,134 @@ function updatePlayer(dt) {
   if (!player.climbing) {
     player.vx = effectiveMove * 190;
 
-    if (jumpRequested && player.onGround) {
-      player.vy = -540;
-      player.onGround = false;
-      player.footholdId = null;
-      playSfx("Game", "Portal2");
-    }
-
-    const oldX = player.x;
-    const oldY = player.y;
-
-    player.vy += 1700 * dt;
-    const nextY = oldY + player.vy * dt;
-
     const currentFoothold =
       findFootholdById(map, player.footholdId) ??
-      findFootholdBelow(map, oldX, oldY)?.line;
+      findFootholdBelow(map, player.x, player.y)?.line;
 
-    player.x += player.vx * dt;
-    player.x = resolveWallCollision(oldX, player.x, nextY, map, currentFoothold?.id ?? null);
-    player.y = nextY;
+    if (jumpRequested && player.onGround) {
+      const footholdGround =
+        currentFoothold && !isWallFoothold(currentFoothold)
+          ? groundYOnFoothold(currentFoothold, player.x)
+          : player.y;
 
-    const landing = player.vy >= 0 ? findGroundLanding(oldY, player.y, player.x, map) : null;
-    if (landing) {
-      player.y = landing.y;
-      player.footholdId = landing.line.id;
-      player.footholdLayer = landing.line.layer;
-      player.vy = 0;
-      player.onGround = true;
-    } else {
+      const downJumpRequested = runtime.input.down;
+      if (downJumpRequested) {
+        player.vx = 0;
+      }
+
+      const belowFoothold = downJumpRequested
+        ? findFootholdBelow(map, player.x, footholdGround + 1, currentFoothold?.id ?? null)
+        : null;
+
+      const canDownJump =
+        !!currentFoothold &&
+        !!belowFoothold &&
+        (belowFoothold.y - footholdGround) < 600;
+
+      if (downJumpRequested && canDownJump) {
+        player.y = footholdGround + 1;
+        player.vy = -190;
+        player.vx = 0;
+        player.onGround = false;
+        player.downJumpIgnoreFootholdId = currentFoothold.id;
+        player.downJumpIgnoreUntil = nowMs + 260;
+        player.downJumpControlLock = true;
+        player.downJumpTargetFootholdId = belowFoothold.line.id;
+        player.footholdId = null;
+        playSfx("Game", "Jump");
+      } else if (!downJumpRequested) {
+        player.vy = -540;
+        player.onGround = false;
+        player.downJumpIgnoreFootholdId = null;
+        player.downJumpIgnoreUntil = 0;
+        player.downJumpControlLock = false;
+        player.downJumpTargetFootholdId = null;
+        player.footholdId = null;
+        playSfx("Game", "Jump");
+      } else {
+        player.vy = 0;
+        player.onGround = true;
+        player.y = footholdGround;
+        player.downJumpIgnoreFootholdId = null;
+        player.downJumpIgnoreUntil = 0;
+        player.downJumpControlLock = false;
+        player.downJumpTargetFootholdId = null;
+      }
+    }
+
+    let horizontalApplied = false;
+
+    if (player.onGround && (!currentFoothold || isWallFoothold(currentFoothold))) {
       player.onGround = false;
       player.footholdId = null;
+    }
+
+    if (player.onGround && currentFoothold && !isWallFoothold(currentFoothold)) {
+      const oldX = player.x;
+      let nextX = oldX + player.vx * dt;
+      nextX = resolveWallCollision(oldX, nextX, player.y, map, currentFoothold.id);
+      horizontalApplied = true;
+
+      const footholdResolution = resolveFootholdForX(map, currentFoothold, nextX);
+      const nextFoothold = footholdResolution?.foothold ?? null;
+      const resolvedX = footholdResolution?.x ?? nextX;
+
+      if (nextFoothold && !isWallFoothold(nextFoothold)) {
+        player.x = resolvedX;
+        player.y = groundYOnFoothold(nextFoothold, resolvedX);
+        player.vy = 0;
+        player.onGround = true;
+        player.footholdId = nextFoothold.id;
+        player.footholdLayer = nextFoothold.layer;
+      } else {
+        player.x = resolvedX;
+        player.onGround = false;
+        player.footholdId = null;
+        player.vy = 0;
+      }
+    }
+
+    if (!player.onGround) {
+      const oldX = player.x;
+      const oldY = player.y;
+
+      player.vy += 1700 * dt;
+      const nextY = oldY + player.vy * dt;
+
+      if (!horizontalApplied) {
+        const wallFoothold =
+          findFootholdById(map, player.footholdId) ??
+          findFootholdBelow(map, oldX, oldY)?.line;
+
+        player.x += player.vx * dt;
+        player.x = resolveWallCollision(oldX, player.x, nextY, map, wallFoothold?.id ?? null);
+      }
+
+      player.y = nextY;
+
+      const ignoredFootholdId =
+        nowMs < player.downJumpIgnoreUntil
+          ? player.downJumpIgnoreFootholdId
+          : null;
+
+      const landing =
+        player.vy >= 0
+          ? findGroundLanding(oldX, oldY, player.x, player.y, map, ignoredFootholdId)
+          : null;
+      if (landing) {
+        player.y = landing.y;
+        player.footholdId = landing.line.id;
+        player.footholdLayer = landing.line.layer;
+        player.vy = 0;
+        player.onGround = true;
+        player.downJumpIgnoreFootholdId = null;
+        player.downJumpIgnoreUntil = 0;
+        player.downJumpControlLock = false;
+        player.downJumpTargetFootholdId = null;
+      } else {
+        player.onGround = false;
+        player.footholdId = null;
+      }
     }
   }
 
@@ -1077,6 +1381,12 @@ function updatePlayer(dt) {
     player.climbing = false;
     player.climbRope = null;
     player.climbCooldownUntil = 0;
+    player.reattachLockUntil = 0;
+    player.reattachLockRopeKey = null;
+    player.downJumpIgnoreFootholdId = null;
+    player.downJumpIgnoreUntil = 0;
+    player.downJumpControlLock = false;
+    player.downJumpTargetFootholdId = null;
     player.footholdId = null;
   }
 
@@ -1087,8 +1397,13 @@ function updatePlayer(dt) {
 
   const crouchAction = getCharacterActionFrames("prone").length > 0 ? "prone" : "sit";
 
+  let climbAction = "ladder";
+  if (player.climbRope && !player.climbRope.ladder && getCharacterActionFrames("rope").length > 0) {
+    climbAction = "rope";
+  }
+
   const nextAction = player.climbing
-    ? "ladder"
+    ? climbAction
     : crouchActive
       ? crouchAction
       : !player.onGround
@@ -1142,23 +1457,46 @@ function drawBackgroundLayer(frontFlag) {
     if (!image || !meta) continue;
 
     const origin = meta.vectors.origin ?? { x: 0, y: 0 };
-    const worldX = background.x - origin.x;
-    const worldY = background.y - origin.y;
+    const baseWorldX = background.x - origin.x;
+    const baseWorldY = background.y - origin.y;
+
+    const cx = background.cx > 0 ? background.cx : Math.max(1, image.width || meta.width || 1);
+    const cy = background.cy > 0 ? background.cy : Math.max(1, image.height || meta.height || 1);
+
+    const tiledX = background.type === 1 || background.type === 3 || background.type === 4 || background.type === 6 || background.type === 7;
+    const tiledY = background.type === 2 || background.type === 3 || background.type === 5 || background.type === 6 || background.type === 7;
+
+    let worldX = baseWorldX;
+    let worldY = baseWorldY;
+
+    if (tiledX) {
+      while (worldX - runtime.camera.x + canvasEl.width / 2 > 0) worldX -= cx;
+      while (worldX - runtime.camera.x + canvasEl.width / 2 < -cx) worldX += cx;
+    }
+
+    if (tiledY) {
+      while (worldY - runtime.camera.y + canvasEl.height / 2 > 0) worldY -= cy;
+      while (worldY - runtime.camera.y + canvasEl.height / 2 < -cy) worldY += cy;
+    }
+
+    const htile = tiledX ? Math.floor(canvasEl.width / cx) + 3 : 1;
+    const vtile = tiledY ? Math.floor(canvasEl.height / cy) + 3 : 1;
 
     ctx.save();
     ctx.globalAlpha = Math.max(0, Math.min(1, background.alpha));
-    drawWorldImage(image, worldX, worldY);
+
+    for (let tx = 0; tx < htile; tx += 1) {
+      for (let ty = 0; ty < vtile; ty += 1) {
+        drawWorldImage(image, worldX + tx * cx, worldY + ty * cy, { flipped: background.flipped });
+      }
+    }
+
     ctx.restore();
   }
 }
 
 function drawMapLayers() {
   if (!runtime.map) return;
-
-  const characterLayer = Number.isFinite(runtime.player.footholdLayer)
-    ? runtime.player.footholdLayer
-    : 3;
-  let characterDrawn = false;
 
   for (const layer of runtime.map.layers) {
     for (const obj of layer.objects) {
@@ -1185,15 +1523,6 @@ function drawMapLayers() {
       const worldY = tile.y - origin.y;
       drawWorldImage(image, worldX, worldY);
     }
-
-    if (!characterDrawn && layer.layerIndex === characterLayer) {
-      drawCharacter();
-      characterDrawn = true;
-    }
-  }
-
-  if (!characterDrawn) {
-    drawCharacter();
   }
 }
 
@@ -1217,6 +1546,30 @@ function drawRopeGuides() {
   ctx.restore();
 }
 
+function drawPortals() {
+  if (!runtime.map) return;
+
+  const frameNo = Math.floor(performance.now() / 120) % 8;
+
+  for (const portal of runtime.map.portalEntries) {
+    const visibilityMode = portalVisibilityMode(portal);
+    if (visibilityMode === "none") continue;
+    if (visibilityMode === "touched" && !portalBoundsContainsPlayer(portal)) continue;
+
+    const key = requestPortalMeta(portal, frameNo);
+    if (!key) continue;
+
+    const image = getImageByKey(key);
+    const meta = metaCache.get(key);
+    if (!image || !meta) continue;
+
+    const origin = meta.vectors.origin ?? { x: Math.floor(image.width / 2), y: image.height };
+    const worldX = portal.x - origin.x;
+    const worldY = portal.y - origin.y;
+    drawWorldImage(image, worldX, worldY);
+  }
+}
+
 function drawFootholdsAndMarkers() {
   if (!runtime.map) return;
 
@@ -1232,14 +1585,6 @@ function drawFootholdsAndMarkers() {
     ctx.moveTo(a.x, a.y);
     ctx.lineTo(b.x, b.y);
     ctx.stroke();
-  }
-
-  for (const portal of runtime.map.portalEntries) {
-    const p = worldToScreen(portal.x, portal.y);
-    ctx.fillStyle = "#38bdf8";
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
-    ctx.fill();
   }
 
   for (const life of runtime.map.lifeEntries) {
@@ -1431,8 +1776,10 @@ function render() {
   if (!runtime.map) return;
 
   drawBackgroundLayer(0);
-  drawRopeGuides();
   drawMapLayers();
+  drawRopeGuides();
+  drawCharacter();
+  drawPortals();
   drawFootholdsAndMarkers();
   drawBackgroundLayer(1);
   drawChatBubble();
@@ -1468,6 +1815,17 @@ function updateSummary() {
       facing: runtime.player.facing,
       action: runtime.player.action,
       footholdLayer: runtime.player.footholdLayer,
+      downJumpControlLock: runtime.player.downJumpControlLock,
+      downJumpTargetFootholdId: runtime.player.downJumpTargetFootholdId,
+    },
+    audio: {
+      unlocked: runtime.audioUnlocked,
+      currentBgm: runtime.audioDebug.lastBgm,
+      lastSfx: runtime.audioDebug.lastSfx,
+      lastSfxAgeMs: runtime.audioDebug.lastSfxAtMs
+        ? Math.max(0, Math.round(performance.now() - runtime.audioDebug.lastSfxAtMs))
+        : null,
+      sfxPlayCount: runtime.audioDebug.sfxPlayCount,
     },
   };
 
@@ -1542,6 +1900,7 @@ async function playBgmPath(bgmPath) {
   if (!bgmPath) return;
 
   runtime.currentBgmPath = bgmPath;
+  runtime.audioDebug.lastBgm = bgmPath;
   if (!runtime.audioUnlocked) return;
 
   const [soundFile, soundName] = bgmPath.split("/");
@@ -1573,6 +1932,10 @@ async function playBgmPath(bgmPath) {
 }
 
 async function playSfx(soundFile, soundName) {
+  runtime.audioDebug.lastSfx = `${soundFile}/${soundName}`;
+  runtime.audioDebug.lastSfxAtMs = performance.now();
+  runtime.audioDebug.sfxPlayCount += 1;
+
   if (!runtime.audioUnlocked) return;
 
   try {
@@ -1606,6 +1969,12 @@ async function loadMap(mapId) {
     runtime.player.climbing = false;
     runtime.player.climbRope = null;
     runtime.player.climbCooldownUntil = 0;
+    runtime.player.reattachLockUntil = 0;
+    runtime.player.reattachLockRopeKey = null;
+    runtime.player.downJumpIgnoreFootholdId = null;
+    runtime.player.downJumpIgnoreUntil = 0;
+    runtime.player.downJumpControlLock = false;
+    runtime.player.downJumpTargetFootholdId = null;
 
     const spawnFoothold = findFootholdAtXNearY(runtime.map, runtime.player.x, runtime.player.y + 2, 90);
     runtime.player.footholdId = spawnFoothold?.line.id ?? null;
@@ -1630,17 +1999,44 @@ async function loadMap(mapId) {
     params.set("mapId", runtime.mapId);
     history.replaceState(null, "", `?${params.toString()}`);
 
-    setStatus(`Loaded map ${runtime.mapId}. Controls: ←/→ move, Space jump, ↑ (or ↓ at top) to grab rope, ↑/↓ climb, Space+←/→ jump off rope, ↓ crouch on ground.`);
+    setStatus(`Loaded map ${runtime.mapId}. Click/hover canvas to control. Controls: ←/→ move, Space jump, ↑ (or ↓ at top) to grab rope, ↑/↓ climb, Space+←/→ jump off rope, ↓ crouch on ground.`);
   } catch (error) {
     setStatus(`Error: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
 function bindInput() {
+  const gameplayKeys = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Space", "KeyA", "KeyD", "KeyW", "KeyS"];
+
+  function setInputEnabled(enabled) {
+    runtime.input.enabled = enabled;
+    if (!enabled) {
+      resetGameplayInput();
+    }
+  }
+
+  canvasEl.addEventListener("mouseenter", () => setInputEnabled(true));
+  canvasEl.addEventListener("mouseleave", () => setInputEnabled(false));
+  canvasEl.addEventListener("focus", () => setInputEnabled(true));
+  canvasEl.addEventListener("blur", () => setInputEnabled(false));
+  canvasEl.addEventListener("pointerdown", () => {
+    canvasEl.focus();
+    setInputEnabled(true);
+  });
+
   window.addEventListener("keydown", (event) => {
+    if (!runtime.input.enabled) return;
+
+    const active = document.activeElement;
+    if (active && active !== canvasEl && ["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName)) {
+      return;
+    }
+
     if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Space"].includes(event.code)) {
       event.preventDefault();
     }
+
+    if (!gameplayKeys.includes(event.code)) return;
 
     if (event.code === "ArrowLeft" || event.code === "KeyA") runtime.input.left = true;
     if (event.code === "ArrowRight" || event.code === "KeyD") runtime.input.right = true;
@@ -1656,6 +2052,15 @@ function bindInput() {
   });
 
   window.addEventListener("keyup", (event) => {
+    if (!runtime.input.enabled) return;
+
+    const active = document.activeElement;
+    if (active && active !== canvasEl && ["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName)) {
+      return;
+    }
+
+    if (!gameplayKeys.includes(event.code)) return;
+
     if (event.code === "ArrowLeft" || event.code === "KeyA") runtime.input.left = false;
     if (event.code === "ArrowRight" || event.code === "KeyD") runtime.input.right = false;
     if (event.code === "ArrowUp" || event.code === "KeyW") runtime.input.up = false;
@@ -1694,6 +2099,6 @@ bindInput();
 requestAnimationFrame(tick);
 
 const params = new URLSearchParams(window.location.search);
-const initialMapId = params.get("mapId") ?? "100020000";
+const initialMapId = params.get("mapId") ?? "104040000";
 mapIdInputEl.value = initialMapId;
 loadMap(initialMapId);
