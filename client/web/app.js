@@ -1207,8 +1207,8 @@ function clampCameraXToMapBounds(map, desiredCenterX) {
 }
 
 function clampCameraYToMapBounds(map, desiredCenterY) {
-  const mapMinY = map.bounds.minY;
-  const mapMaxY = map.bounds.maxY;
+  const mapMinY = map.borders?.top ?? map.bounds.minY;
+  const mapMaxY = map.borders?.bottom ?? map.bounds.maxY;
   const halfHeight = canvasEl.height / 2;
 
   const minCenterY = mapMinY + halfHeight;
@@ -1218,7 +1218,8 @@ function clampCameraYToMapBounds(map, desiredCenterY) {
     return Math.max(minCenterY, Math.min(maxCenterY, desiredCenterY));
   }
 
-  return (mapMinY + mapMaxY) / 2;
+  // Map shorter than viewport — anchor bottom of map to bottom of viewport
+  return maxCenterY;
 }
 
 function portalMomentumEase(t) {
@@ -2518,14 +2519,11 @@ function drawBackgroundLayer(frontFlag) {
       y = background.y + shiftY + (screenHalfH - refHalfH);
     }
 
-    let tileX = background.type === 1 || background.type === 3 || background.type === 4 || background.type === 6 || background.type === 7;
-    let tileY = background.type === 2 || background.type === 3 || background.type === 5 || background.type === 6 || background.type === 7;
+    const tileX = background.type === 1 || background.type === 3 || background.type === 4 || background.type === 6 || background.type === 7;
+    const tileY = background.type === 2 || background.type === 3 || background.type === 5 || background.type === 6 || background.type === 7;
 
     const baseX = x - (background.flipped ? width - origin.x : origin.x);
     const baseY = y - origin.y;
-
-    if (!tileX && width < canvasW) tileX = true;
-    if (!tileY && height < canvasH) tileY = true;
 
     let xBegin = baseX;
     let xEnd = baseX;
@@ -3073,7 +3071,7 @@ function drawTransitionOverlay() {
 
 function render() {
   ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
-  ctx.fillStyle = "#0b1020";
+  ctx.fillStyle = "#000";
   ctx.fillRect(0, 0, canvasEl.width, canvasEl.height);
 
   if (runtime.loading.active) {
