@@ -7,107 +7,101 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <main>
-      <h1>Maple Web Offline Debug Client</h1>
-      <section class="layout">
-        <div class="canvas-wrapper">
-          <canvas id="map-canvas" width="1280" height="720" tabindex="0"></canvas>
+    <div class="canvas-wrapper">
+      <canvas id="map-canvas" width="1280" height="720" tabindex="0"></canvas>
 
-          <div id="chat-log" class="chat-log">
-            <div id="chat-log-handle" class="chat-log-handle"></div>
-            <div id="chat-log-messages" class="chat-log-messages"></div>
-          </div>
+      <button id="debug-toggle" class="debug-toggle" type="button" title="Toggle debug panel">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect y="3" width="20" height="2" rx="1" fill="currentColor"/><rect y="9" width="20" height="2" rx="1" fill="currentColor"/><rect y="15" width="20" height="2" rx="1" fill="currentColor"/></svg>
+      </button>
 
-          <div id="chat-bar" class="chat-bar inactive">
-            <input id="chat-input" type="text" maxlength="70" placeholder="Press Enter to chat…" autocomplete="off" />
-          </div>
-        </div>
+      <aside id="debug-panel" class="debug-panel hidden">
+        <header class="debug-panel-header">
+          <h2>Debug Panel</h2>
+          <button id="debug-close" class="debug-close" type="button" title="Close">&times;</button>
+        </header>
 
-        <aside id="debug-panel">
-          <header class="debug-panel-header">
-            <h2>Debug Panel</h2>
-            <span class="debug-badge">Live</span>
-          </header>
+        <div id="debug-panel-scroll">
+          <section class="debug-section">
+            <h3>Map</h3>
+            <form id="map-form" class="panel-form">
+              <label class="field-row" for="map-id-input">
+                <span>Map ID</span>
+                <input id="map-id-input" name="mapId" value="104040000" />
+              </label>
+              <div class="panel-actions">
+                <button type="submit">Load Map</button>
+                <button id="audio-enable-button" type="button">Enable Audio</button>
+              </div>
+            </form>
+          </section>
 
-          <div id="debug-panel-scroll">
-            <section class="debug-section">
-              <h3>Map</h3>
-              <form id="map-form" class="panel-form">
-                <label class="field-row" for="map-id-input">
-                  <span>Map ID</span>
-                  <input id="map-id-input" name="mapId" value="104040000" />
-                </label>
-                <div class="panel-actions">
-                  <button type="submit">Load Map</button>
-                  <button id="audio-enable-button" type="button">Enable Audio</button>
-                </div>
-              </form>
-            </section>
-
-            <section class="debug-section">
-              <h3>Teleport</h3>
-              <form id="teleport-form" class="panel-form" method="post">
-                <div class="coord-row">
-                  <label class="field-row" for="teleport-x-input">
-                    <span>X</span>
-                    <input id="teleport-x-input" type="number" step="1" value="0" />
-                  </label>
-                  <label class="field-row" for="teleport-y-input">
-                    <span>Y</span>
-                    <input id="teleport-y-input" type="number" step="1" value="0" />
-                  </label>
-                </div>
-                <div class="panel-actions">
-                  <button id="teleport-button" type="button">Teleport to Coordinates</button>
-                </div>
-              </form>
-            </section>
-
-            <section class="debug-section">
-              <h3>Player Stats</h3>
+          <section class="debug-section">
+            <h3>Teleport</h3>
+            <form id="teleport-form" class="panel-form" method="post">
               <div class="coord-row">
-                <label class="field-row" for="stat-speed-input">
-                  <span>Speed</span>
-                  <input id="stat-speed-input" type="number" step="1" min="0" max="250" />
+                <label class="field-row" for="teleport-x-input">
+                  <span>X</span>
+                  <input id="teleport-x-input" type="number" step="1" value="0" />
                 </label>
-                <label class="field-row" for="stat-jump-input">
-                  <span>Jump</span>
-                  <input id="stat-jump-input" type="number" step="1" min="0" max="250" />
+                <label class="field-row" for="teleport-y-input">
+                  <span>Y</span>
+                  <input id="teleport-y-input" type="number" step="1" value="0" />
                 </label>
               </div>
-            </section>
-
-            <section class="debug-section">
-              <h3>Logs</h3>
-              <p id="status">Ready. Click or hover the canvas to enable controls. Controls: ←/→ move, Space jump, ↑ (or ↓ at top) to grab rope, ↑/↓ climb, Space+←/→ jump off rope, ↓ crouch on ground.</p>
-            </section>
-
-            <section class="debug-section">
-              <h3>Viewport</h3>
-              <p class="field-note">Aspect mode: Dynamic (fit screen)</p>
-            </section>
-
-            <section class="debug-section">
-              <h3>Overlays</h3>
-              <div class="debug-toggles">
-                <label><input id="debug-overlay-toggle" type="checkbox" checked /> Enable overlay</label>
-                <label><input id="debug-ropes-toggle" type="checkbox" checked /> Ropes</label>
-                <label><input id="debug-footholds-toggle" type="checkbox" checked /> Footholds</label>
-                <label><input id="debug-life-toggle" type="checkbox" checked /> Life markers</label>
+              <div class="panel-actions">
+                <button id="teleport-button" type="button">Teleport to Coordinates</button>
               </div>
-            </section>
+            </form>
+          </section>
 
-            <section class="debug-section debug-log-section">
-              <div class="debug-section-heading">
-                <h3>Runtime Summary</h3>
-                <button id="copy-summary-button" class="ghost-button" type="button">Copy</button>
-              </div>
-              <pre id="map-summary" tabindex="0"></pre>
-            </section>
-          </div>
-        </aside>
-      </section>
-    </main>
+          <section class="debug-section">
+            <h3>Player Stats</h3>
+            <div class="coord-row">
+              <label class="field-row" for="stat-speed-input">
+                <span>Speed</span>
+                <input id="stat-speed-input" type="number" step="1" min="0" max="250" />
+              </label>
+              <label class="field-row" for="stat-jump-input">
+                <span>Jump</span>
+                <input id="stat-jump-input" type="number" step="1" min="0" max="250" />
+              </label>
+            </div>
+          </section>
+
+          <section class="debug-section">
+            <h3>Logs</h3>
+            <p id="status">Ready. Click or hover the canvas to enable controls.</p>
+          </section>
+
+          <section class="debug-section">
+            <h3>Overlays</h3>
+            <div class="debug-toggles">
+              <label><input id="debug-overlay-toggle" type="checkbox" checked /> Enable overlay</label>
+              <label><input id="debug-ropes-toggle" type="checkbox" checked /> Ropes</label>
+              <label><input id="debug-footholds-toggle" type="checkbox" checked /> Footholds</label>
+              <label><input id="debug-life-toggle" type="checkbox" checked /> Life markers</label>
+            </div>
+          </section>
+
+          <section class="debug-section debug-log-section">
+            <div class="debug-section-heading">
+              <h3>Runtime Summary</h3>
+              <button id="copy-summary-button" class="ghost-button" type="button">Copy</button>
+            </div>
+            <pre id="map-summary" tabindex="0"></pre>
+          </section>
+        </div>
+      </aside>
+
+      <div id="chat-log" class="chat-log">
+        <div id="chat-log-handle" class="chat-log-handle"></div>
+        <div id="chat-log-messages" class="chat-log-messages"></div>
+      </div>
+
+      <div id="chat-bar" class="chat-bar inactive">
+        <input id="chat-input" type="text" maxlength="70" placeholder="Press Enter to chat…" autocomplete="off" />
+      </div>
+    </div>
 
     <script type="module" src="/app.js"></script>
   </body>

@@ -19,6 +19,9 @@ const debugLifeToggleEl = document.getElementById("debug-life-toggle");
 const statSpeedInputEl = document.getElementById("stat-speed-input");
 const statJumpInputEl = document.getElementById("stat-jump-input");
 const audioEnableButtonEl = document.getElementById("audio-enable-button");
+const debugToggleEl = document.getElementById("debug-toggle");
+const debugPanelEl = document.getElementById("debug-panel");
+const debugCloseEl = document.getElementById("debug-close");
 const canvasEl = document.getElementById("map-canvas");
 const ctx = canvasEl.getContext("2d");
 
@@ -627,32 +630,9 @@ function soundPathFromName(soundFile) {
   return `/resources/Sound.wz/${normalized}.json`;
 }
 
-function applyCanvasAspectMode() {
-  runtime.debug.aspectMode = ASPECT_MODE_DYNAMIC;
-
-  const rect = canvasEl.getBoundingClientRect();
-  const width = Math.max(1, rect.width || DEFAULT_CANVAS_WIDTH);
-  const top = rect.top || 0;
-  const viewportHeight = Math.max(1, window.innerHeight || DEFAULT_CANVAS_HEIGHT);
-  const viewportWidth = Math.max(1, window.innerWidth || DEFAULT_CANVAS_WIDTH);
-  const viewportRatio = viewportWidth / viewportHeight;
-  const availableHeight = Math.max(MIN_CANVAS_HEIGHT, Math.floor(viewportHeight - top - 24));
-  const targetHeight = Math.max(
-    MIN_CANVAS_HEIGHT,
-    Math.min(availableHeight, Math.round(width / Math.max(0.8, viewportRatio))),
-  );
-
-  canvasEl.style.aspectRatio = "auto";
-  canvasEl.style.height = `${targetHeight}px`;
-}
-
 function syncCanvasResolution() {
-  applyCanvasAspectMode();
-
-  const rect = canvasEl.getBoundingClientRect();
-  const fallbackHeight = (rect.width || DEFAULT_CANVAS_WIDTH) * (DEFAULT_CANVAS_HEIGHT / DEFAULT_CANVAS_WIDTH);
-  const nextWidth = Math.max(MIN_CANVAS_WIDTH, Math.round(rect.width || DEFAULT_CANVAS_WIDTH));
-  const nextHeight = Math.max(MIN_CANVAS_HEIGHT, Math.round(rect.height || fallbackHeight));
+  const nextWidth = Math.max(MIN_CANVAS_WIDTH, window.innerWidth || DEFAULT_CANVAS_WIDTH);
+  const nextHeight = Math.max(MIN_CANVAS_HEIGHT, window.innerHeight || DEFAULT_CANVAS_HEIGHT);
 
   if (canvasEl.width === nextWidth && canvasEl.height === nextHeight) {
     return;
@@ -3592,6 +3572,15 @@ initializeTeleportPresetInputs();
 initializeStatInputs();
 initChatLogResize();
 bindCanvasResizeHandling();
+
+debugToggleEl?.addEventListener("click", () => {
+  debugPanelEl?.classList.toggle("hidden");
+});
+
+debugCloseEl?.addEventListener("click", () => {
+  debugPanelEl?.classList.add("hidden");
+  canvasEl.focus();
+});
 bindInput();
 requestAnimationFrame(tick);
 
