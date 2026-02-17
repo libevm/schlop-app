@@ -55,7 +55,7 @@ button {
   display: grid;
   grid-template-columns: 1fr 360px;
   gap: 14px;
-  align-items: stretch;
+  align-items: start;
 }
 
 .canvas-wrapper {
@@ -63,6 +63,7 @@ button {
   overflow: hidden;
   border-radius: 10px;
   border: 1px solid #334155;
+  align-self: start;
 }
 
 #map-canvas {
