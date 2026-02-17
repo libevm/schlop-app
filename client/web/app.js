@@ -2518,11 +2518,14 @@ function drawBackgroundLayer(frontFlag) {
       y = background.y + shiftY + (screenHalfH - refHalfH);
     }
 
-    const tileX = background.type === 1 || background.type === 3 || background.type === 4 || background.type === 6 || background.type === 7;
-    const tileY = background.type === 2 || background.type === 3 || background.type === 5 || background.type === 6 || background.type === 7;
+    let tileX = background.type === 1 || background.type === 3 || background.type === 4 || background.type === 6 || background.type === 7;
+    let tileY = background.type === 2 || background.type === 3 || background.type === 5 || background.type === 6 || background.type === 7;
 
     const baseX = x - (background.flipped ? width - origin.x : origin.x);
     const baseY = y - origin.y;
+
+    if (!tileX && width < canvasW) tileX = true;
+    if (!tileY && height < canvasH) tileY = true;
 
     let xBegin = baseX;
     let xEnd = baseX;
