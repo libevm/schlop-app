@@ -734,9 +734,23 @@ function applyFixed169() {
   if (!wrapper) return;
 
   if (runtime.settings.fixed169) {
+    const vw = window.innerWidth || DEFAULT_CANVAS_WIDTH;
+    const vh = window.innerHeight || DEFAULT_CANVAS_HEIGHT;
+    let w, h;
+    if (vw / vh > 16 / 9) {
+      h = vh;
+      w = Math.round(vh * 16 / 9);
+    } else {
+      w = vw;
+      h = Math.round(vw * 9 / 16);
+    }
+    wrapper.style.setProperty("--fixed-w", w + "px");
+    wrapper.style.setProperty("--fixed-h", h + "px");
     wrapper.classList.add("fixed-169");
   } else {
     wrapper.classList.remove("fixed-169");
+    wrapper.style.removeProperty("--fixed-w");
+    wrapper.style.removeProperty("--fixed-h");
   }
   syncCanvasResolution();
 }
@@ -775,7 +789,8 @@ function bindCanvasResizeHandling() {
   syncCanvasResolution();
 
   const onResize = () => {
-    syncCanvasResolution();
+    if (runtime.settings.fixed169) applyFixed169();
+    else syncCanvasResolution();
   };
 
   window.addEventListener("resize", onResize);

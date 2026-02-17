@@ -37,28 +37,14 @@ body:has(.canvas-wrapper.fixed-169) {
 }
 
 .canvas-wrapper.fixed-169 {
-  width: auto;
-  height: auto;
-  aspect-ratio: 16 / 9;
-  max-width: 100vw;
-  max-height: 100vh;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  width: var(--fixed-w);
+  height: var(--fixed-h);
+  overflow: hidden;
 }
 
-/* In 16:9 mode: if viewport wider than 16:9, height-limited with pillarbox */
-@media (min-aspect-ratio: 16/9) {
-  .canvas-wrapper.fixed-169 {
-    height: 100vh;
-    width: auto;
-  }
-}
-
-/* If viewport narrower than 16:9, width-limited with letterbox */
-@media (max-aspect-ratio: 16/9) {
-  .canvas-wrapper.fixed-169 {
-    width: 100vw;
-    height: auto;
-  }
+.canvas-wrapper.fixed-169 #map-canvas {
+  width: 100%;
+  height: 100%;
 }
 
 /* ── Settings button (gear icon) ── */
