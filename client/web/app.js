@@ -54,7 +54,7 @@ const PHYS_SWIMFRICTION = 0.08;
 const PHYS_SWIM_HFRICTION = 0.14;
 const PHYS_FLYFORCE = 0.25;
 const PHYS_SWIM_HFORCE = 0.12;
-const PHYS_SWIM_JUMP_MULT = 0.55;
+const PHYS_SWIM_JUMP_MULT = 0.8;
 const PHYS_DEFAULT_SPEED_STAT = 115;
 const PHYS_DEFAULT_JUMP_STAT = 110;
 const HIDDEN_PORTAL_REVEAL_DELAY_MS = 500;
@@ -2353,10 +2353,9 @@ function updatePlayer(dt) {
         //   Player can jump repeatedly to bob upward against gravity
         player.swimming = true;
 
-        // Discrete swim-jump: each Space press gives an upward impulse
-        // Only fires on fresh press (jumpQueued), not while held — player must
-        // tap Space repeatedly to bob upward against gravity
-        if (jumpQueued) {
+        // Swim-jump: fires continuously while Space is held — player can
+        // jump upward as many times as they want
+        if (jumpRequested) {
           vspeedTick = -playerJumpforce() * PHYS_SWIM_JUMP_MULT;
         }
 
