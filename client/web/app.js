@@ -2509,7 +2509,7 @@ function drawBackgroundLayer(frontFlag) {
     if (hMobile) {
       x = background.x + (background.rx * nowMs) / 128 + (screenHalfW - camX);
     } else {
-      const shiftX = (background.rx * (refHalfW - camX)) / 100 + refHalfW;
+      const shiftX = (background.rx * camX) / 100 + refHalfW;
       x = background.x + shiftX + (screenHalfW - refHalfW);
     }
 
@@ -2517,7 +2517,7 @@ function drawBackgroundLayer(frontFlag) {
     if (vMobile) {
       y = background.y + (background.ry * nowMs) / 128 + (screenHalfH - camY);
     } else {
-      const shiftY = (background.ry * (refHalfH - camY)) / 100 + refHalfH;
+      const shiftY = (background.ry * camY) / 100 + refHalfH;
       y = background.y + shiftY + (screenHalfH - refHalfH);
     }
 
