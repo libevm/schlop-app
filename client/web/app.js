@@ -659,10 +659,14 @@ function bindCanvasResizeHandling() {
   }
 }
 
+function sceneRenderBiasY() {
+  return Math.max(0, (canvasEl.height - BG_REFERENCE_HEIGHT) / 2);
+}
+
 function worldToScreen(worldX, worldY) {
   return {
     x: Math.round(worldX - runtime.camera.x + canvasEl.width / 2),
-    y: Math.round(worldY - runtime.camera.y + canvasEl.height / 2),
+    y: Math.round(worldY - runtime.camera.y + canvasEl.height / 2 + sceneRenderBiasY()),
   };
 }
 
@@ -2511,12 +2515,14 @@ function drawBackgroundLayer(frontFlag) {
       x = background.x + shiftX + (screenHalfW - refHalfW);
     }
 
+    const biasY = sceneRenderBiasY();
+
     let y;
     if (vMobile) {
-      y = background.y + (background.ry * nowMs) / 128 + (screenHalfH - camY);
+      y = background.y + (background.ry * nowMs) / 128 + (screenHalfH - camY) + biasY;
     } else {
       const shiftY = (background.ry * camY) / 100 + refHalfH;
-      y = background.y + shiftY + (screenHalfH - refHalfH);
+      y = background.y + shiftY + (screenHalfH - refHalfH) + biasY;
     }
 
     const tileX = background.type === 1 || background.type === 3 || background.type === 4 || background.type === 6 || background.type === 7;
