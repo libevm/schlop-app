@@ -28,6 +28,307 @@ The docs UI includes sidebar navigation for markdown files under `docs/`.
 
 ---
 
+## 2026-02-18 07:19 (GMT+11)
+### Summary
+- Added slope-landing push behavior so jumping onto slanted footholds nudges player along incline direction.
+
+### Files changed
+- `client/web/app.js`
+
+### Functional updates
+- Added slope-landing impulse model:
+  - computes landing tangent projection delta from incoming velocity on non-flat footholds
+  - applies capped horizontal push (`landingSlopePushVx`) when landing on slants
+  - decays push smoothly over time during grounded movement
+- Added safety resets for this transient push on teleport/map load/respawn/climb transitions.
+- Debug summary now includes:
+  - `player.landingSlopePushVx`
+
+### Reference scan basis (read-only)
+- `MapleWeb/TypeScript-Client/src/Physics.ts`
+- `MapleStory-Client/Gameplay/Physics/Physics.cpp`
+- `MapleStory-Client/Gameplay/Physics/FootholdTree.cpp`
+
+### Validation
+- Automated: `bun run ci` ✅
+- Manual route smoke: `CLIENT_WEB_PORT=5210 bun run client:web` + `/?mapId=104040000` returns 200 ✅
+
+## 2026-02-18 07:14 (GMT+11)
+### Summary
+- Fixed runtime summary manual selection/copy by pausing live summary DOM rewrites during user interaction.
+
+### Files changed
+- `client/web/app.js`
+
+### Functional updates
+- Added runtime summary interaction guard:
+  - detects pointer-based selection, focus state, and active text selection within summary
+- `updateSummary()` now avoids replacing summary text while user is selecting/copying
+- Added memoized summary text write:
+  - DOM updates only when content actually changes and interaction guard is inactive
+
+### Why this fixed it
+- Previously summary content was rewritten every frame, which reset selection state before copy could complete.
+
+### Validation
+- Automated: `bun run ci` ✅
+- Manual route smoke: `CLIENT_WEB_PORT=5210 bun run client:web` + `/?mapId=104040000` returns 200 ✅
+
+## 2026-02-18 07:12 (GMT+11)
+### Summary
+- Made debug tools panel scrollable; runtime summary is now selection-friendly and one-click copyable. Also ensured teleport X/Y stays in browser cache (not URL params).
+
+### Files changed
+- `client/web/index.html`
+- `client/web/styles.css`
+- `client/web/app.js`
+
+### Functional updates
+- Debug panel/tool scrolling:
+  - added `#debug-panel-scroll` with independent vertical scrolling
+- Runtime summary copyability:
+  - summary `<pre>` is focusable/selectable (`tabindex`, `user-select: text`)
+  - added `Copy` button (`#copy-summary-button`) with clipboard API + fallback copy path
+- Teleport form polish:
+  - removed teleport input `name` fields so X/Y are not serialized into URL
+  - retained localStorage-based teleport preset cache and repopulation on reload
+- Layout fix:
+  - teleport X/Y inputs now fit inside card at all panel widths (`minmax(0,1fr)`, `min-width:0`, border-box sizing)
+
+### Validation
+- Automated: `bun run ci` ✅
+- Manual route smoke: `CLIENT_WEB_PORT=5210 bun run client:web` + `/?mapId=104040000` returns 200 ✅
+
+## 2026-02-18 06:57 (GMT+11)
+### Summary
+- Set viewport to dynamic by default and removed the user-facing aspect mode switch.
+
+### Files changed
+- `client/web/index.html`
+- `client/web/app.js`
+- `client/web/styles.css`
+
+### Functional updates
+- Removed aspect selector control from debug panel.
+- Viewport section now displays fixed mode note: `Dynamic (fit screen)`.
+- Runtime now always uses dynamic aspect behavior:
+  - removed 16:9 / 21:9 mode-switch code path and selector event wiring
+  - `applyCanvasAspectMode()` now always performs dynamic fit-to-screen sizing
+  - debug summary `viewport.mode` remains `dynamic`
+
+### Validation
+- Automated: `bun run ci` ✅
+- Manual route smoke: `CLIENT_WEB_PORT=5210 bun run client:web` + `/?mapId=104040000` returns 200 ✅
+
+## 2026-02-18 06:53 (GMT+11)
+### Summary
+- Expanded chat bubble width cap from 1x to 3x standard character width.
+
+### Files changed
+- `client/web/app.js`
+
+### Functional updates
+- Added multiplier constant:
+  - `CHAT_BUBBLE_STANDARD_WIDTH_MULTIPLIER = 3`
+- Updated `drawChatBubble()` max width logic:
+  - now uses `standardCharacterWidth * CHAT_BUBBLE_STANDARD_WIDTH_MULTIPLIER`
+- Existing wrapping behavior remains:
+  - bubble still wraps long text and clamps on-screen; it just allows more horizontal room before wrapping.
+
+### Validation
+- Automated: `bun run ci` ✅
+- Manual route smoke: `CLIENT_WEB_PORT=5210 bun run client:web` + `/?mapId=104040000` returns 200 ✅
+
+## 2026-02-18 06:52 (GMT+11)
+### Summary
+- Chat bubble width is now constrained to standard character width and long text wraps to multiple lines.
+
+### Files changed
+- `client/web/app.js`
+
+### Functional updates
+- Added bounded chat bubble layout constants and multiline text sizing.
+- Added wrapping helpers:
+  - `splitWordByWidth(...)`
+  - `wrapBubbleTextToWidth(...)`
+- `drawCharacter()` now tracks standard character width from `stand1` composed bounds.
+- `drawChatBubble()` now:
+  - caps bubble max width to standard character width
+  - wraps overflow text vertically instead of expanding bubble width
+  - clamps bubble/tail position to keep rendering on-screen
+
+### Reference scan basis (read-only)
+- `MapleStory-Client/IO/Components/ChatBalloon.cpp`
+- `MapleWeb/TypeScript-Client/src/MapleCharacter.ts`
+
+### Validation
+- Automated: `bun run ci` ✅
+- Manual route smoke: `CLIENT_WEB_PORT=5210 bun run client:web` + `/?mapId=104040000` returns 200 ✅
+
+## 2026-02-18 06:48 (GMT+11)
+### Summary
+- Moved map controls and status logs into debug panel; runtime summary now fills canvas-matched panel height instead of fixed-height behavior.
+
+### Files changed
+- `client/web/index.html`
+- `client/web/styles.css`
+
+### Functional updates
+- Debug panel now contains:
+  - map id input + load map button
+  - audio enable button
+  - status log output (`#status`)
+- Runtime summary sizing:
+  - removed fixed max-height behavior
+  - debug panel now stretches with canvas row height
+  - runtime summary section uses flexible height (`flex: 1`) and internal scrolling
+- Visual cleanup:
+  - map/status controls styled as panel cards for easier scanning
+
+### Validation
+- Automated: `bun run ci` ✅
+- Manual route smoke: `CLIENT_WEB_PORT=5210 bun run client:web` + `/?mapId=104040000` returns 200 ✅
+
+## 2026-02-18 06:44 (GMT+11)
+### Summary
+- Tidied debug sidebar UI and added live viewport aspect controls: 16:9, 21:9, and dynamic fit-to-screen.
+
+### Files changed
+- `client/web/index.html`
+- `client/web/styles.css`
+- `client/web/app.js`
+
+### Functional updates
+- Debug panel UX refresh:
+  - reorganized into clear sections (`Viewport`, `Overlays`, `Runtime Summary`)
+  - improved panel/card styling, spacing, and log readability
+- Added aspect mode selector (`#aspect-mode-select`) with options:
+  - `16:9`
+  - `21:9`
+  - `dynamic` (fit screen)
+- Canvas behavior updates:
+  - fixed-ratio display for 16:9 and 21:9 modes
+  - dynamic mode computes display height from current screen/layout space
+  - switching mode triggers immediate canvas resolution resync
+- Debug summary now includes:
+  - viewport mode
+  - render width/height
+  - display width/height
+
+### Reference scan basis (read-only)
+- `MapleWeb/TypeScript-Client/src/Config.ts`
+- `MapleStory-Client/Constants.h`
+
+### Validation
+- Automated: `bun run ci` ✅
+- Manual route smoke: `CLIENT_WEB_PORT=5210 bun run client:web` + `/?mapId=104040000` returns 200 ✅
+
+## 2026-02-18 06:38 (GMT+11)
+### Summary
+- Updated scene/parallax rendering for responsive 16:9 canvas layout and resize-safe viewport coverage.
+
+### Files changed
+- `client/web/index.html`
+- `client/web/styles.css`
+- `client/web/app.js`
+
+### Functional updates
+- Canvas/layout modernization:
+  - default canvas size changed to `1280x720`
+  - canvas now uses `aspect-ratio: 16 / 9` (responsive widescreen)
+- Runtime resize handling:
+  - added `syncCanvasResolution()` and `bindCanvasResizeHandling()`
+  - synchronizes canvas backing resolution with displayed size on window/layout changes
+- Parallax background coverage hardening:
+  - switched tiled background drawing to viewport-range coverage (`xBegin/xEnd`, `yBegin/yEnd`) with seam-safe overdraw margin
+  - removes fixed-size assumptions that caused occasional empty patches while resizing
+- Debug visibility:
+  - summary now includes viewport width/height/aspect
+
+### Reference scan basis (read-only)
+- `MapleWeb/TypeScript-Client/src/Background.ts`
+- `MapleStory-Client/Gameplay/MapleMap/MapBackgrounds.cpp`
+
+### Validation
+- Automated: `bun run ci` ✅
+- Manual route smoke: `CLIENT_WEB_PORT=5210 bun run client:web` + `/?mapId=104040000` returns 200 ✅
+
+## 2026-02-18 06:33 (GMT+11)
+### Summary
+- Tuned same-map portal momentum scroll to feel snappier while retaining fluid start/end motion.
+
+### Files changed
+- `client/web/app.js`
+
+### Functional updates
+- Adjusted intramap portal camera timing/speed constants:
+  - `PORTAL_SCROLL_MIN_MS`: `260 -> 180`
+  - `PORTAL_SCROLL_MAX_MS`: `820 -> 560`
+  - `PORTAL_SCROLL_SPEED_PX_PER_SEC`: `2200 -> 3200`
+- Result:
+  - faster camera travel and quicker settle on destination portal with preserved ease-in/ease-out feel.
+
+### Validation
+- Automated: `bun run ci` ✅
+- Manual route smoke: `CLIENT_WEB_PORT=5210 bun run client:web` + `/?mapId=104040000` returns 200 ✅
+
+## 2026-02-18 06:31 (GMT+11)
+### Summary
+- Refined same-map portal camera movement into a fluid momentum scroll with natural acceleration/deceleration.
+
+### Files changed
+- `client/web/app.js`
+
+### Functional updates
+- Added dedicated intramap portal camera tweening:
+  - runtime state `runtime.portalScroll` tracks start/target/duration/progress
+  - smootherstep easing (`portalMomentumEase`) gives zero-speed start/end for natural motion
+  - distance-based duration clamped by:
+    - `PORTAL_SCROLL_MIN_MS`
+    - `PORTAL_SCROLL_MAX_MS`
+    - `PORTAL_SCROLL_SPEED_PX_PER_SEC`
+- Same-map portal flow now:
+  1. player relocates to destination portal
+  2. camera runs momentum tween to destination follow point
+  3. portal warp-in-progress ends after tween completion
+- Added debug telemetry:
+  - `debug.portalScrollActive`
+  - `debug.portalScrollProgress`
+
+### Reference scan basis (read-only)
+- `MapleWeb/TypeScript-Client/src/Camera.ts`
+- `MapleWeb/TypeScript-Client/src/MapleCharacter.ts`
+- `MapleStory-Client/Gameplay/Stage.cpp`
+- `MapleStory-Client/Gameplay/MapleMap/MapPortals.cpp`
+
+### Validation
+- Automated: `bun run ci` ✅
+- Manual route smoke: `CLIENT_WEB_PORT=5210 bun run client:web` + `/?mapId=104040000` returns 200 ✅
+
+## 2026-02-18 06:26 (GMT+11)
+### Summary
+- Same-map portal travel now scrolls the camera to destination instead of instantly snapping the viewport.
+
+### Files changed
+- `client/web/app.js`
+
+### Functional updates
+- Updated intramap portal movement (`movePlayerToPortalInCurrentMap(...)`):
+  - removed direct camera snap (`runtime.camera.x/y = ...`) after local portal relocation
+  - kept player destination placement + foothold resolution logic unchanged
+- Result:
+  - same-map portal usage now uses existing `updateCamera(...)` smoothing, producing a visible scroll transition.
+
+### Reference scan basis (read-only)
+- `MapleStory-Client/Gameplay/Stage.cpp` (`check_portals` intramap branch)
+- `MapleStory-Client/Gameplay/MapleMap/MapPortals.cpp`
+- `MapleWeb/TypeScript-Client/src/MapleCharacter.ts` (`checkForPortal`)
+- `MapleWeb/TypeScript-Client/src/Camera.ts` (eased camera update)
+
+### Validation
+- Automated: `bun run ci` ✅
+- Manual route smoke: `CLIENT_WEB_PORT=5210 bun run client:web` + `/?mapId=104040000` returns 200 ✅
+
 ## 2026-02-17 18:45 (GMT+11)
 ### Summary
 - Updated airborne render-layer logic so front/behind ordering changes during jump/fall, not only on landing.

@@ -1,6 +1,6 @@
 # .memory Sync Status
 
-Last synced: 2026-02-17T18:45:36+11:00
+Last synced: 2026-02-18T07:19:34+11:00
 Status: ✅ Synced
 
 ## Current authoritative memory files
@@ -12,24 +12,27 @@ Status: ✅ Synced
 - `.memory/implementation-plan.md`
 
 ## What was synced in this pass
-1. Airborne z-layer/render-layer update in `client/web/app.js`:
-   - added `currentPlayerRenderLayer()`
-   - render layer now resolves dynamically each frame:
-     - climbing => layer `7`
-     - otherwise nearest foothold below current position (`findFootholdBelow`)
-     - fallback to `player.footholdLayer`
-2. Layer-interleaved draw update:
-   - `drawMapLayersWithCharacter()` now uses dynamic render layer instead of only landed foothold layer
-   - improves front/behind transitions while jumping/falling
-3. Debug visibility update:
-   - summary now includes `player.renderLayer` alongside `player.footholdLayer`
-4. Reference scan basis captured:
-   - `MapleStory-Client/Gameplay/Physics/FootholdTree.cpp` (`update_fh`, `get_fhid_below`)
-   - `MapleStory-Client/Character/Char.cpp` (`get_layer`)
-   - `MapleStory-Client/Gameplay/Stage.cpp` (layer-interleaved draw pipeline)
-5. Documentation/memory updates:
-   - `.memory/implementation-plan.md`
-   - `docs/pwa-findings.md` (new 18:45 entry)
+1. Slope-landing movement behavior added in `client/web/app.js`:
+   - added constants:
+     - `SLOPE_LANDING_MAX_VERTICAL_SPEED`
+     - `SLOPE_LANDING_PUSH_MAX_ABS`
+     - `SLOPE_LANDING_PUSH_DECAY_PER_SEC`
+   - added helper:
+     - `slopeLandingPushDeltaVx(incomingVx, incomingVy, foothold)`
+   - added player state:
+     - `player.landingSlopePushVx`
+   - landing path now applies tangent-projected slope push on non-flat foothold landing and decays it over time
+   - added reset hooks for slope push during teleport/map load/respawn/climb transitions
+   - debug summary now reports `player.landingSlopePushVx`
+2. Reference scan basis captured:
+   - Half web port (read-only):
+     - `/home/k/Development/Libevm/MapleWeb/TypeScript-Client/src/Physics.ts` (landing tangent projection)
+   - C++ reference (read-only):
+     - `/home/k/Development/Libevm/MapleStory-Client/Gameplay/Physics/Physics.cpp`
+     - `/home/k/Development/Libevm/MapleStory-Client/Gameplay/Physics/FootholdTree.cpp`
+3. Memory/docs updates:
+   - `.memory/implementation-plan.md` updated with slope-landing behavior entry
+   - `docs/pwa-findings.md` updated with new 2026-02-18 07:19 entry
 
 ## Validation snapshot
 - Automated:
@@ -39,4 +42,4 @@ Status: ✅ Synced
   - ✅ route load `/?mapId=104040000` (HTTP 200)
 
 ## Next expected update point
-- User gameplay verification on maps with stacked vertical footholds/foreground objects to confirm jump-time front/behind transitions now match expected behavior.
+- User gameplay verification that landing on different slant degrees now feels correct and optional tuning of push cap/decay values for exact parity preference.

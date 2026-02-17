@@ -9,35 +9,83 @@
   <body>
     <main>
       <h1>Maple Web Offline Debug Client</h1>
-      <form id="map-form">
-        <label for="map-id-input">Map ID</label>
-        <input id="map-id-input" name="mapId" value="104040000" />
-        <button type="submit">Load Map</button>
-        <button id="audio-enable-button" type="button">Enable Audio</button>
-      </form>
-
       <form id="chat-form" class="chat-form">
         <label for="chat-input">Chat Bubble</label>
         <input id="chat-input" name="chat" value="Hello Maple!" maxlength="60" />
         <button type="submit">Send Bubble</button>
       </form>
 
-      <p id="status">Ready. Click or hover the canvas to enable controls. Controls: ←/→ move, Space jump, ↑ (or ↓ at top) to grab rope, ↑/↓ climb, Space+←/→ jump off rope, ↓ crouch on ground.</p>
-
       <section class="layout">
-        <canvas id="map-canvas" width="1280" height="640" tabindex="0"></canvas>
+        <canvas id="map-canvas" width="1280" height="720" tabindex="0"></canvas>
 
         <aside id="debug-panel">
-          <h2>Debug Tools &amp; Logs</h2>
+          <header class="debug-panel-header">
+            <h2>Debug Panel</h2>
+            <span class="debug-badge">Live</span>
+          </header>
 
-          <div class="debug-toggles">
-            <label><input id="debug-overlay-toggle" type="checkbox" checked /> Enable overlay</label>
-            <label><input id="debug-ropes-toggle" type="checkbox" checked /> Ropes</label>
-            <label><input id="debug-footholds-toggle" type="checkbox" checked /> Footholds</label>
-            <label><input id="debug-life-toggle" type="checkbox" checked /> Life markers</label>
+          <div id="debug-panel-scroll">
+            <section class="debug-section">
+              <h3>Map</h3>
+              <form id="map-form" class="panel-form">
+                <label class="field-row" for="map-id-input">
+                  <span>Map ID</span>
+                  <input id="map-id-input" name="mapId" value="104040000" />
+                </label>
+                <div class="panel-actions">
+                  <button type="submit">Load Map</button>
+                  <button id="audio-enable-button" type="button">Enable Audio</button>
+                </div>
+              </form>
+            </section>
+
+            <section class="debug-section">
+              <h3>Teleport</h3>
+              <form id="teleport-form" class="panel-form" method="post">
+                <div class="coord-row">
+                  <label class="field-row" for="teleport-x-input">
+                    <span>X</span>
+                    <input id="teleport-x-input" type="number" step="1" value="0" />
+                  </label>
+                  <label class="field-row" for="teleport-y-input">
+                    <span>Y</span>
+                    <input id="teleport-y-input" type="number" step="1" value="0" />
+                  </label>
+                </div>
+                <div class="panel-actions">
+                  <button id="teleport-button" type="button">Teleport to Coordinates</button>
+                </div>
+              </form>
+            </section>
+
+            <section class="debug-section">
+              <h3>Logs</h3>
+              <p id="status">Ready. Click or hover the canvas to enable controls. Controls: ←/→ move, Space jump, ↑ (or ↓ at top) to grab rope, ↑/↓ climb, Space+←/→ jump off rope, ↓ crouch on ground.</p>
+            </section>
+
+            <section class="debug-section">
+              <h3>Viewport</h3>
+              <p class="field-note">Aspect mode: Dynamic (fit screen)</p>
+            </section>
+
+            <section class="debug-section">
+              <h3>Overlays</h3>
+              <div class="debug-toggles">
+                <label><input id="debug-overlay-toggle" type="checkbox" checked /> Enable overlay</label>
+                <label><input id="debug-ropes-toggle" type="checkbox" checked /> Ropes</label>
+                <label><input id="debug-footholds-toggle" type="checkbox" checked /> Footholds</label>
+                <label><input id="debug-life-toggle" type="checkbox" checked /> Life markers</label>
+              </div>
+            </section>
+
+            <section class="debug-section debug-log-section">
+              <div class="debug-section-heading">
+                <h3>Runtime Summary</h3>
+                <button id="copy-summary-button" class="ghost-button" type="button">Copy</button>
+              </div>
+              <pre id="map-summary" tabindex="0"></pre>
+            </section>
           </div>
-
-          <pre id="map-summary"></pre>
         </aside>
       </section>
     </main>

@@ -1,7 +1,12 @@
 const statusEl = document.getElementById("status");
 const summaryEl = document.getElementById("map-summary");
+const copySummaryButtonEl = document.getElementById("copy-summary-button");
 const mapFormEl = document.getElementById("map-form");
 const mapIdInputEl = document.getElementById("map-id-input");
+const teleportFormEl = document.getElementById("teleport-form");
+const teleportXInputEl = document.getElementById("teleport-x-input");
+const teleportYInputEl = document.getElementById("teleport-y-input");
+const teleportButtonEl = document.getElementById("teleport-button");
 const chatFormEl = document.getElementById("chat-form");
 const chatInputEl = document.getElementById("chat-input");
 const debugOverlayToggleEl = document.getElementById("debug-overlay-toggle");
@@ -24,9 +29,26 @@ const FACE_ANIMATION_SPEED = 1.6;
 const CPP_GROUND_FRICTION = 0.5;
 const CPP_SLOPE_FACTOR = 0.1;
 const CPP_GROUND_SLIP = 3.0;
+const SLOPE_LANDING_MAX_VERTICAL_SPEED = 162.5;
+const SLOPE_LANDING_PUSH_MAX_ABS = 140;
+const SLOPE_LANDING_PUSH_DECAY_PER_SEC = 10;
 const PORTAL_SPAWN_Y_OFFSET = 24;
 const PORTAL_FADE_OUT_MS = 180;
 const PORTAL_FADE_IN_MS = 240;
+const PORTAL_SCROLL_MIN_MS = 180;
+const PORTAL_SCROLL_MAX_MS = 560;
+const PORTAL_SCROLL_SPEED_PX_PER_SEC = 3200;
+const DEFAULT_CANVAS_WIDTH = 1280;
+const DEFAULT_CANVAS_HEIGHT = 720;
+const MIN_CANVAS_WIDTH = 640;
+const MIN_CANVAS_HEIGHT = 320;
+const ASPECT_MODE_DYNAMIC = "dynamic";
+const DEFAULT_STANDARD_CHARACTER_WIDTH = 58;
+const CHAT_BUBBLE_LINE_HEIGHT = 16;
+const CHAT_BUBBLE_HORIZONTAL_PADDING = 8;
+const CHAT_BUBBLE_VERTICAL_PADDING = 6;
+const CHAT_BUBBLE_STANDARD_WIDTH_MULTIPLIER = 3;
+const TELEPORT_PRESET_CACHE_KEY = "mapleweb.debug.teleportPreset.v1";
 
 const runtime = {
   map: null,
@@ -37,6 +59,7 @@ const runtime = {
     y: 0,
     vx: 0,
     vy: 0,
+    landingSlopePushVx: 0,
     onGround: false,
     climbing: false,
     climbRope: null,
@@ -70,6 +93,7 @@ const runtime = {
     showRopes: true,
     showFootholds: true,
     showLifeMarkers: true,
+    aspectMode: ASPECT_MODE_DYNAMIC,
   },
   characterData: null,
   characterHeadData: null,
@@ -83,6 +107,8 @@ const runtime = {
   zMapOrder: {},
   characterDataPromise: null,
   lastRenderableCharacterFrame: null,
+  lastCharacterBounds: null,
+  standardCharacterWidth: DEFAULT_STANDARD_CHARACTER_WIDTH,
   audioUnlocked: false,
   bgmAudio: null,
   currentBgmPath: null,
@@ -106,8 +132,21 @@ const runtime = {
     alpha: 0,
     active: false,
   },
+  portalScroll: {
+    active: false,
+    startX: 0,
+    startY: 0,
+    targetX: 0,
+    targetY: 0,
+    elapsedMs: 0,
+    durationMs: 0,
+  },
   previousTimestampMs: null,
 };
+
+let canvasResizeObserver = null;
+let runtimeSummaryPointerSelecting = false;
+let lastRenderedSummaryText = "";
 
 function syncDebugTogglesFromUi() {
   if (debugOverlayToggleEl) {
@@ -128,12 +167,147 @@ function syncDebugTogglesFromUi() {
     runtime.debug.showLifeMarkers = !!debugLifeToggleEl.checked;
     debugLifeToggleEl.disabled = !runtime.debug.overlayEnabled;
   }
+
+  runtime.debug.aspectMode = ASPECT_MODE_DYNAMIC;
 }
 
 syncDebugTogglesFromUi();
 
 function setStatus(text) {
   statusEl.textContent = text;
+}
+
+function isRuntimeSummaryInteractionActive() {
+  if (runtimeSummaryPointerSelecting) {
+    return true;
+  }
+
+  if (document.activeElement === summaryEl) {
+    return true;
+  }
+
+  const selection = window.getSelection?.();
+  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+    return false;
+  }
+
+  const anchor = selection.anchorNode;
+  const focus = selection.focusNode;
+  return (
+    (!!anchor && summaryEl.contains(anchor)) ||
+    (!!focus && summaryEl.contains(focus))
+  );
+}
+
+async function copyRuntimeSummaryToClipboard() {
+  const text = summaryEl?.textContent ?? "";
+  if (!text.trim()) {
+    setStatus("Runtime summary is empty.");
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(text);
+    setStatus("Runtime summary copied to clipboard.");
+    return;
+  } catch {
+    // Fallback for restricted clipboard environments
+  }
+
+  try {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    document.body.appendChild(textarea);
+    textarea.select();
+    const copied = document.execCommand("copy");
+    document.body.removeChild(textarea);
+
+    if (copied) {
+      setStatus("Runtime summary copied to clipboard.");
+    } else {
+      setStatus("Unable to copy summary automatically. Select and copy manually.");
+    }
+  } catch {
+    setStatus("Unable to copy summary automatically. Select and copy manually.");
+  }
+}
+
+function loadCachedTeleportPreset() {
+  try {
+    const raw = localStorage.getItem(TELEPORT_PRESET_CACHE_KEY);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+    const x = Number(parsed?.x);
+    const y = Number(parsed?.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+
+    return { x, y };
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedTeleportPreset(x, y) {
+  try {
+    localStorage.setItem(TELEPORT_PRESET_CACHE_KEY, JSON.stringify({ x, y }));
+  } catch {
+    // ignore storage failures (private mode/quota)
+  }
+}
+
+function applyManualTeleport(x, y) {
+  if (!runtime.map) {
+    setStatus("Cannot teleport: no map loaded yet.");
+    return false;
+  }
+
+  const player = runtime.player;
+  player.x = x;
+  player.y = y;
+  player.vx = 0;
+  player.vy = 0;
+  player.landingSlopePushVx = 0;
+  player.climbing = false;
+  player.climbRope = null;
+  player.climbCooldownUntil = 0;
+  player.reattachLockUntil = 0;
+  player.reattachLockRopeKey = null;
+  player.downJumpIgnoreFootholdId = null;
+  player.downJumpIgnoreUntil = 0;
+  player.downJumpControlLock = false;
+  player.downJumpTargetFootholdId = null;
+
+  const footholdNear = findFootholdAtXNearY(runtime.map, x, y, 2.5);
+  if (footholdNear) {
+    player.y = footholdNear.y;
+    player.onGround = true;
+    player.footholdId = footholdNear.line.id;
+    player.footholdLayer = footholdNear.line.layer;
+  } else {
+    player.onGround = false;
+    player.footholdId = null;
+  }
+
+  runtime.camera.x = player.x;
+  runtime.camera.y = player.y - 130;
+  runtime.portalScroll.active = false;
+
+  setStatus(`Teleported to x=${Math.round(player.x)}, y=${Math.round(player.y)}.`);
+  return true;
+}
+
+function initializeTeleportPresetInputs() {
+  if (!teleportXInputEl || !teleportYInputEl) return;
+
+  const cached = loadCachedTeleportPreset();
+  if (!cached) return;
+
+  teleportXInputEl.value = String(Math.round(cached.x));
+  teleportYInputEl.value = String(Math.round(cached.y));
 }
 
 function resetGameplayInput() {
@@ -247,6 +421,58 @@ function mapPathFromId(mapId) {
 function soundPathFromName(soundFile) {
   const normalized = soundFile.endsWith(".img") ? soundFile : `${soundFile}.img`;
   return `/resources/Sound.wz/${normalized}.json`;
+}
+
+function applyCanvasAspectMode() {
+  runtime.debug.aspectMode = ASPECT_MODE_DYNAMIC;
+
+  const rect = canvasEl.getBoundingClientRect();
+  const width = Math.max(1, rect.width || DEFAULT_CANVAS_WIDTH);
+  const top = rect.top || 0;
+  const viewportHeight = Math.max(1, window.innerHeight || DEFAULT_CANVAS_HEIGHT);
+  const viewportWidth = Math.max(1, window.innerWidth || DEFAULT_CANVAS_WIDTH);
+  const viewportRatio = viewportWidth / viewportHeight;
+  const availableHeight = Math.max(MIN_CANVAS_HEIGHT, Math.floor(viewportHeight - top - 24));
+  const targetHeight = Math.max(
+    MIN_CANVAS_HEIGHT,
+    Math.min(availableHeight, Math.round(width / Math.max(0.8, viewportRatio))),
+  );
+
+  canvasEl.style.aspectRatio = "auto";
+  canvasEl.style.height = `${targetHeight}px`;
+}
+
+function syncCanvasResolution() {
+  applyCanvasAspectMode();
+
+  const rect = canvasEl.getBoundingClientRect();
+  const fallbackHeight = (rect.width || DEFAULT_CANVAS_WIDTH) * (DEFAULT_CANVAS_HEIGHT / DEFAULT_CANVAS_WIDTH);
+  const nextWidth = Math.max(MIN_CANVAS_WIDTH, Math.round(rect.width || DEFAULT_CANVAS_WIDTH));
+  const nextHeight = Math.max(MIN_CANVAS_HEIGHT, Math.round(rect.height || fallbackHeight));
+
+  if (canvasEl.width === nextWidth && canvasEl.height === nextHeight) {
+    return;
+  }
+
+  canvasEl.width = nextWidth;
+  canvasEl.height = nextHeight;
+}
+
+function bindCanvasResizeHandling() {
+  syncCanvasResolution();
+
+  const onResize = () => {
+    syncCanvasResolution();
+  };
+
+  window.addEventListener("resize", onResize);
+
+  if (typeof ResizeObserver !== "undefined") {
+    canvasResizeObserver = new ResizeObserver(() => {
+      syncCanvasResolution();
+    });
+    canvasResizeObserver.observe(canvasEl);
+  }
 }
 
 function worldToScreen(worldX, worldY) {
@@ -739,6 +965,62 @@ function findUsablePortalAtPlayer(map) {
   return null;
 }
 
+function clampCameraXToMapBounds(map, desiredCenterX) {
+  const footholdMinX = map.footholdBounds?.minX ?? map.bounds.minX;
+  const footholdMaxX = map.footholdBounds?.maxX ?? map.bounds.maxX;
+  const halfWidth = canvasEl.width / 2;
+
+  const minCenterX = footholdMinX + halfWidth;
+  const maxCenterX = footholdMaxX - halfWidth;
+
+  if (minCenterX <= maxCenterX) {
+    return Math.max(minCenterX, Math.min(maxCenterX, desiredCenterX));
+  }
+
+  return (footholdMinX + footholdMaxX) / 2;
+}
+
+function portalMomentumEase(t) {
+  const x = Math.max(0, Math.min(1, t));
+  return x * x * x * (x * (x * 6 - 15) + 10);
+}
+
+function startPortalMomentumScroll() {
+  if (!runtime.map) return;
+
+  const startX = runtime.camera.x;
+  const startY = runtime.camera.y;
+  const targetX = clampCameraXToMapBounds(runtime.map, runtime.player.x);
+  const targetY = runtime.player.y - 130;
+
+  const distance = Math.hypot(targetX - startX, targetY - startY);
+  if (distance < 6) {
+    runtime.camera.x = targetX;
+    runtime.camera.y = targetY;
+    runtime.portalScroll.active = false;
+    return;
+  }
+
+  const durationMs = Math.max(
+    PORTAL_SCROLL_MIN_MS,
+    Math.min(PORTAL_SCROLL_MAX_MS, (distance / PORTAL_SCROLL_SPEED_PX_PER_SEC) * 1000),
+  );
+
+  runtime.portalScroll.active = true;
+  runtime.portalScroll.startX = startX;
+  runtime.portalScroll.startY = startY;
+  runtime.portalScroll.targetX = targetX;
+  runtime.portalScroll.targetY = targetY;
+  runtime.portalScroll.elapsedMs = 0;
+  runtime.portalScroll.durationMs = durationMs;
+}
+
+async function waitForPortalMomentumScrollToFinish() {
+  while (runtime.portalScroll.active) {
+    await waitForAnimationFrame();
+  }
+}
+
 function movePlayerToPortalInCurrentMap(targetPortalName) {
   if (!runtime.map) return false;
 
@@ -762,6 +1044,7 @@ function movePlayerToPortalInCurrentMap(targetPortalName) {
   }
 
   player.vx = 0;
+  player.landingSlopePushVx = 0;
   player.climbing = false;
   player.climbRope = null;
   player.downJumpIgnoreFootholdId = null;
@@ -769,8 +1052,7 @@ function movePlayerToPortalInCurrentMap(targetPortalName) {
   player.downJumpControlLock = false;
   player.downJumpTargetFootholdId = null;
 
-  runtime.camera.x = player.x;
-  runtime.camera.y = player.y - 130;
+  startPortalMomentumScroll();
   return true;
 }
 
@@ -840,6 +1122,7 @@ async function tryUsePortal(force = false) {
       if (targetPortalName) {
         const moved = movePlayerToPortalInCurrentMap(targetPortalName);
         if (moved) {
+          await waitForPortalMomentumScrollToFinish();
           return;
         }
       }
@@ -1430,6 +1713,24 @@ function applySlopeJumpTakeoffVelocity(hspeed, slope, moveDir) {
   return next;
 }
 
+function slopeLandingPushDeltaVx(incomingVx, incomingVy, foothold) {
+  if (!foothold || isWallFoothold(foothold)) return 0;
+
+  const fx = foothold.x2 - foothold.x1;
+  const fy = foothold.y2 - foothold.y1;
+  const len = Math.hypot(fx, fy);
+  if (len < 0.01) return 0;
+
+  const tx = fx / len;
+  const ty = fy / len;
+
+  const cappedVy = Math.min(Math.max(0, incomingVy), SLOPE_LANDING_MAX_VERTICAL_SPEED);
+  const tangentSpeed = incomingVx * tx + cappedVy * ty;
+  const projectedVx = tangentSpeed * tx;
+
+  return projectedVx - incomingVx;
+}
+
 function groundYOnFoothold(foothold, x) {
   const dx = foothold.x2 - foothold.x1;
   if (Math.abs(dx) < 0.01) {
@@ -1564,6 +1865,7 @@ function updatePlayer(dt) {
       player.x = climbSnapX(rope);
       player.vx = 0;
       player.vy = 0;
+      player.landingSlopePushVx = 0;
       player.onGround = false;
       player.footholdId = null;
     }
@@ -1581,6 +1883,7 @@ function updatePlayer(dt) {
       player.climbRope = null;
       player.vy = -360;
       player.vx = move * 190;
+      player.landingSlopePushVx = 0;
       player.onGround = false;
       player.footholdId = null;
       player.downJumpIgnoreFootholdId = null;
@@ -1602,6 +1905,7 @@ function updatePlayer(dt) {
       player.y += (movingDown ? 1 : movingUp ? -1 : 0) * climbSpeed * dt;
       player.vx = 0;
       player.vy = movingDown ? climbSpeed : movingUp ? -climbSpeed : 0;
+      player.landingSlopePushVx = 0;
       player.onGround = false;
 
       if (ladderFellOff(rope, player.y, movingDown)) {
@@ -1620,7 +1924,15 @@ function updatePlayer(dt) {
   }
 
   if (!player.climbing) {
-    player.vx = effectiveMove * 190;
+    if (Math.abs(player.landingSlopePushVx) > 0.001) {
+      const decay = Math.max(0, 1 - SLOPE_LANDING_PUSH_DECAY_PER_SEC * dt);
+      player.landingSlopePushVx *= decay;
+      if (Math.abs(player.landingSlopePushVx) < 0.3) {
+        player.landingSlopePushVx = 0;
+      }
+    }
+
+    player.vx = effectiveMove * 190 + player.landingSlopePushVx;
 
     const currentFoothold =
       findFootholdById(map, player.footholdId) ??
@@ -1650,6 +1962,7 @@ function updatePlayer(dt) {
         player.y = footholdGround + 1;
         player.vy = -190;
         player.vx = 0;
+        player.landingSlopePushVx = 0;
         player.onGround = false;
         player.downJumpIgnoreFootholdId = currentFoothold.id;
         player.downJumpIgnoreUntil = nowMs + 260;
@@ -1666,6 +1979,7 @@ function updatePlayer(dt) {
         }
 
         player.vy = -540;
+        player.landingSlopePushVx = 0;
         player.onGround = false;
         player.downJumpIgnoreFootholdId = null;
         player.downJumpIgnoreUntil = 0;
@@ -1744,9 +2058,16 @@ function updatePlayer(dt) {
           ? findGroundLanding(oldX, oldY, player.x, player.y, map, ignoredFootholdId)
           : null;
       if (landing) {
+        const landingPushDelta = slopeLandingPushDeltaVx(player.vx, player.vy, landing.line);
+
         player.y = landing.y;
         player.footholdId = landing.line.id;
         player.footholdLayer = landing.line.layer;
+        player.landingSlopePushVx = Math.max(
+          -SLOPE_LANDING_PUSH_MAX_ABS,
+          Math.min(SLOPE_LANDING_PUSH_MAX_ABS, landingPushDelta),
+        );
+        player.vx = effectiveMove * 190 + player.landingSlopePushVx;
         player.vy = 0;
         player.onGround = true;
         player.downJumpIgnoreFootholdId = null;
@@ -1767,6 +2088,7 @@ function updatePlayer(dt) {
     player.y = spawn ? spawn.y : 0;
     player.vx = 0;
     player.vy = 0;
+    player.landingSlopePushVx = 0;
     player.onGround = false;
     player.climbing = false;
     player.climbRope = null;
@@ -1827,25 +2149,34 @@ function updatePlayer(dt) {
 function updateCamera(dt) {
   if (!runtime.map) return;
 
+  if (runtime.portalScroll.active) {
+    const scroll = runtime.portalScroll;
+    scroll.elapsedMs += dt * 1000;
+
+    const duration = Math.max(1, scroll.durationMs);
+    const t = Math.max(0, Math.min(1, scroll.elapsedMs / duration));
+    const easedT = portalMomentumEase(t);
+
+    runtime.camera.x = scroll.startX + (scroll.targetX - scroll.startX) * easedT;
+    runtime.camera.y = scroll.startY + (scroll.targetY - scroll.startY) * easedT;
+    runtime.camera.x = clampCameraXToMapBounds(runtime.map, runtime.camera.x);
+
+    if (t >= 1) {
+      runtime.camera.x = scroll.targetX;
+      runtime.camera.y = scroll.targetY;
+      scroll.active = false;
+    }
+
+    return;
+  }
+
   const targetX = runtime.player.x;
   const targetY = runtime.player.y - 130;
   const smoothing = Math.min(1, dt * 8);
 
   runtime.camera.x += (targetX - runtime.camera.x) * smoothing;
   runtime.camera.y += (targetY - runtime.camera.y) * smoothing;
-
-  const footholdMinX = runtime.map.footholdBounds?.minX ?? runtime.map.bounds.minX;
-  const footholdMaxX = runtime.map.footholdBounds?.maxX ?? runtime.map.bounds.maxX;
-  const halfWidth = canvasEl.width / 2;
-
-  const minCenterX = footholdMinX + halfWidth;
-  const maxCenterX = footholdMaxX - halfWidth;
-
-  if (minCenterX <= maxCenterX) {
-    runtime.camera.x = Math.max(minCenterX, Math.min(maxCenterX, runtime.camera.x));
-  } else {
-    runtime.camera.x = (footholdMinX + footholdMaxX) / 2;
-  }
+  runtime.camera.x = clampCameraXToMapBounds(runtime.map, runtime.camera.x);
 }
 
 function drawScreenImage(image, x, y, flipped) {
@@ -1914,37 +2245,52 @@ function drawBackgroundLayer(frontFlag) {
       y = background.y + shiftY;
     }
 
-    let htile = 1;
-    let vtile = 1;
-
-    if (background.type === 1 || background.type === 4) {
-      htile = Math.floor(canvasEl.width / cx) + 3;
-    } else if (background.type === 2 || background.type === 5) {
-      vtile = Math.floor(canvasEl.height / cy) + 3;
-    } else if (background.type === 3 || background.type === 6 || background.type === 7) {
-      htile = Math.floor(canvasEl.width / cx) + 3;
-      vtile = Math.floor(canvasEl.height / cy) + 3;
-    }
-
-    if (htile > 1) {
-      while (x > 0) x -= cx;
-      while (x < -cx) x += cx;
-    }
-
-    if (vtile > 1) {
-      while (y > 0) y -= cy;
-      while (y < -cy) y += cy;
-    }
+    const tileX = background.type === 1 || background.type === 3 || background.type === 4 || background.type === 6 || background.type === 7;
+    const tileY = background.type === 2 || background.type === 3 || background.type === 5 || background.type === 6 || background.type === 7;
 
     const baseX = x - (background.flipped ? width - origin.x : origin.x);
     const baseY = y - origin.y;
 
+    let xBegin = baseX;
+    let xEnd = baseX;
+    let yBegin = baseY;
+    let yEnd = baseY;
+
+    if (tileX) {
+      xBegin += width;
+      xBegin %= cx;
+      if (xBegin <= 0) xBegin += cx;
+      xBegin -= width;
+
+      xEnd -= canvasEl.width;
+      xEnd %= cx;
+      if (xEnd >= 0) xEnd -= cx;
+      xEnd += canvasEl.width;
+    }
+
+    if (tileY) {
+      yBegin += height;
+      yBegin %= cy;
+      if (yBegin <= 0) yBegin += cy;
+      yBegin -= height;
+
+      yEnd -= canvasEl.height;
+      yEnd %= cy;
+      if (yEnd >= 0) yEnd -= cy;
+      yEnd += canvasEl.height;
+    }
+
+    const drawStartX = tileX ? Math.floor(xBegin) - 2 : Math.round(baseX);
+    const drawEndX = tileX ? Math.ceil(xEnd) + 2 : Math.round(baseX);
+    const drawStartY = tileY ? Math.floor(yBegin) - 2 : Math.round(baseY);
+    const drawEndY = tileY ? Math.ceil(yEnd) + 2 : Math.round(baseY);
+
     ctx.save();
     ctx.globalAlpha = Math.max(0, Math.min(1, background.alpha));
 
-    for (let tx = 0; tx < htile; tx += 1) {
-      for (let ty = 0; ty < vtile; ty += 1) {
-        drawScreenImage(image, baseX + tx * cx, baseY + ty * cy, background.flipped);
+    for (let tx = drawStartX; tx <= drawEndX; tx += cx) {
+      for (let ty = drawStartY; ty <= drawEndY; ty += cy) {
+        drawScreenImage(image, tx, ty, background.flipped);
       }
     }
 
@@ -2187,6 +2533,94 @@ function composeCharacterPlacements(action, frameIndex, player, flipped) {
   return placements.sort((a, b) => a.zOrder - b.zOrder);
 }
 
+function characterBoundsFromPlacements(placements) {
+  if (!placements || placements.length === 0) return null;
+
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+
+  for (const part of placements) {
+    const left = part.topLeft.x;
+    const top = part.topLeft.y;
+    const right = left + part.image.width;
+    const bottom = top + part.image.height;
+
+    minX = Math.min(minX, left);
+    maxX = Math.max(maxX, right);
+    minY = Math.min(minY, top);
+    maxY = Math.max(maxY, bottom);
+  }
+
+  if (!Number.isFinite(minX) || !Number.isFinite(maxX)) return null;
+
+  return {
+    minX,
+    maxX,
+    minY,
+    maxY,
+    width: Math.max(1, maxX - minX),
+    height: Math.max(1, maxY - minY),
+  };
+}
+
+function splitWordByWidth(word, maxWidth) {
+  if (ctx.measureText(word).width <= maxWidth) {
+    return [word];
+  }
+
+  const chunks = [];
+  let current = "";
+
+  for (const char of word) {
+    const candidate = current + char;
+    if (current && ctx.measureText(candidate).width > maxWidth) {
+      chunks.push(current);
+      current = char;
+    } else {
+      current = candidate;
+    }
+  }
+
+  if (current) chunks.push(current);
+  return chunks.length > 0 ? chunks : [word];
+}
+
+function wrapBubbleTextToWidth(text, maxWidth) {
+  const normalized = String(text ?? "").trim().replace(/\s+/g, " ");
+  if (!normalized) return [""];
+
+  const words = normalized.split(" ");
+  const lines = [];
+  let line = "";
+
+  for (const word of words) {
+    const chunks = splitWordByWidth(word, maxWidth);
+
+    for (const chunk of chunks) {
+      if (!line) {
+        line = chunk;
+        continue;
+      }
+
+      const candidate = `${line} ${chunk}`;
+      if (ctx.measureText(candidate).width <= maxWidth) {
+        line = candidate;
+      } else {
+        lines.push(line);
+        line = chunk;
+      }
+    }
+  }
+
+  if (line) {
+    lines.push(line);
+  }
+
+  return lines;
+}
+
 function drawCharacter() {
   const player = runtime.player;
   const flipped = player.facing > 0;
@@ -2208,6 +2642,14 @@ function drawCharacter() {
     };
   }
 
+  const bounds = characterBoundsFromPlacements(placements);
+  if (bounds) {
+    runtime.lastCharacterBounds = bounds;
+    if (player.action === "stand1") {
+      runtime.standardCharacterWidth = Math.max(40, Math.min(120, Math.round(bounds.width)));
+    }
+  }
+
   for (const part of placements) {
     drawWorldImage(part.image, part.topLeft.x, part.topLeft.y, { flipped });
   }
@@ -2222,26 +2664,43 @@ function drawChatBubble() {
 
   ctx.save();
   ctx.font = "14px Inter, system-ui, sans-serif";
-  const metrics = ctx.measureText(text);
-  const width = Math.max(64, metrics.width + 18);
-  const height = 28;
-  const x = anchor.x - width / 2;
+
+  const standardWidth = Math.max(1, Math.round(runtime.standardCharacterWidth || DEFAULT_STANDARD_CHARACTER_WIDTH));
+  const maxBubbleWidth = Math.max(40, Math.round(standardWidth * CHAT_BUBBLE_STANDARD_WIDTH_MULTIPLIER));
+  const maxTextWidth = Math.max(14, maxBubbleWidth - CHAT_BUBBLE_HORIZONTAL_PADDING * 2);
+  const lines = wrapBubbleTextToWidth(text, maxTextWidth);
+
+  const widestLine = Math.max(...lines.map((line) => ctx.measureText(line).width), 0);
+  const width = Math.max(
+    40,
+    Math.min(maxBubbleWidth, Math.ceil(widestLine) + CHAT_BUBBLE_HORIZONTAL_PADDING * 2),
+  );
+  const height = Math.max(
+    26,
+    lines.length * CHAT_BUBBLE_LINE_HEIGHT + CHAT_BUBBLE_VERTICAL_PADDING * 2,
+  );
+
+  const clampedX = Math.max(6, Math.min(canvasEl.width - width - 6, anchor.x - width / 2));
   const y = anchor.y - height - 16;
 
-  roundRect(ctx, x, y, width, height, 8);
+  roundRect(ctx, clampedX, y, width, height, 8);
   ctx.fillStyle = "rgba(15, 23, 42, 0.86)";
   ctx.fill();
   ctx.strokeStyle = "rgba(148, 163, 184, 0.9)";
   ctx.stroke();
 
   ctx.fillStyle = "#f8fafc";
-  ctx.textBaseline = "middle";
-  ctx.fillText(text, x + 9, y + height / 2);
+  ctx.textBaseline = "top";
+  for (let index = 0; index < lines.length; index += 1) {
+    const lineY = y + CHAT_BUBBLE_VERTICAL_PADDING + index * CHAT_BUBBLE_LINE_HEIGHT;
+    ctx.fillText(lines[index], clampedX + CHAT_BUBBLE_HORIZONTAL_PADDING, lineY);
+  }
 
+  const tailX = Math.max(clampedX + 8, Math.min(clampedX + width - 8, anchor.x));
   ctx.beginPath();
-  ctx.moveTo(anchor.x - 7, y + height);
-  ctx.lineTo(anchor.x + 7, y + height);
-  ctx.lineTo(anchor.x, y + height + 8);
+  ctx.moveTo(tailX - 7, y + height);
+  ctx.lineTo(tailX + 7, y + height);
+  ctx.lineTo(tailX, y + height + 8);
   ctx.closePath();
   ctx.fillStyle = "rgba(15, 23, 42, 0.86)";
   ctx.fill();
@@ -2359,12 +2818,17 @@ function render() {
 
 function updateSummary() {
   if (!runtime.map) {
-    summaryEl.textContent = "No map loaded";
+    const emptyText = "No map loaded";
+    if (!isRuntimeSummaryInteractionActive() && lastRenderedSummaryText !== emptyText) {
+      summaryEl.textContent = emptyText;
+      lastRenderedSummaryText = emptyText;
+    }
     return;
   }
 
   const mobCount = runtime.map.lifeEntries.filter((life) => life.type === "m").length;
   const npcCount = runtime.map.lifeEntries.filter((life) => life.type === "n").length;
+  const canvasRect = canvasEl.getBoundingClientRect();
 
   const summary = {
     mapId: runtime.mapId,
@@ -2372,6 +2836,14 @@ function updateSummary() {
     bgm: runtime.map.info.bgm ?? "",
     bounds: runtime.map.bounds,
     footholdBounds: runtime.map.footholdBounds,
+    viewport: {
+      mode: runtime.debug.aspectMode,
+      renderWidth: canvasEl.width,
+      renderHeight: canvasEl.height,
+      displayWidth: Math.round(canvasRect.width),
+      displayHeight: Math.round(canvasRect.height),
+      aspect: Number((canvasEl.width / Math.max(1, canvasEl.height)).toFixed(3)),
+    },
     backgrounds: runtime.map.backgrounds.length,
     footholds: runtime.map.footholdLines.length,
     ropes: runtime.map.ladderRopes.length,
@@ -2388,6 +2860,7 @@ function updateSummary() {
       action: runtime.player.action,
       footholdLayer: runtime.player.footholdLayer,
       renderLayer: currentPlayerRenderLayer(),
+      landingSlopePushVx: Number(runtime.player.landingSlopePushVx.toFixed(2)),
       downJumpControlLock: runtime.player.downJumpControlLock,
       downJumpTargetFootholdId: runtime.player.downJumpTargetFootholdId,
     },
@@ -2413,10 +2886,22 @@ function updateSummary() {
       showLifeMarkers: runtime.debug.showLifeMarkers,
       transitionAlpha: Number(runtime.transition.alpha.toFixed(3)),
       portalWarpInProgress: runtime.portalWarpInProgress,
+      portalScrollActive: runtime.portalScroll.active,
+      portalScrollProgress: runtime.portalScroll.active && runtime.portalScroll.durationMs > 0
+        ? Number(Math.min(1, runtime.portalScroll.elapsedMs / runtime.portalScroll.durationMs).toFixed(3))
+        : 0,
     },
   };
 
-  summaryEl.textContent = JSON.stringify(summary, null, 2);
+  const nextSummaryText = JSON.stringify(summary, null, 2);
+  if (isRuntimeSummaryInteractionActive()) {
+    return;
+  }
+
+  if (nextSummaryText !== lastRenderedSummaryText) {
+    summaryEl.textContent = nextSummaryText;
+    lastRenderedSummaryText = nextSummaryText;
+  }
 }
 
 function update(dt) {
@@ -2570,6 +3055,7 @@ async function loadMap(mapId, spawnPortalName = null, spawnFromPortalTransfer = 
       : 0;
     runtime.player.vx = 0;
     runtime.player.vy = 0;
+    runtime.player.landingSlopePushVx = 0;
     runtime.player.onGround = false;
     runtime.player.climbing = false;
     runtime.player.climbRope = null;
@@ -2589,6 +3075,8 @@ async function loadMap(mapId, spawnPortalName = null, spawnFromPortalTransfer = 
     runtime.player.frameIndex = 0;
     runtime.player.frameTimer = 0;
     runtime.lastRenderableCharacterFrame = null;
+    runtime.lastCharacterBounds = null;
+    runtime.standardCharacterWidth = DEFAULT_STANDARD_CHARACTER_WIDTH;
 
     runtime.faceAnimation.expression = "default";
     runtime.faceAnimation.frameIndex = 0;
@@ -2597,6 +3085,8 @@ async function loadMap(mapId, spawnPortalName = null, spawnFromPortalTransfer = 
 
     runtime.camera.x = runtime.player.x;
     runtime.camera.y = runtime.player.y - 130;
+    runtime.portalScroll.active = false;
+    runtime.portalScroll.elapsedMs = 0;
 
     await preloadMapAssets(runtime.map, loadToken);
     if (loadToken !== runtime.mapLoadToken) return;
@@ -2700,6 +3190,25 @@ mapFormEl.addEventListener("submit", (event) => {
   loadMap(mapIdInputEl.value.trim());
 });
 
+teleportFormEl?.addEventListener("submit", (event) => {
+  event.preventDefault();
+
+  const x = Number(teleportXInputEl?.value ?? "");
+  const y = Number(teleportYInputEl?.value ?? "");
+
+  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+    setStatus("Teleport failed: enter valid numeric X/Y values.");
+    return;
+  }
+
+  saveCachedTeleportPreset(x, y);
+  applyManualTeleport(x, y);
+});
+
+teleportButtonEl?.addEventListener("click", () => {
+  teleportFormEl?.requestSubmit();
+});
+
 chatFormEl.addEventListener("submit", (event) => {
   event.preventDefault();
   const text = chatInputEl.value.trim();
@@ -2715,6 +3224,22 @@ for (const toggle of [debugOverlayToggleEl, debugRopesToggleEl, debugFootholdsTo
   });
 }
 
+copySummaryButtonEl?.addEventListener("click", () => {
+  void copyRuntimeSummaryToClipboard();
+});
+
+summaryEl?.addEventListener("pointerdown", () => {
+  runtimeSummaryPointerSelecting = true;
+});
+
+window.addEventListener("pointerup", () => {
+  runtimeSummaryPointerSelecting = false;
+});
+
+summaryEl?.addEventListener("blur", () => {
+  runtimeSummaryPointerSelecting = false;
+});
+
 audioEnableButtonEl.addEventListener("click", async () => {
   runtime.audioUnlocked = true;
   audioEnableButtonEl.textContent = "Audio Enabled";
@@ -2725,6 +3250,8 @@ audioEnableButtonEl.addEventListener("click", async () => {
   }
 });
 
+initializeTeleportPresetInputs();
+bindCanvasResizeHandling();
 bindInput();
 requestAnimationFrame(tick);
 
