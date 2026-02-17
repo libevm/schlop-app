@@ -1254,28 +1254,42 @@ function findUsablePortalAtPlayer(map) {
   return null;
 }
 
+function mapVisibleBounds(map) {
+  // C++: uses VRLeft/VRRight/VRTop/VRBottom when present in map info,
+  // falls back to foothold-derived walls (leftW+25, rightW-25)
+  // and borders (topB-300, bottomB+100).
+  const hasVR = map.info?.VRLeft != null && map.info?.VRRight != null;
+  const hasVRY = map.info?.VRTop != null && map.info?.VRBottom != null;
+
+  const left = hasVR ? safeNumber(map.info.VRLeft) : (map.walls?.left ?? map.bounds.minX);
+  const right = hasVR ? safeNumber(map.info.VRRight) : (map.walls?.right ?? map.bounds.maxX);
+  const top = hasVRY ? safeNumber(map.info.VRTop) : (map.borders?.top ?? map.bounds.minY);
+  const bottom = hasVRY ? safeNumber(map.info.VRBottom) : (map.borders?.bottom ?? map.bounds.maxY);
+
+  return { left, right, top, bottom };
+}
+
 function clampCameraXToMapBounds(map, desiredCenterX) {
-  const footholdMinX = map.footholdBounds?.minX ?? map.bounds.minX;
-  const footholdMaxX = map.footholdBounds?.maxX ?? map.bounds.maxX;
+  const { left: mapLeft, right: mapRight } = mapVisibleBounds(map);
   const halfWidth = canvasEl.width / 2;
 
-  const minCenterX = footholdMinX + halfWidth;
-  const maxCenterX = footholdMaxX - halfWidth;
+  const minCenterX = mapLeft + halfWidth;
+  const maxCenterX = mapRight - halfWidth;
 
   if (minCenterX <= maxCenterX) {
     return Math.max(minCenterX, Math.min(maxCenterX, desiredCenterX));
   }
 
-  return (footholdMinX + footholdMaxX) / 2;
+  // Map narrower than viewport — center on map
+  return (mapLeft + mapRight) / 2;
 }
 
 function clampCameraYToMapBounds(map, desiredCenterY) {
-  const mapMinY = map.borders?.top ?? map.bounds.minY;
-  const mapMaxY = map.borders?.bottom ?? map.bounds.maxY;
+  const { top: mapTop, bottom: mapBottom } = mapVisibleBounds(map);
   const halfHeight = canvasEl.height / 2;
 
-  const minCenterY = mapMinY + halfHeight;
-  const maxCenterY = mapMaxY - halfHeight;
+  const minCenterY = mapTop + halfHeight;
+  const maxCenterY = mapBottom - halfHeight;
 
   if (minCenterY <= maxCenterY) {
     return Math.max(minCenterY, Math.min(maxCenterY, desiredCenterY));
