@@ -2294,11 +2294,7 @@ function updatePlayer(dt) {
       player.vx = hspeedTick * PHYS_TPS;
       player.vy = 0;
 
-      if (map.swim && jumpRequested) {
-        // Water environment: Space detaches from ground into water (no normal jump)
-        player.onGround = false;
-        player.footholdId = null;
-      } else if (jumpRequested) {
+      if (jumpRequested) {
         const footholdGround =
           currentFoothold && !isWallFoothold(currentFoothold)
             ? groundYOnFoothold(currentFoothold, player.x)
@@ -2345,21 +2341,36 @@ function updatePlayer(dt) {
 
       if (map.swim && !player.climbing) {
         // ── Water environment: C++ Physics::move_swimming ──
-        // PlayerFlyState sets hforce/vforce from directional input,
-        // then move_swimming applies friction + weak gravity.
+        // C++ state flow:
+        //   Ground → STAND/WALK (NORMAL physics, normal jump)
+        //   Airborne → FALL (1 tick of NORMAL: full GRAVFORCE=0.14)
+        //   FallState::update_state: !onground && underwater → SWIM
+        //   SWIM = PlayerFlyState → Type::SWIMMING → move_swimming()
+        //
+        // move_swimming per tick:
+        //   hacc = hforce;  vacc = vforce;  (force set once per tick by PlayerFlyState)
+        //   hforce = 0;     vforce = 0;     (consumed)
+        //   hacc -= SWIMFRICTION * hspeed;  (0.08 drag)
+        //   vacc -= SWIMFRICTION * vspeed;
+        //   vacc += SWIMGRAVFORCE;          (0.03 gravity)
+        //   hspeed += hacc;  vspeed += vacc;
         player.swimming = true;
 
-        let hforceTick = 0;
-        let vforceTick = 0;
-        if (runtime.input.left && !runtime.input.right) hforceTick = -PHYS_FLYFORCE;
-        else if (runtime.input.right && !runtime.input.left) hforceTick = PHYS_FLYFORCE;
+        // PlayerFlyState::update — directional force (flyforce=0.25)
+        let hforce = 0;
+        let vforce = 0;
+        if (runtime.input.left && !runtime.input.right) hforce = -PHYS_FLYFORCE;
+        else if (runtime.input.right && !runtime.input.left) hforce = PHYS_FLYFORCE;
         const swimUp = runtime.input.up || runtime.input.jumpHeld;
-        if (swimUp && !runtime.input.down) vforceTick = -PHYS_FLYFORCE;
-        else if (runtime.input.down && !swimUp) vforceTick = PHYS_FLYFORCE;
+        if (swimUp && !runtime.input.down) vforce = -PHYS_FLYFORCE;
+        else if (runtime.input.down && !swimUp) vforce = PHYS_FLYFORCE;
 
+        // C++: move_swimming called once per tick.
+        // In our multi-tick loop, force is applied each tick (held keys = continuous)
+        // matching C++ where PlayerFlyState::update sets force every frame.
         for (let t = 0; t < numTicks; t++) {
-          let hacc = hforceTick;
-          let vacc = vforceTick;
+          let hacc = hforce;
+          let vacc = vforce;
           hacc -= PHYS_SWIMFRICTION * hspeedTick;
           vacc -= PHYS_SWIMFRICTION * vspeedTick;
           vacc += PHYS_SWIMGRAVFORCE;
@@ -2367,8 +2378,9 @@ function updatePlayer(dt) {
           vspeedTick += vacc;
         }
 
-        if (Math.abs(hspeedTick) < PHYS_HSPEED_DEADZONE && hforceTick === 0) hspeedTick = 0;
-        if (Math.abs(vspeedTick) < PHYS_HSPEED_DEADZONE && vforceTick === 0) vspeedTick = 0;
+        // C++ deadzone: zero speed when no force applied and speed < 0.1
+        if (hforce === 0 && Math.abs(hspeedTick) < 0.1) hspeedTick = 0;
+        if (vforce === 0 && Math.abs(vspeedTick) < 0.1) vspeedTick = 0;
 
         player.vx = hspeedTick * PHYS_TPS;
         player.vy = vspeedTick * PHYS_TPS;
@@ -3534,7 +3546,7 @@ async function loadMap(mapId, spawnPortalName = null, spawnFromPortalTransfer = 
     setStatus(`Loaded map ${runtime.mapId}. Click/hover canvas to control. Controls: ←/→ move, Space jump, ↑ grab rope, ↑/↓ climb, ↓ crouch, Enter to chat.`);
     addSystemChatMessage(`[Welcome] Loaded map ${runtime.mapId}. Press Enter to chat.`);
     if (runtime.map?.swim) {
-      addSystemChatMessage(`[Info] This is a swim map. Use arrow keys or Space to swim.`);
+      addSystemChatMessage(`[Info] This is a water environment. Use arrow keys or Space to swim when airborne.`);
     }
   } catch (error) {
     if (loadToken === runtime.mapLoadToken) {
