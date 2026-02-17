@@ -1206,6 +1206,21 @@ function clampCameraXToMapBounds(map, desiredCenterX) {
   return (footholdMinX + footholdMaxX) / 2;
 }
 
+function clampCameraYToMapBounds(map, desiredCenterY) {
+  const mapMinY = map.bounds.minY;
+  const mapMaxY = map.bounds.maxY;
+  const halfHeight = canvasEl.height / 2;
+
+  const minCenterY = mapMinY + halfHeight;
+  const maxCenterY = mapMaxY - halfHeight;
+
+  if (minCenterY <= maxCenterY) {
+    return Math.max(minCenterY, Math.min(maxCenterY, desiredCenterY));
+  }
+
+  return (mapMinY + mapMaxY) / 2;
+}
+
 function portalMomentumEase(t) {
   const x = Math.max(0, Math.min(1, t));
   return x * x * x * (x * (x * 6 - 15) + 10);
@@ -2408,6 +2423,7 @@ function updateCamera(dt) {
     runtime.camera.x = scroll.startX + (scroll.targetX - scroll.startX) * easedT;
     runtime.camera.y = scroll.startY + (scroll.targetY - scroll.startY) * easedT;
     runtime.camera.x = clampCameraXToMapBounds(runtime.map, runtime.camera.x);
+    runtime.camera.y = clampCameraYToMapBounds(runtime.map, runtime.camera.y);
 
     if (t >= 1) {
       runtime.camera.x = scroll.targetX;
@@ -2425,6 +2441,7 @@ function updateCamera(dt) {
   runtime.camera.x += (targetX - runtime.camera.x) * smoothing;
   runtime.camera.y += (targetY - runtime.camera.y) * smoothing;
   runtime.camera.x = clampCameraXToMapBounds(runtime.map, runtime.camera.x);
+  runtime.camera.y = clampCameraYToMapBounds(runtime.map, runtime.camera.y);
 }
 
 function drawScreenImage(image, x, y, flipped) {
@@ -2993,20 +3010,6 @@ function roundRect(context, x, y, width, height, radius) {
   context.closePath();
 }
 
-function clipBelowMapBottom() {
-  if (!runtime.map) return;
-
-  const bottomY = runtime.map.bounds.maxY;
-  const screen = worldToScreen(0, bottomY);
-
-  if (screen.y < canvasEl.height) {
-    ctx.save();
-    ctx.fillStyle = "#000";
-    ctx.fillRect(0, screen.y, canvasEl.width, canvasEl.height - screen.y);
-    ctx.restore();
-  }
-}
-
 function drawHud() {
   if (!runtime.map) return;
 
@@ -3094,7 +3097,6 @@ function render() {
     drawLifeMarkers();
   }
   drawBackgroundLayer(1);
-  clipBelowMapBottom();
   drawChatBubble();
   drawHud();
   drawTransitionOverlay();
