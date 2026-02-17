@@ -52,8 +52,8 @@ const PHYS_CLIMB_ACTION_DELAY_MS = 200;
 const PHYS_SWIMGRAVFORCE = 0.03;
 const PHYS_SWIMFRICTION = 0.08;
 const PHYS_FLYFORCE = 0.25;
-const PHYS_DEFAULT_SPEED_STAT = 125;
-const PHYS_DEFAULT_JUMP_STAT = 120;
+const PHYS_DEFAULT_SPEED_STAT = 115;
+const PHYS_DEFAULT_JUMP_STAT = 110;
 const HIDDEN_PORTAL_REVEAL_DELAY_MS = 500;
 const HIDDEN_PORTAL_FADE_IN_MS = 400;
 const PORTAL_SPAWN_Y_OFFSET = 24;
@@ -2295,7 +2295,7 @@ function updatePlayer(dt) {
       player.vy = 0;
 
       if (map.swim && jumpRequested) {
-        // Swim maps: Space detaches from ground and enters swim (no normal jump)
+        // Water environment: Space detaches from ground into water (no normal jump)
         player.onGround = false;
         player.footholdId = null;
       } else if (jumpRequested) {
@@ -2339,18 +2339,16 @@ function updatePlayer(dt) {
       }
     }
 
-    if (!player.onGround && !player.climbing) {
+    if (!player.onGround) {
       let hspeedTick = player.vx / PHYS_TPS;
       let vspeedTick = player.vy / PHYS_TPS;
 
-      if (map.swim) {
-        // ── C++ PlayerFlyState::update (SWIM) ──
-        // Applies flyforce in pressed directions, then move_swimming physics.
-        // FallState::update_state transitions to SWIM when !onground && underwater.
+      if (map.swim && !player.climbing) {
+        // ── Water environment: C++ Physics::move_swimming ──
+        // PlayerFlyState sets hforce/vforce from directional input,
+        // then move_swimming applies friction + weak gravity.
         player.swimming = true;
 
-        // PlayerFlyState::update — set hforce/vforce from directional input
-        // Space also acts as swim-up on swim maps
         let hforceTick = 0;
         let vforceTick = 0;
         if (runtime.input.left && !runtime.input.right) hforceTick = -PHYS_FLYFORCE;
@@ -2359,7 +2357,6 @@ function updatePlayer(dt) {
         if (swimUp && !runtime.input.down) vforceTick = -PHYS_FLYFORCE;
         else if (runtime.input.down && !swimUp) vforceTick = PHYS_FLYFORCE;
 
-        // Physics::move_swimming per-tick integration
         for (let t = 0; t < numTicks; t++) {
           let hacc = hforceTick;
           let vacc = vforceTick;
@@ -2370,24 +2367,22 @@ function updatePlayer(dt) {
           vspeedTick += vacc;
         }
 
-        // Deadzone: stop near-zero speeds when no force applied
         if (Math.abs(hspeedTick) < PHYS_HSPEED_DEADZONE && hforceTick === 0) hspeedTick = 0;
         if (Math.abs(vspeedTick) < PHYS_HSPEED_DEADZONE && vforceTick === 0) vspeedTick = 0;
 
         player.vx = hspeedTick * PHYS_TPS;
         player.vy = vspeedTick * PHYS_TPS;
       } else {
-        // ── C++ PlayerFallState::update + move_normal (airborne) ──
-        // Normal gravity, directional air brake only.
+        // ── Normal airborne: C++ move_normal (not on ground) ──
+        // Original pre-swim physics restored exactly.
         player.swimming = false;
 
-        for (let t = 0; t < numTicks; t++) {
-          // PlayerFallState::update — counter-directional brake
-          if (effectiveMove < 0 && hspeedTick > 0) hspeedTick -= PHYS_FALL_BRAKE;
-          else if (effectiveMove > 0 && hspeedTick < 0) hspeedTick += PHYS_FALL_BRAKE;
+        vspeedTick += PHYS_GRAVFORCE * numTicks;
 
-          // Physics::move_normal airborne — only gravity
-          vspeedTick += PHYS_GRAVFORCE;
+        if (effectiveMove < 0 && hspeedTick > 0) {
+          hspeedTick -= PHYS_FALL_BRAKE * numTicks;
+        } else if (effectiveMove > 0 && hspeedTick < 0) {
+          hspeedTick += PHYS_FALL_BRAKE * numTicks;
         }
 
         player.vx = hspeedTick * PHYS_TPS;
