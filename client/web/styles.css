@@ -118,41 +118,42 @@ button {
 /* ── Chat log (history overlay) ── */
 .chat-log {
   position: absolute;
-  bottom: 38px;
+  bottom: 0;
   left: 0;
-  width: 340px;
-  max-height: 220px;
+  right: 0;
+  height: 140px;
+  min-height: 48px;
   z-index: 15;
-  pointer-events: none;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
-  transition: max-height 0.2s ease, background 0.2s ease;
-}
-
-.chat-log.expanded {
-  max-height: 400px;
-  pointer-events: auto;
   background: rgba(0, 0, 0, 0.55);
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  border-top-right-radius: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.10);
+  pointer-events: auto;
 }
 
-.chat-log.collapsed {
-  max-height: 220px;
-}
-
-/* When chat bar is hidden, nudge log to bottom */
-.chat-log.collapsed {
-  bottom: 0;
-  mask-image: linear-gradient(to bottom, transparent, black 30%);
-  -webkit-mask-image: linear-gradient(to bottom, transparent, black 30%);
-}
-
-/* When chat bar is visible, sit above it */
-.chat-log.expanded {
+/* When chat bar is open, sit above it */
+.chat-log.with-bar {
   bottom: 38px;
+}
+
+/* Drag handle at top edge for vertical resize */
+.chat-log-handle {
+  height: 6px;
+  cursor: ns-resize;
+  flex-shrink: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-log-handle::after {
+  content: "";
+  display: block;
+  width: 36px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.22);
 }
 
 .chat-log-messages {

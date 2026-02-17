@@ -11,6 +11,7 @@ const chatBarEl = document.getElementById("chat-bar");
 const chatInputEl = document.getElementById("chat-input");
 const chatLogEl = document.getElementById("chat-log");
 const chatLogMessagesEl = document.getElementById("chat-log-messages");
+const chatLogHandleEl = document.getElementById("chat-log-handle");
 const debugOverlayToggleEl = document.getElementById("debug-overlay-toggle");
 const debugRopesToggleEl = document.getElementById("debug-ropes-toggle");
 const debugFootholdsToggleEl = document.getElementById("debug-footholds-toggle");
@@ -43,8 +44,8 @@ const PHYS_FALL_SPEED_CAP = 670;
 const PHYS_MAX_LAND_SPEED = 162.5;
 const PHYS_ROPE_JUMP_HMULT = 8.0;
 const PHYS_ROPE_JUMP_VDIV = 1.5;
-const PHYS_DEFAULT_SPEED_STAT = 100;
-const PHYS_DEFAULT_JUMP_STAT = 100;
+const PHYS_DEFAULT_SPEED_STAT = 115;
+const PHYS_DEFAULT_JUMP_STAT = 110;
 const PORTAL_SPAWN_Y_OFFSET = 24;
 const PORTAL_FADE_OUT_MS = 180;
 const PORTAL_FADE_IN_MS = 240;
@@ -384,8 +385,7 @@ function applyStatInputChange() {
 function openChatInput() {
   runtime.chat.inputActive = true;
   chatBarEl?.classList.remove("hidden");
-  chatLogEl?.classList.add("expanded");
-  chatLogEl?.classList.remove("collapsed");
+  chatLogEl?.classList.add("with-bar");
   resetGameplayInput();
   if (chatInputEl) {
     chatInputEl.value = "";
@@ -396,8 +396,7 @@ function openChatInput() {
 function closeChatInput() {
   runtime.chat.inputActive = false;
   chatBarEl?.classList.add("hidden");
-  chatLogEl?.classList.remove("expanded");
-  chatLogEl?.classList.add("collapsed");
+  chatLogEl?.classList.remove("with-bar");
   resetGameplayInput();
   canvasEl.focus();
 }
@@ -465,6 +464,50 @@ function appendChatLogMessage(msg) {
   }
 
   chatLogMessagesEl.scrollTop = chatLogMessagesEl.scrollHeight;
+}
+
+const CHAT_LOG_HEIGHT_CACHE_KEY = "mapleweb.debug.chatLogHeight.v1";
+
+function initChatLogResize() {
+  if (!chatLogEl || !chatLogHandleEl) return;
+
+  const cached = localStorage.getItem(CHAT_LOG_HEIGHT_CACHE_KEY);
+  if (cached) {
+    const h = Number(cached);
+    if (Number.isFinite(h) && h >= 48) {
+      chatLogEl.style.height = h + "px";
+    }
+  }
+
+  let dragging = false;
+  let startY = 0;
+  let startHeight = 0;
+
+  chatLogHandleEl.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    dragging = true;
+    startY = e.clientY;
+    startHeight = chatLogEl.offsetHeight;
+    chatLogHandleEl.setPointerCapture(e.pointerId);
+  });
+
+  window.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    const wrapperRect = chatLogEl.parentElement?.getBoundingClientRect();
+    if (!wrapperRect) return;
+    const maxH = Math.floor(wrapperRect.height * 0.75);
+    const delta = startY - e.clientY;
+    const newH = Math.max(48, Math.min(maxH, startHeight + delta));
+    chatLogEl.style.height = newH + "px";
+  });
+
+  window.addEventListener("pointerup", (e) => {
+    if (!dragging) return;
+    dragging = false;
+    try {
+      localStorage.setItem(CHAT_LOG_HEIGHT_CACHE_KEY, String(chatLogEl.offsetHeight));
+    } catch { /* ignore */ }
+  });
 }
 
 function resetGameplayInput() {
@@ -3471,6 +3514,7 @@ audioEnableButtonEl.addEventListener("click", async () => {
 
 initializeTeleportPresetInputs();
 initializeStatInputs();
+initChatLogResize();
 bindCanvasResizeHandling();
 bindInput();
 requestAnimationFrame(tick);
