@@ -92,7 +92,8 @@ button {
 
 .chat-bar.inactive input {
   opacity: 0.4;
-  pointer-events: none;
+  cursor: default;
+  caret-color: transparent;
 }
 
 .chat-bar input {

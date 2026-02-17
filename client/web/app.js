@@ -3472,6 +3472,13 @@ chatInputEl?.addEventListener("blur", () => {
   }
 });
 
+chatInputEl?.addEventListener("mousedown", (e) => {
+  if (!runtime.chat.inputActive) {
+    e.preventDefault();
+    openChatInput();
+  }
+});
+
 for (const toggle of [debugOverlayToggleEl, debugRopesToggleEl, debugFootholdsToggleEl, debugLifeToggleEl]) {
   if (!toggle) continue;
   toggle.addEventListener("change", () => {
