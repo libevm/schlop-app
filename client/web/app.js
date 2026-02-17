@@ -13,6 +13,8 @@ const debugOverlayToggleEl = document.getElementById("debug-overlay-toggle");
 const debugRopesToggleEl = document.getElementById("debug-ropes-toggle");
 const debugFootholdsToggleEl = document.getElementById("debug-footholds-toggle");
 const debugLifeToggleEl = document.getElementById("debug-life-toggle");
+const statSpeedInputEl = document.getElementById("stat-speed-input");
+const statJumpInputEl = document.getElementById("stat-jump-input");
 const audioEnableButtonEl = document.getElementById("audio-enable-button");
 const canvasEl = document.getElementById("map-canvas");
 const ctx = canvasEl.getContext("2d");
@@ -26,12 +28,21 @@ const soundDataUriCache = new Map();
 const soundDataPromiseCache = new Map();
 
 const FACE_ANIMATION_SPEED = 1.6;
-const CPP_GROUND_FRICTION = 0.5;
-const CPP_SLOPE_FACTOR = 0.1;
-const CPP_GROUND_SLIP = 3.0;
-const SLOPE_LANDING_MAX_VERTICAL_SPEED = 162.5;
-const SLOPE_LANDING_PUSH_MAX_ABS = 140;
-const SLOPE_LANDING_PUSH_DECAY_PER_SEC = 10;
+
+// C++ HeavenClient physics constants (per-tick units, TIMESTEP = 8ms)
+const PHYS_TPS = 125;
+const PHYS_GRAVFORCE = 0.14;
+const PHYS_FRICTION = 0.5;
+const PHYS_SLOPEFACTOR = 0.1;
+const PHYS_GROUNDSLIP = 3.0;
+const PHYS_FALL_BRAKE = 0.025;
+const PHYS_HSPEED_DEADZONE = 0.1;
+const PHYS_FALL_SPEED_CAP = 670;
+const PHYS_MAX_LAND_SPEED = 162.5;
+const PHYS_ROPE_JUMP_HMULT = 8.0;
+const PHYS_ROPE_JUMP_VDIV = 1.5;
+const PHYS_DEFAULT_SPEED_STAT = 100;
+const PHYS_DEFAULT_JUMP_STAT = 100;
 const PORTAL_SPAWN_Y_OFFSET = 24;
 const PORTAL_FADE_OUT_MS = 180;
 const PORTAL_FADE_IN_MS = 240;
@@ -59,7 +70,6 @@ const runtime = {
     y: 0,
     vx: 0,
     vy: 0,
-    landingSlopePushVx: 0,
     onGround: false,
     climbing: false,
     climbRope: null,
@@ -78,6 +88,10 @@ const runtime = {
     frameTimer: 0,
     bubbleText: "",
     bubbleExpiresAt: 0,
+    stats: {
+      speed: PHYS_DEFAULT_SPEED_STAT,
+      jump: PHYS_DEFAULT_JUMP_STAT,
+    },
   },
   input: {
     enabled: false,
@@ -270,7 +284,6 @@ function applyManualTeleport(x, y) {
   player.y = y;
   player.vx = 0;
   player.vy = 0;
-  player.landingSlopePushVx = 0;
   player.climbing = false;
   player.climbRope = null;
   player.climbCooldownUntil = 0;
@@ -308,6 +321,57 @@ function initializeTeleportPresetInputs() {
 
   teleportXInputEl.value = String(Math.round(cached.x));
   teleportYInputEl.value = String(Math.round(cached.y));
+}
+
+const STAT_CACHE_KEY = "mapleweb.debug.playerStats.v1";
+
+function loadCachedPlayerStats() {
+  try {
+    const raw = localStorage.getItem(STAT_CACHE_KEY);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+    const speed = Number(parsed?.speed);
+    const jump = Number(parsed?.jump);
+    if (!Number.isFinite(speed) || !Number.isFinite(jump)) return null;
+
+    return { speed, jump };
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedPlayerStats(speed, jump) {
+  try {
+    localStorage.setItem(STAT_CACHE_KEY, JSON.stringify({ speed, jump }));
+  } catch {
+    // ignore
+  }
+}
+
+function initializeStatInputs() {
+  const cached = loadCachedPlayerStats();
+  const speed = cached?.speed ?? PHYS_DEFAULT_SPEED_STAT;
+  const jump = cached?.jump ?? PHYS_DEFAULT_JUMP_STAT;
+
+  runtime.player.stats.speed = speed;
+  runtime.player.stats.jump = jump;
+
+  if (statSpeedInputEl) statSpeedInputEl.value = String(speed);
+  if (statJumpInputEl) statJumpInputEl.value = String(jump);
+}
+
+function applyStatInputChange() {
+  const speed = Number(statSpeedInputEl?.value ?? PHYS_DEFAULT_SPEED_STAT);
+  const jump = Number(statJumpInputEl?.value ?? PHYS_DEFAULT_JUMP_STAT);
+
+  const clampedSpeed = Number.isFinite(speed) ? Math.max(0, Math.min(250, Math.round(speed))) : PHYS_DEFAULT_SPEED_STAT;
+  const clampedJump = Number.isFinite(jump) ? Math.max(0, Math.min(250, Math.round(jump))) : PHYS_DEFAULT_JUMP_STAT;
+
+  runtime.player.stats.speed = clampedSpeed;
+  runtime.player.stats.jump = clampedJump;
+
+  saveCachedPlayerStats(clampedSpeed, clampedJump);
 }
 
 function resetGameplayInput() {
@@ -1044,7 +1108,6 @@ function movePlayerToPortalInCurrentMap(targetPortalName) {
   }
 
   player.vx = 0;
-  player.landingSlopePushVx = 0;
   player.climbing = false;
   player.climbRope = null;
   player.downJumpIgnoreFootholdId = null;
@@ -1695,40 +1758,30 @@ function footholdSlope(foothold) {
   return (foothold.y2 - foothold.y1) / dx;
 }
 
-function applyCppGroundSlopeDrag(hspeed, slope) {
-  const slopef = Math.max(-0.5, Math.min(0.5, slope));
-  const inertia = hspeed / CPP_GROUND_SLIP;
-  const hacc = -(CPP_GROUND_FRICTION + CPP_SLOPE_FACTOR * (1 + slopef * -inertia)) * inertia;
-  return hspeed + hacc;
+function playerWalkforce() {
+  return 0.05 + 0.11 * runtime.player.stats.speed / 100;
 }
 
-function applySlopeJumpTakeoffVelocity(hspeed, slope, moveDir) {
-  const slopef = Math.max(-0.5, Math.min(0.5, slope));
-  let next = applyCppGroundSlopeDrag(hspeed, slopef);
+function playerJumpforce() {
+  return 1.0 + 3.5 * runtime.player.stats.jump / 100;
+}
 
-  if (Math.abs(moveDir) < 0.01 && Math.abs(next) < 14 && Math.abs(slopef) > 0.01) {
-    next += slopef * 120;
+function playerClimbforce() {
+  return runtime.player.stats.speed / 100;
+}
+
+function applyGroundPhysics(hspeedTick, hforceTick, slope, numTicks) {
+  let hacc = hforceTick;
+
+  if (hacc === 0 && Math.abs(hspeedTick) < PHYS_HSPEED_DEADZONE) {
+    return 0;
   }
 
-  return next;
-}
+  const inertia = hspeedTick / PHYS_GROUNDSLIP;
+  const slopef = Math.max(-0.5, Math.min(0.5, slope));
+  hacc -= (PHYS_FRICTION + PHYS_SLOPEFACTOR * (1 + slopef * -inertia)) * inertia;
 
-function slopeLandingPushDeltaVx(incomingVx, incomingVy, foothold) {
-  if (!foothold || isWallFoothold(foothold)) return 0;
-
-  const fx = foothold.x2 - foothold.x1;
-  const fy = foothold.y2 - foothold.y1;
-  const len = Math.hypot(fx, fy);
-  if (len < 0.01) return 0;
-
-  const tx = fx / len;
-  const ty = fy / len;
-
-  const cappedVy = Math.min(Math.max(0, incomingVy), SLOPE_LANDING_MAX_VERTICAL_SPEED);
-  const tangentSpeed = incomingVx * tx + cappedVy * ty;
-  const projectedVx = tangentSpeed * tx;
-
-  return projectedVx - incomingVx;
+  return hspeedTick + hacc * numTicks;
 }
 
 function groundYOnFoothold(foothold, x) {
@@ -1775,14 +1828,19 @@ function resolveFootholdForX(map, foothold, x) {
   return { foothold: current, x: resolvedX };
 }
 
+function climbDownAttachTolerancePx() {
+  return Math.max(20, Math.round(runtime.standardCharacterWidth * 0.33));
+}
+
 function ladderInRange(rope, x, y, upwards) {
   const y1 = Math.min(rope.y1, rope.y2);
   const y2 = Math.max(rope.y1, rope.y2);
   const yProbe = upwards ? y - 5 : y + 5;
 
-  const horizontalMargin = upwards ? 12 : 20;
-  const topBuffer = upwards ? 0 : 18;
-  const bottomBuffer = upwards ? 0 : 12;
+  const climbDownTolerance = climbDownAttachTolerancePx();
+  const horizontalMargin = upwards ? 12 : climbDownTolerance;
+  const topBuffer = upwards ? 0 : climbDownTolerance;
+  const bottomBuffer = upwards ? 0 : Math.max(12, Math.round(climbDownTolerance * 0.5));
 
   return (
     Math.abs(x - rope.x) <= horizontalMargin &&
@@ -1828,7 +1886,7 @@ function updatePlayer(dt) {
 
   const move = (runtime.input.left ? -1 : 0) + (runtime.input.right ? 1 : 0);
   const climbDir = (runtime.input.up ? -1 : 0) + (runtime.input.down ? 1 : 0);
-  const jumpRequested = runtime.input.jumpQueued;
+  const jumpRequested = runtime.input.jumpQueued || runtime.input.jumpHeld;
   runtime.input.jumpQueued = false;
 
   const nowMs = performance.now();
@@ -1838,7 +1896,12 @@ function updatePlayer(dt) {
   const wantsClimbUp = runtime.input.up && !runtime.input.down;
   const wantsClimbDown = runtime.input.down;
 
-  const crouchRequested = runtime.input.down && player.onGround && !player.climbing;
+  const downAttachCandidate = wantsClimbDown
+    ? findAttachableRope(map, player.x, player.y, false)
+    : null;
+  const prioritizeDownAttach = !!downAttachCandidate && wantsClimbDown && player.onGround;
+
+  const crouchRequested = runtime.input.down && player.onGround && !player.climbing && !prioritizeDownAttach;
   const downJumpMovementLocked = player.downJumpControlLock && !player.onGround;
   const effectiveMove = crouchRequested || downJumpMovementLocked ? 0 : move;
 
@@ -1846,16 +1909,18 @@ function updatePlayer(dt) {
     player.facing = effectiveMove > 0 ? 1 : -1;
   }
 
-  if (!player.climbing && (!climbOnCooldown || canReattachMidAir)) {
+  const allowClimbAttachNow = !climbOnCooldown || canReattachMidAir || prioritizeDownAttach;
+  if (!player.climbing && allowClimbAttachNow) {
     const rope = wantsClimbUp
       ? findAttachableRope(map, player.x, player.y, true)
       : wantsClimbDown
-        ? findAttachableRope(map, player.x, player.y, false)
+        ? downAttachCandidate
         : null;
 
     const blockedByReattachLock =
       !!rope &&
       reattachLocked &&
+      !prioritizeDownAttach &&
       player.reattachLockRopeKey !== null &&
       rope.key === player.reattachLockRopeKey;
 
@@ -1865,7 +1930,6 @@ function updatePlayer(dt) {
       player.x = climbSnapX(rope);
       player.vx = 0;
       player.vy = 0;
-      player.landingSlopePushVx = 0;
       player.onGround = false;
       player.footholdId = null;
     }
@@ -1881,9 +1945,8 @@ function updatePlayer(dt) {
 
       player.climbing = false;
       player.climbRope = null;
-      player.vy = -360;
-      player.vx = move * 190;
-      player.landingSlopePushVx = 0;
+      player.vy = -(playerJumpforce() / PHYS_ROPE_JUMP_VDIV) * PHYS_TPS;
+      player.vx = move * playerWalkforce() * PHYS_ROPE_JUMP_HMULT * PHYS_TPS;
       player.onGround = false;
       player.footholdId = null;
       player.downJumpIgnoreFootholdId = null;
@@ -1896,7 +1959,7 @@ function updatePlayer(dt) {
       playSfx("Game", "Jump");
     } else {
       const rope = player.climbRope;
-      const climbSpeed = 130;
+      const climbSpeed = playerClimbforce() * PHYS_TPS;
 
       const movingUp = runtime.input.up && !runtime.input.down;
       const movingDown = runtime.input.down && !runtime.input.up;
@@ -1905,13 +1968,18 @@ function updatePlayer(dt) {
       player.y += (movingDown ? 1 : movingUp ? -1 : 0) * climbSpeed * dt;
       player.vx = 0;
       player.vy = movingDown ? climbSpeed : movingUp ? -climbSpeed : 0;
-      player.landingSlopePushVx = 0;
       player.onGround = false;
 
       if (ladderFellOff(rope, player.y, movingDown)) {
+        const ropeTopY = Math.min(rope.y1, rope.y2);
+        const exitedFromTop = !movingDown && player.y + 5 < ropeTopY;
+        const topExitFoothold = exitedFromTop
+          ? findFootholdAtXNearY(map, player.x, ropeTopY, 24)
+          : null;
+        const canSnapToTopFoothold = !!topExitFoothold && !isWallFoothold(topExitFoothold.line);
+
         player.climbing = false;
         player.climbRope = null;
-        player.footholdId = null;
         player.downJumpIgnoreFootholdId = null;
         player.downJumpIgnoreUntil = 0;
         player.downJumpControlLock = false;
@@ -1919,83 +1987,100 @@ function updatePlayer(dt) {
         player.reattachLockRopeKey = rope.key ?? null;
         player.reattachLockUntil = nowMs + 200;
         player.climbCooldownUntil = nowMs + 1000;
+
+        if (canSnapToTopFoothold) {
+          player.y = topExitFoothold.y;
+          player.vx = 0;
+          player.vy = 0;
+          player.onGround = true;
+          player.footholdId = topExitFoothold.line.id;
+          player.footholdLayer = topExitFoothold.line.layer;
+        } else {
+          if (exitedFromTop) {
+            player.y = Math.max(player.y, ropeTopY - 5);
+          }
+          player.onGround = false;
+          player.footholdId = null;
+        }
       }
     }
   }
 
   if (!player.climbing) {
-    if (Math.abs(player.landingSlopePushVx) > 0.001) {
-      const decay = Math.max(0, 1 - SLOPE_LANDING_PUSH_DECAY_PER_SEC * dt);
-      player.landingSlopePushVx *= decay;
-      if (Math.abs(player.landingSlopePushVx) < 0.3) {
-        player.landingSlopePushVx = 0;
-      }
-    }
-
-    player.vx = effectiveMove * 190 + player.landingSlopePushVx;
+    const numTicks = dt * PHYS_TPS;
 
     const currentFoothold =
       findFootholdById(map, player.footholdId) ??
       findFootholdBelow(map, player.x, player.y)?.line;
 
-    if (jumpRequested && player.onGround) {
-      const footholdGround =
-        currentFoothold && !isWallFoothold(currentFoothold)
-          ? groundYOnFoothold(currentFoothold, player.x)
-          : player.y;
+    const slope = currentFoothold && !isWallFoothold(currentFoothold)
+      ? footholdSlope(currentFoothold)
+      : 0;
 
-      const downJumpRequested = runtime.input.down;
-      if (downJumpRequested) {
-        player.vx = 0;
-      }
+    if (player.onGround) {
+      const hforceTick = effectiveMove * playerWalkforce();
+      let hspeedTick = player.vx / PHYS_TPS;
 
-      const belowFoothold = downJumpRequested
-        ? findFootholdBelow(map, player.x, footholdGround + 1, currentFoothold?.id ?? null)
-        : null;
+      hspeedTick = applyGroundPhysics(hspeedTick, hforceTick, slope, numTicks);
 
-      const canDownJump =
-        !!currentFoothold &&
-        !!belowFoothold &&
-        (belowFoothold.y - footholdGround) < 600;
+      player.vx = hspeedTick * PHYS_TPS;
+      player.vy = 0;
 
-      if (downJumpRequested && canDownJump) {
-        player.y = footholdGround + 1;
-        player.vy = -190;
-        player.vx = 0;
-        player.landingSlopePushVx = 0;
-        player.onGround = false;
-        player.downJumpIgnoreFootholdId = currentFoothold.id;
-        player.downJumpIgnoreUntil = nowMs + 260;
-        player.downJumpControlLock = true;
-        player.downJumpTargetFootholdId = belowFoothold.line.id;
-        player.footholdId = null;
-        playSfx("Game", "Jump");
-      } else if (!downJumpRequested) {
-        if (currentFoothold && !isWallFoothold(currentFoothold)) {
-          const slope = footholdSlope(currentFoothold);
-          if (Math.abs(slope) > 0.0001) {
-            player.vx = applySlopeJumpTakeoffVelocity(player.vx, slope, move);
-          }
+      if (jumpRequested) {
+        const footholdGround =
+          currentFoothold && !isWallFoothold(currentFoothold)
+            ? groundYOnFoothold(currentFoothold, player.x)
+            : player.y;
+
+        const downJumpRequested = runtime.input.down;
+
+        const belowFoothold = downJumpRequested
+          ? findFootholdBelow(map, player.x, footholdGround + 1, currentFoothold?.id ?? null)
+          : null;
+
+        const canDownJump =
+          !!currentFoothold &&
+          !!belowFoothold &&
+          (belowFoothold.y - footholdGround) < 600;
+
+        if (downJumpRequested && canDownJump) {
+          player.y = footholdGround + 1;
+          player.vx = 0;
+          player.vy = 0;
+          player.onGround = false;
+          player.downJumpIgnoreFootholdId = currentFoothold.id;
+          player.downJumpIgnoreUntil = nowMs + 260;
+          player.downJumpControlLock = true;
+          player.downJumpTargetFootholdId = belowFoothold.line.id;
+          player.footholdId = null;
+          playSfx("Game", "Jump");
+        } else if (!downJumpRequested) {
+          player.vy = -playerJumpforce() * PHYS_TPS;
+          player.onGround = false;
+          player.downJumpIgnoreFootholdId = null;
+          player.downJumpIgnoreUntil = 0;
+          player.downJumpControlLock = false;
+          player.downJumpTargetFootholdId = null;
+          player.footholdId = null;
+          playSfx("Game", "Jump");
         }
-
-        player.vy = -540;
-        player.landingSlopePushVx = 0;
-        player.onGround = false;
-        player.downJumpIgnoreFootholdId = null;
-        player.downJumpIgnoreUntil = 0;
-        player.downJumpControlLock = false;
-        player.downJumpTargetFootholdId = null;
-        player.footholdId = null;
-        playSfx("Game", "Jump");
-      } else {
-        player.vy = 0;
-        player.onGround = true;
-        player.y = footholdGround;
-        player.downJumpIgnoreFootholdId = null;
-        player.downJumpIgnoreUntil = 0;
-        player.downJumpControlLock = false;
-        player.downJumpTargetFootholdId = null;
       }
+    }
+
+    if (!player.onGround) {
+      let hspeedTick = player.vx / PHYS_TPS;
+      let vspeedTick = player.vy / PHYS_TPS;
+
+      vspeedTick += PHYS_GRAVFORCE * numTicks;
+
+      if (effectiveMove < 0 && hspeedTick > 0) {
+        hspeedTick -= PHYS_FALL_BRAKE * numTicks;
+      } else if (effectiveMove > 0 && hspeedTick < 0) {
+        hspeedTick += PHYS_FALL_BRAKE * numTicks;
+      }
+
+      player.vx = hspeedTick * PHYS_TPS;
+      player.vy = Math.min(vspeedTick * PHYS_TPS, PHYS_FALL_SPEED_CAP);
     }
 
     let horizontalApplied = false;
@@ -2034,7 +2119,6 @@ function updatePlayer(dt) {
       const oldX = player.x;
       const oldY = player.y;
 
-      player.vy += 1700 * dt;
       const nextY = oldY + player.vy * dt;
 
       if (!horizontalApplied) {
@@ -2058,16 +2142,19 @@ function updatePlayer(dt) {
           ? findGroundLanding(oldX, oldY, player.x, player.y, map, ignoredFootholdId)
           : null;
       if (landing) {
-        const landingPushDelta = slopeLandingPushDeltaVx(player.vx, player.vy, landing.line);
+        const fhx = landing.line.x2 - landing.line.x1;
+        const fhy = landing.line.y2 - landing.line.y1;
+        const fhLenSq = fhx * fhx + fhy * fhy;
+
+        if (fhLenSq > 0.01 && Math.abs(fhx) > 0.01) {
+          const cappedVy = Math.min(player.vy, PHYS_MAX_LAND_SPEED);
+          const dot = (player.vx * fhx + cappedVy * fhy) / fhLenSq;
+          player.vx = dot * fhx;
+        }
 
         player.y = landing.y;
         player.footholdId = landing.line.id;
         player.footholdLayer = landing.line.layer;
-        player.landingSlopePushVx = Math.max(
-          -SLOPE_LANDING_PUSH_MAX_ABS,
-          Math.min(SLOPE_LANDING_PUSH_MAX_ABS, landingPushDelta),
-        );
-        player.vx = effectiveMove * 190 + player.landingSlopePushVx;
         player.vy = 0;
         player.onGround = true;
         player.downJumpIgnoreFootholdId = null;
@@ -2088,7 +2175,6 @@ function updatePlayer(dt) {
     player.y = spawn ? spawn.y : 0;
     player.vx = 0;
     player.vy = 0;
-    player.landingSlopePushVx = 0;
     player.onGround = false;
     player.climbing = false;
     player.climbRope = null;
@@ -2860,9 +2946,15 @@ function updateSummary() {
       action: runtime.player.action,
       footholdLayer: runtime.player.footholdLayer,
       renderLayer: currentPlayerRenderLayer(),
-      landingSlopePushVx: Number(runtime.player.landingSlopePushVx.toFixed(2)),
       downJumpControlLock: runtime.player.downJumpControlLock,
       downJumpTargetFootholdId: runtime.player.downJumpTargetFootholdId,
+      stats: {
+        speed: runtime.player.stats.speed,
+        jump: runtime.player.stats.jump,
+        walkforce: Number(playerWalkforce().toFixed(4)),
+        jumpforce: Number(playerJumpforce().toFixed(4)),
+        climbforce: Number(playerClimbforce().toFixed(4)),
+      },
     },
     audio: {
       unlocked: runtime.audioUnlocked,
@@ -3055,7 +3147,6 @@ async function loadMap(mapId, spawnPortalName = null, spawnFromPortalTransfer = 
       : 0;
     runtime.player.vx = 0;
     runtime.player.vy = 0;
-    runtime.player.landingSlopePushVx = 0;
     runtime.player.onGround = false;
     runtime.player.climbing = false;
     runtime.player.climbRope = null;
@@ -3228,6 +3319,11 @@ copySummaryButtonEl?.addEventListener("click", () => {
   void copyRuntimeSummaryToClipboard();
 });
 
+statSpeedInputEl?.addEventListener("change", () => applyStatInputChange());
+statJumpInputEl?.addEventListener("change", () => applyStatInputChange());
+statSpeedInputEl?.addEventListener("input", () => applyStatInputChange());
+statJumpInputEl?.addEventListener("input", () => applyStatInputChange());
+
 summaryEl?.addEventListener("pointerdown", () => {
   runtimeSummaryPointerSelecting = true;
 });
@@ -3251,6 +3347,7 @@ audioEnableButtonEl.addEventListener("click", async () => {
 });
 
 initializeTeleportPresetInputs();
+initializeStatInputs();
 bindCanvasResizeHandling();
 bindInput();
 requestAnimationFrame(tick);

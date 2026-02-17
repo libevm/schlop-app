@@ -28,6 +28,179 @@ The docs UI includes sidebar navigation for markdown files under `docs/`.
 
 ---
 
+## 2026-02-18 07:57 (GMT+11)
+### Summary
+- Slope landing tangent velocity projection: when landing on a sloped foothold, the incoming velocity vector is projected onto the foothold tangent. This converts downward momentum into horizontal push along the slope.
+
+### Files changed
+- `client/web/app.js`
+
+### Details
+- Reference: half-web port `Physics.ts` line 381 — `dot = (vx * fx + vy * fy) / (fx² + fy²); vx = dot * fx`
+- Before projection, downward velocity capped at `PHYS_MAX_LAND_SPEED = 162.5 px/s` (prevents extreme pushes at terminal fall speed)
+- Only applies to non-wall footholds (`|fhx| > 0.01`)
+- If player stands still after landing, grounded friction decays the push to zero
+- If player jumps immediately, the slope push carries into the air as horizontal momentum
+
+### Validation
+- `bun run ci` ✅, route smoke ✅
+
+## 2026-02-18 07:47 (GMT+11)
+### Summary
+- Complete physics rewrite to faithfully match C++ HeavenClient force/friction/gravity model. Removed all ad-hoc velocity constants and slope-push system.
+
+### Files changed
+- `client/web/app.js`
+
+### What was removed
+- Instant-speed ground walking (`effectiveMove * 190`)
+- Ad-hoc slope landing push system (`landingSlopePushVx`, `slopeLandingPushDeltaVx`, etc.)
+- Old friction helpers (`applyCppGroundSlopeDrag`, `applySlopeJumpTakeoffVelocity`)
+- Old air control helper (`applyCppFallHorizontalControl`, `AIR_OPPOSITE_DIRECTION_BRAKE_PER_SEC`)
+- Redundant gravity in position update step
+
+### What was added
+- C++ tick-space physics constants (`PHYS_TPS=125`, `PHYS_GRAVFORCE=0.14`, `PHYS_WALKFORCE=0.16`, `PHYS_JUMPFORCE=4.5`, etc.)
+- `applyGroundPhysics()` — C++ `move_normal` grounded friction/slope formula
+- Force-based walk (ramp up/down, max ~100px/s at 100% speed stat)
+- Jump impulse: -562.5 px/s (was -540)
+- Gravity: ~2187.5 px/s² (was 1700)
+- Air control: only opposing-direction nudge (~390 px/s²)
+- Down-jump: vy=0 (C++ style — just teleport y, let gravity fall)
+- Rope side-jump: 160 px/s horizontal, 375 px/s vertical
+- Terminal fall speed cap: 670 px/s
+- Landing preserves horizontal speed; friction decelerates naturally
+
+### Reference scan basis (read-only)
+- `MapleStory-Client/Gameplay/Physics/Physics.cpp` — `move_normal()`
+- `MapleStory-Client/Gameplay/Physics/PhysicsObject.h` — tick model
+- `MapleStory-Client/Character/PlayerStates.cpp` — walk/jump/fall/climb states
+- `MapleStory-Client/Character/Player.cpp` — walkforce/jumpforce formulas
+
+### Validation
+- Automated: `bun run ci` ✅
+- Manual route smoke: `CLIENT_WEB_PORT=5210 bun run client:web` + `/?mapId=104040000` returns 200 ✅
+
+## 2026-02-18 07:36 (GMT+11)
+### Summary
+- Refined airborne direction swap to match C++ fall behavior: reversal can cross into slight opposite velocity (not hard-clamped at zero).
+
+### Files changed
+- `client/web/app.js`
+
+### Functional updates
+- Updated `applyCppFallHorizontalControl(...)`:
+  - removed zero clamp during opposite-direction airborne braking
+  - applies signed braking delta directly
+- Result:
+  - midair opposite input can transition to slight opposite-direction speed after momentum bleed, instead of stopping at exactly zero.
+
+### Reference scan basis (read-only)
+- `MapleStory-Client/Character/PlayerStates.cpp` (`PlayerFallState::update`)
+
+### Validation
+- Automated: `bun run ci` ✅
+- Manual route smoke: `CLIENT_WEB_PORT=5210 bun run client:web` + `/?mapId=104040000` returns 200 ✅
+
+## 2026-02-18 07:35 (GMT+11)
+### Summary
+- Implemented non-instant midair direction reversal (C++-style fall behavior), tightened down-climb tolerance to `characterWidth * 0.33`, and fixed ladder top-out overshoot.
+
+### Files changed
+- `client/web/app.js`
+
+### Functional updates
+- Midair horizontal control:
+  - airborne movement no longer sets `vx` directly to input speed each frame
+  - opposite direction input now brakes horizontal speed toward zero first (no immediate full-speed inversion)
+- Ladder/rope top-out:
+  - when exiting upward, snaps to nearby top foothold if present, preventing lift above platform
+- Down-climb attach tuning:
+  - `climbDownAttachTolerancePx()` now uses `runtime.standardCharacterWidth * 0.33` (min 20)
+
+### Reference scan basis (read-only)
+- `MapleStory-Client/Character/PlayerStates.cpp` (`PlayerFallState::update`)
+- `MapleStory-Client/Gameplay/Physics/Physics.cpp`
+- `MapleWeb/TypeScript-Client/src/Physics.ts`
+
+### Validation
+- Automated: `bun run ci` ✅
+- Manual route smoke: `CLIENT_WEB_PORT=5210 bun run client:web` + `/?mapId=104040000` returns 200 ✅
+
+## 2026-02-18 07:28 (GMT+11)
+### Summary
+- Prioritized down-ladder attach so pressing Down near valid rope/ladder starts descent immediately instead of entering prone and waiting through cooldown.
+
+### Files changed
+- `client/web/app.js`
+
+### Functional updates
+- Added pre-check for down attach candidate before crouch handling.
+- If grounded + Down + valid ladder/rope:
+  - suppress prone request
+  - allow immediate climb attach even during climb cooldown
+  - ignore short reattach lock for this prioritized down-attach case
+
+### Validation
+- Automated: `bun run ci` ✅
+- Manual route smoke: `CLIENT_WEB_PORT=5210 bun run client:web` + `/?mapId=104040000` returns 200 ✅
+
+## 2026-02-18 07:26 (GMT+11)
+### Summary
+- Raised down-only ladder attach tolerance from half character width to full character width.
+
+### Files changed
+- `client/web/app.js`
+
+### Functional updates
+- `climbDownAttachTolerancePx()` now uses full standard character width.
+- Downward ladder attach remains broader; upward attach logic remains unchanged.
+
+### Validation
+- Automated: `bun run ci` ✅
+- Manual route smoke: `CLIENT_WEB_PORT=5210 bun run client:web` + `/?mapId=104040000` returns 200 ✅
+
+## 2026-02-18 07:25 (GMT+11)
+### Summary
+- Increased ladder attach tolerance when climbing **down** so players can start descent without perfect ladder-center alignment.
+
+### Files changed
+- `client/web/app.js`
+
+### Functional updates
+- Added `climbDownAttachTolerancePx()` (roughly half character width, min 20px).
+- Updated ladder attach range logic for down-only attach path:
+  - wider horizontal margin
+  - larger top buffer (easier to catch ladder from platform top)
+  - slightly increased bottom buffer
+- Upward climb attach behavior remains unchanged.
+
+### Validation
+- Automated: `bun run ci` ✅
+- Manual route smoke: `CLIENT_WEB_PORT=5210 bun run client:web` + `/?mapId=104040000` returns 200 ✅
+
+## 2026-02-18 07:23 (GMT+11)
+### Summary
+- Added held-key action repetition for jump: holding Space now repeatedly requests jump actions.
+
+### Files changed
+- `client/web/app.js`
+
+### Functional updates
+- `updatePlayer()` jump request now uses:
+  - `jumpQueued` (edge/tap)
+  - `jumpHeld` (continuous hold-repeat)
+- This enables hold-to-repeat behavior without requiring repeated key taps.
+
+### Reference scan basis (read-only)
+- `MapleWeb/TypeScript-Client/src/MapState.ts` (held key polling for jump)
+- `MapleWeb/TypeScript-Client/src/GameCanvas.ts` (pressed key state)
+- `MapleStory-Client/Character/PlayerStates.cpp`
+
+### Validation
+- Automated: `bun run ci` ✅
+- Manual route smoke: `CLIENT_WEB_PORT=5210 bun run client:web` + `/?mapId=104040000` returns 200 ✅
+
 ## 2026-02-18 07:19 (GMT+11)
 ### Summary
 - Added slope-landing push behavior so jumping onto slanted footholds nudges player along incline direction.
