@@ -28,6 +28,27 @@ The docs UI includes sidebar navigation for markdown files under `docs/`.
 
 ---
 
+## 2026-02-18 08:00 (GMT+11)
+### Summary
+- Player HUD: name label, HP/MP/EXP status bar, map name banner on map load
+
+### Player HUD
+- **Player name label**: dark tag below character sprite showing `player.name`
+- **Status bar**: centered at bottom of canvas
+  - Level + job label on left side
+  - HP (red) and MP (blue) gauge bars on right with current/max text
+  - Thin gold EXP bar along top edge of status panel
+  - Default state: Lv.1 Beginner, 50/50 HP, 5/5 MP, 0/15 EXP
+- **Map name banner**: shows on map load at 18% screen height
+  - Street name (gray, small) above map name (gold, large, bold)
+  - Visible for 3s total, fades out over last 800ms
+  - Triggered by `showMapBanner(mapId)` using `getMapStringName()`/`getMapStringStreet()`
+
+### Validation
+- Automated: `bun run ci` ✅ — all tests pass
+
+---
+
 ## 2026-02-18 07:45 (GMT+11)
 ### Summary
 - Character equipment rendering: hair, coat, pants, shoes, weapon with C++ climbing parity

@@ -182,6 +182,15 @@ const runtime = {
       speed: PHYS_DEFAULT_SPEED_STAT,
       jump: PHYS_DEFAULT_JUMP_STAT,
     },
+    name: "MapleWeb",
+    level: 1,
+    job: "Beginner",
+    hp: 50,
+    maxHp: 50,
+    mp: 5,
+    maxMp: 5,
+    exp: 0,
+    maxExp: 15,
   },
   input: {
     enabled: false,
@@ -196,6 +205,13 @@ const runtime = {
     inputActive: false,
     history: [],
     maxHistory: 200,
+  },
+  mapBanner: {
+    active: false,
+    mapName: "",
+    streetName: "",
+    showUntil: 0,
+    fadeStartAt: 0,
   },
   debug: {
     overlayEnabled: true,
@@ -5174,6 +5190,194 @@ const MINIMAP_PORTAL_RADIUS = 2.5;
 const MINIMAP_CLOSE_SIZE = 14;
 
 // Stored each frame so the click handler knows where the toggle button is
+// ─── Player Name Label ────────────────────────────────────────────────────────
+
+function drawPlayerNameLabel() {
+  const player = runtime.player;
+  const screen = worldToScreen(player.x, player.y);
+
+  ctx.save();
+  ctx.font = "bold 12px Arial, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+
+  const nameText = player.name;
+  const nameWidth = ctx.measureText(nameText).width;
+  const padH = 4;
+  const padV = 2;
+  const tagW = nameWidth + padH * 2;
+  const tagH = 14 + padV * 2;
+  const tagX = Math.round(screen.x - tagW / 2);
+  const tagY = Math.round(screen.y + 2);
+
+  // Background
+  ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
+  ctx.fillRect(tagX, tagY, tagW, tagH);
+
+  // Name text
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(nameText, Math.round(screen.x), tagY + padV);
+
+  ctx.restore();
+}
+
+// ─── Status Bar (HP / MP / EXP) ──────────────────────────────────────────────
+
+const STATUSBAR_HEIGHT = 38;
+const STATUSBAR_BAR_HEIGHT = 12;
+const STATUSBAR_BAR_GAP = 3;
+const STATUSBAR_PADDING_H = 12;
+const STATUSBAR_PADDING_V = 6;
+
+function drawStatusBar() {
+  const player = runtime.player;
+  const cw = canvasEl.width;
+  const ch = canvasEl.height;
+
+  const barY = ch - STATUSBAR_HEIGHT;
+  const barWidth = Math.min(600, cw - 40);
+  const barX = Math.round((cw - barWidth) / 2);
+
+  // Background panel
+  ctx.save();
+  ctx.fillStyle = "rgba(10, 15, 30, 0.82)";
+  roundRect(ctx, barX, barY, barWidth, STATUSBAR_HEIGHT, 6);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(80, 100, 140, 0.6)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Level + job label on left
+  ctx.font = "bold 11px Arial, sans-serif";
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#fbbf24";
+  ctx.fillText(`Lv.${player.level}`, barX + STATUSBAR_PADDING_H, barY + STATUSBAR_HEIGHT / 2 - 7);
+  ctx.fillStyle = "#94a3b8";
+  ctx.font = "10px Arial, sans-serif";
+  ctx.fillText(player.job, barX + STATUSBAR_PADDING_H, barY + STATUSBAR_HEIGHT / 2 + 7);
+
+  // Gauge bars on right
+  const labelWidth = 70;
+  const gaugeX = barX + labelWidth;
+  const gaugeW = barWidth - labelWidth - STATUSBAR_PADDING_H;
+
+  // HP bar
+  const hpY = barY + STATUSBAR_PADDING_V;
+  drawGaugeBar(gaugeX, hpY, gaugeW, STATUSBAR_BAR_HEIGHT,
+    player.hp, player.maxHp, "#ef4444", "#7f1d1d", "HP");
+
+  // MP bar
+  const mpY = hpY + STATUSBAR_BAR_HEIGHT + STATUSBAR_BAR_GAP;
+  drawGaugeBar(gaugeX, mpY, gaugeW, STATUSBAR_BAR_HEIGHT,
+    player.mp, player.maxMp, "#3b82f6", "#1e3a5f", "MP");
+
+  // EXP bar — thin bar along the very top of status panel
+  const expBarH = 3;
+  const expFrac = player.maxExp > 0 ? Math.min(1, player.exp / player.maxExp) : 0;
+  ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
+  ctx.fillRect(barX + 1, barY + 1, barWidth - 2, expBarH);
+  if (expFrac > 0) {
+    ctx.fillStyle = "#facc15";
+    ctx.fillRect(barX + 1, barY + 1, Math.round((barWidth - 2) * expFrac), expBarH);
+  }
+
+  ctx.restore();
+}
+
+function drawGaugeBar(x, y, w, h, current, max, fillColor, bgColor, label) {
+  const frac = max > 0 ? Math.min(1, current / max) : 0;
+
+  // Background
+  ctx.fillStyle = bgColor;
+  roundRect(ctx, x, y, w, h, 3);
+  ctx.fill();
+
+  // Fill
+  if (frac > 0) {
+    ctx.fillStyle = fillColor;
+    const fillW = Math.max(4, Math.round(w * frac));
+    roundRect(ctx, x, y, fillW, h, 3);
+    ctx.fill();
+  }
+
+  // Text
+  ctx.save();
+  ctx.font = "bold 10px Arial, sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+  ctx.fillText(label, x + 4, y + h / 2 + 1);
+
+  ctx.textAlign = "right";
+  ctx.font = "10px Arial, sans-serif";
+  ctx.fillText(`${current}/${max}`, x + w - 4, y + h / 2 + 1);
+  ctx.restore();
+}
+
+// ─── Map Name Banner ─────────────────────────────────────────────────────────
+
+const MAP_BANNER_SHOW_MS = 3000;
+const MAP_BANNER_FADE_MS = 800;
+
+function showMapBanner(mapId) {
+  const mapName = getMapStringName(mapId) ?? "";
+  const streetName = getMapStringStreet(mapId) ?? "";
+  if (!mapName && !streetName) return;
+
+  const now = performance.now();
+  runtime.mapBanner.active = true;
+  runtime.mapBanner.mapName = mapName;
+  runtime.mapBanner.streetName = streetName;
+  runtime.mapBanner.fadeStartAt = now + MAP_BANNER_SHOW_MS - MAP_BANNER_FADE_MS;
+  runtime.mapBanner.showUntil = now + MAP_BANNER_SHOW_MS;
+}
+
+function drawMapBanner() {
+  const banner = runtime.mapBanner;
+  if (!banner.active) return;
+
+  const now = performance.now();
+  if (now >= banner.showUntil) {
+    banner.active = false;
+    return;
+  }
+
+  let alpha = 1;
+  if (now >= banner.fadeStartAt) {
+    alpha = Math.max(0, 1 - (now - banner.fadeStartAt) / MAP_BANNER_FADE_MS);
+  }
+
+  const cw = canvasEl.width;
+  const bannerY = Math.round(canvasEl.height * 0.18);
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+
+  // Street name (smaller, above)
+  if (banner.streetName) {
+    ctx.font = "14px Arial, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    ctx.fillStyle = "#94a3b8";
+    ctx.fillText(banner.streetName, cw / 2, bannerY - 4);
+  }
+
+  // Map name (large)
+  ctx.font = "bold 22px Arial, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+
+  // Text shadow
+  ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+  ctx.fillText(banner.mapName, cw / 2 + 1, bannerY + 1);
+  // Text
+  ctx.fillStyle = "#fbbf24";
+  ctx.fillText(banner.mapName, cw / 2, bannerY);
+
+  ctx.restore();
+}
+
 let minimapToggleHitBox = null; // { x, y, w, h } in canvas coords
 let minimapCollapsed = false;
 
@@ -5397,6 +5601,9 @@ function render() {
   }
   drawBackgroundLayer(1);
   drawChatBubble();
+  drawPlayerNameLabel();
+  drawStatusBar();
+  drawMapBanner();
   drawMinimap();
   drawNpcDialogue();
   drawTransitionOverlay();
@@ -5808,6 +6015,9 @@ async function loadMap(mapId, spawnPortalName = null, spawnFromPortalTransfer = 
     const params = new URLSearchParams(window.location.search);
     params.set("mapId", runtime.mapId);
     history.replaceState(null, "", `?${params.toString()}`);
+
+    // Show map name banner
+    showMapBanner(runtime.mapId);
 
     setStatus(`Loaded map ${runtime.mapId}. Click/hover canvas to control. Controls: ←/→ move, Space jump, ↑ grab rope, ↑/↓ climb, ↓ crouch, Enter to chat.`);
     addSystemChatMessage(`[Welcome] Loaded map ${runtime.mapId}. Press Enter to chat.`);

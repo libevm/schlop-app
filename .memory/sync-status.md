@@ -1,6 +1,6 @@
 # .memory Sync Status
 
-Last synced: 2026-02-18T07:45:00+11:00
+Last synced: 2026-02-18T08:00:00+11:00
 Status: ✅ Synced
 
 ## Current authoritative memory files
@@ -33,7 +33,12 @@ Status: ✅ Synced
      - Face suppressed during climbing
      - Head uses back section (`../../back/head`)
      - Coat/Pants/Shoes use their back z-layers (`backMailChest`, `backPants`, `backShoes`)
-3. **NPC dialogue + scripts**: Full feature (click-to-talk, portraits, scripted options, travel)
+3. **Player HUD** (Phase 8 visual):
+   - Player name label below character
+   - Status bar: HP/MP gauge bars + EXP bar + level/job display at canvas bottom
+   - Map name banner: street name + map name shown on map load, fades out after 3s
+   - Player state: `name`, `level`, `job`, `hp/maxHp`, `mp/maxMp`, `exp/maxExp`
+4. **NPC dialogue + scripts**: Full feature (click-to-talk, portraits, scripted options, travel)
 4. **Mob movement speed 3×**: `(speed+100)*0.003`
 5. **Duplicate `roundRect` removed**
 6. **footholdBounds extended with minY/maxY**

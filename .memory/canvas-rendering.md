@@ -31,9 +31,12 @@ tick(timestampMs)          ← requestAnimationFrame
     drawReactorMarkers()        ← debug overlay (magenta, if life markers enabled)
 12. drawBackgroundLayer(1)      ← front backgrounds (front=1)
 13. drawChatBubble()
-14. drawMinimap()
-15. drawNpcDialogue()           ← NPC dialogue box with portrait + options
-16. drawTransitionOverlay()     ← fade-in/out black overlay
+14. drawPlayerNameLabel()       ← player name tag below character
+15. drawStatusBar()             ← HP/MP/EXP bars at bottom center
+16. drawMapBanner()             ← map name fades in on map entry
+17. drawMinimap()
+18. drawNpcDialogue()           ← NPC dialogue box with portrait + options
+19. drawTransitionOverlay()     ← fade-in/out black overlay
 ```
 
 ## Coordinate Systems
@@ -337,6 +340,14 @@ tryUsePortal()
   movement, jumping, and portal use while active. MapleStory-style box with NPC portrait,
   name/function header, word-wrapped text, clickable options for scripted NPCs, page
   navigation, and footer hint.
+- **Player name label** (`drawPlayerNameLabel()`): renders player name in a dark tag below the
+  character sprite. Uses `player.name` from runtime state.
+- **Status bar** (`drawStatusBar()`): centered at bottom of canvas, shows Lv/job on left,
+  HP (red) and MP (blue) gauge bars on right, thin EXP bar (gold) along top edge of panel.
+  Uses `player.hp/maxHp/mp/maxMp/exp/maxExp/level/job`. Default: Lv1 Beginner, 50/50 HP, 5/5 MP.
+- **Map name banner** (`drawMapBanner()`): shows map name (gold, large) and street name (gray, small)
+  at 18% screen height on map load. Fades out over 800ms after 3s total display.
+  Triggered by `showMapBanner(mapId)` at end of `loadMap()`. Uses `getMapStringName()`/`getMapStringStreet()`.
 - **NPC interaction system**: click any visible NPC to open dialogue. No range limit.
   NPCs with known scripts (taxis, Spinel) show specific options. NPCs with unknown scripts
   show flavor text + travel options to all major towns. NPCs without scripts show flavor text.
