@@ -1333,12 +1333,9 @@ const DMG_NUMBER_ROW_HEIGHT_CRIT = 36;   // C++ rowheight(true)
 const DMG_DIGIT_ADVANCES = [24, 20, 22, 22, 24, 23, 24, 22, 24, 24];
 const ATTACK_COOLDOWN_MS = 600;    // minimum time between attacks
 
-// C++ knockback constants (from Mob::update HIT stance + Mob::apply_damage)
-// apply_damage sets counter=170, HIT exits at counter>200 → ~30 ticks of KB force
-const MOB_KB_FORCE_GROUND = 0.2;   // C++ KBFORCE when onground
-const MOB_KB_FORCE_AIR = 0.1;      // C++ KBFORCE when airborne
-const MOB_KB_COUNTER_START = 170;   // C++ apply_damage: counter = 170
-const MOB_KB_COUNTER_EXIT = 200;    // C++ HIT: next = counter > 200 (31 ticks × 8ms = 248ms)
+// Knockback / stagger constants
+const MOB_HIT_DURATION_MS = 500;   // pain animation duration (~0.5s)
+const MOB_AGGRO_DURATION_MS = 4000; // chase player after stagger (4s)
 
 // C++ damage formula constants
 // Weapon multiplier for 1H Sword (from C++ get_multiplier)
@@ -1862,7 +1859,9 @@ function initLifeRuntimeStates() {
       hp: isMob ? MOB_DEFAULT_HP : -1,
       maxHp: isMob ? MOB_DEFAULT_HP : -1,
       hpShowUntil: 0,
-      hitCounter: 0,       // C++ counter — controls stance transitions
+      hitCounter: 0,       // counter — controls stance transitions
+      hitStaggerUntil: 0,  // timestamp: mob frozen in hit1 until this time
+      aggroUntil: 0,       // timestamp: mob chases player until this time
       dying: false,
       dead: false,
       respawnAt: 0,
@@ -1890,68 +1889,75 @@ function updateLifeAnimations(dtMs) {
       if (state.phobj) { state.phobj.hspeed = 0; state.phobj.vspeed = 0; }
     } else if (state.canMove && state.phobj) {
       const ph = state.phobj;
+      const now = performance.now();
       const steps = Math.max(1, Math.round(dtMs / MOB_PHYS_TIMESTEP));
 
-      // ── C++ check TURNATEDGES flag (lines 193-199) ──
-      // If TURNATEDGES was cleared (by limit_movement edge collision),
-      // flip direction, re-set the flag, and if in HIT → go to STAND.
-      if (!ph.turnAtEdges) {
-        state.facing = -state.facing;
-        ph.turnAtEdges = true;
-
-        if (state.stance === "hit1") {
-          state.stance = "stand";
+      // ── Stagger: mob is frozen, plays hit1 animation, no movement ──
+      if (state.hitStaggerUntil > 0 && now < state.hitStaggerUntil) {
+        // Frozen in pain — zero all velocity, no force
+        ph.hspeed = 0;
+        ph.hforce = 0;
+        // Keep hit1 stance
+        if (state.stance !== "hit1" && anim?.stances?.["hit1"]) {
+          state.stance = "hit1";
           state.frameIndex = 0;
           state.frameTimerMs = 0;
         }
-      }
-
-      // ── C++ apply force based on current stance (lines 201-236) ──
-      if (state.stance === "hit1") {
-        // C++ case Stance::HIT:
-        //   double KBFORCE = phobj.onground ? 0.2 : 0.1;
-        //   phobj.hforce = flip ? -KBFORCE : KBFORCE;
-        // flip=true means facing right → push left (away from attacker)
-        // Our facing: 1=right, -1=left. Push opposite to facing.
-        if (state.canMove) {
-          const kbForce = ph.onGround ? MOB_KB_FORCE_GROUND : MOB_KB_FORCE_AIR;
-          ph.hforce = state.facing === 1 ? -kbForce : kbForce;
-        }
-      } else if (state.behaviorState === "move") {
-        // C++ case Stance::MOVE: phobj.hforce = flip ? speed : -speed;
-        ph.hforce = state.facing === 1 ? state.mobSpeed : -state.mobSpeed;
-      }
-      // STAND: no force applied (C++ has no case for STAND)
-
-      // ── C++ physics.move_object(phobj) — update_fh + move_normal + limit_movement ──
-      for (let s = 0; s < steps; s++) {
-        mobPhysicsStep(map, ph, isSwimMap);
-      }
-
-      // ── C++ counter-based state transitions (lines 241-261) ──
-      // counter++ every tick. Check 'next' condition per stance.
-      state.hitCounter += steps;
-      let doNextMove = false;
-
-      if (state.stance === "hit1") {
-        // C++ case HIT: next = counter > 200
-        doNextMove = state.hitCounter > MOB_KB_COUNTER_EXIT;
       } else {
-        // C++ default: next = aniend && counter > 200
-        // aniend approximation: check if current animation cycle completed
-        const curStanceAnim = anim?.stances?.[state.stance] ?? anim?.stances?.["stand"];
-        const aniEnd = curStanceAnim && state.frameIndex >= curStanceAnim.frames.length - 1;
-        doNextMove = aniEnd && state.hitCounter > 200;
-      }
+        // If stagger just ended, transition to aggro chase
+        if (state.hitStaggerUntil > 0 && now >= state.hitStaggerUntil) {
+          state.hitStaggerUntil = 0;
+          state.aggroUntil = now + MOB_AGGRO_DURATION_MS;
+          // Face toward player
+          state.facing = runtime.player.x < ph.x ? -1 : 1;
+          state.behaviorState = "move";
+          state.stance = anim?.stances?.["move"] ? "move" : "stand";
+          state.frameIndex = 0;
+          state.frameTimerMs = 0;
+        }
 
-      if (doNextMove) {
-        // ── C++ next_move() (lines 274-316) ──
-        mobNextMove(state, anim);
-        state.hitCounter = 0;
-      }
+        // ── TURNATEDGES check: edge collision → flip ──
+        if (!ph.turnAtEdges) {
+          state.facing = -state.facing;
+          ph.turnAtEdges = true;
+        }
 
-      // ── Sync visual stance with behavior ──
-      if (state.stance !== "hit1") {
+        // ── Aggro chase: mob walks toward player ──
+        if (state.aggroUntil > 0 && now < state.aggroUntil) {
+          state.facing = runtime.player.x < ph.x ? -1 : 1;
+          state.behaviorState = "move";
+          ph.hforce = state.facing === 1 ? state.mobSpeed : -state.mobSpeed;
+        } else {
+          // Aggro expired → resume normal patrol
+          if (state.aggroUntil > 0) {
+            state.aggroUntil = 0;
+            state.behaviorState = "stand";
+            state.hitCounter = 0;
+          }
+
+          // ── Normal patrol AI ──
+          state.hitCounter += steps;
+
+          // Counter-based transitions (C++ next_move)
+          const curStanceAnim = anim?.stances?.[state.stance] ?? anim?.stances?.["stand"];
+          const aniEnd = curStanceAnim && state.frameIndex >= curStanceAnim.frames.length - 1;
+          if (aniEnd && state.hitCounter > 200) {
+            mobNextMove(state, anim);
+            state.hitCounter = 0;
+          }
+
+          // Apply movement force
+          if (state.behaviorState === "move") {
+            ph.hforce = state.facing === 1 ? state.mobSpeed : -state.mobSpeed;
+          }
+        }
+
+        // ── Physics step ──
+        for (let s = 0; s < steps; s++) {
+          mobPhysicsStep(map, ph, isSwimMap);
+        }
+
+        // ── Sync visual stance with behavior ──
         const moving = state.behaviorState === "move" && Math.abs(ph.hspeed) > 0.05;
         const desiredStance = moving && anim?.stances?.["move"] ? "move" : "stand";
         if (state.stance !== desiredStance) {
@@ -2395,17 +2401,16 @@ function applyAttackToMob(target) {
   // Play hit sound
   void playMobSfx(life.id, "Damage");
 
-  // C++ Mob::apply_damage: knockback when damage >= mob.knockback threshold
-  // Sets flip toward attacker, counter=170, stance=HIT.
-  // The per-tick force is applied in updateMobCombatStates (mirrors Mob::update HIT case).
+  // Stagger: mob freezes in hit1 for MOB_HIT_DURATION_MS, then chases player
   if (!result.miss && result.damage >= mobKnockback && !state.dying) {
-    // C++ flip = toleft (face the attacker)
     const attackerIsLeft = runtime.player.x < worldX;
     state.facing = attackerIsLeft ? -1 : 1;
 
-    // C++ apply_damage: counter = 170; set_stance(HIT)
-    // No velocity impulse — KB comes from per-tick hforce in Mob::update
-    state.hitCounter = MOB_KB_COUNTER_START;
+    // Enter stagger — frozen in place with hit1 animation
+    const now = performance.now();
+    state.hitStaggerUntil = now + MOB_HIT_DURATION_MS;
+    state.phobj.hspeed = 0;
+    state.phobj.hforce = 0;
     if (anim?.stances?.["hit1"]) {
       state.stance = "hit1";
       state.frameIndex = 0;
@@ -2509,10 +2514,11 @@ function updateMobCombatStates(dtMs) {
       state.dyingElapsed = 0;
       state.hp = state.maxHp;
       state.hitCounter = 0;
+      state.hitStaggerUntil = 0;
+      state.aggroUntil = 0;
       state.stance = "stand";
       state.frameIndex = 0;
       state.frameTimerMs = 0;
-      state.behaviorState = "stand";
       state.behaviorState = "stand";
       state.phobj.x = life.x;
       state.phobj.y = life.cy;
