@@ -29,6 +29,7 @@ const settingsCloseEl = document.getElementById("settings-close");
 const settingsBgmToggleEl = document.getElementById("settings-bgm-toggle");
 const settingsSfxToggleEl = document.getElementById("settings-sfx-toggle");
 const settingsFixed169El = document.getElementById("settings-fixed-169");
+const minimapToggleEl = document.getElementById("minimap-toggle");
 const canvasEl = document.getElementById("map-canvas");
 const ctx = canvasEl.getContext("2d");
 
@@ -148,6 +149,7 @@ const runtime = {
     bgmEnabled: true,
     sfxEnabled: true,
     fixed169: true,
+    minimapVisible: true,
   },
   mouseWorld: { x: 0, y: 0 },
   characterData: null,
@@ -713,6 +715,7 @@ function loadSettings() {
       if (typeof parsed.bgmEnabled === "boolean") runtime.settings.bgmEnabled = parsed.bgmEnabled;
       if (typeof parsed.sfxEnabled === "boolean") runtime.settings.sfxEnabled = parsed.sfxEnabled;
       if (typeof parsed.fixed169 === "boolean") runtime.settings.fixed169 = parsed.fixed169;
+      if (typeof parsed.minimapVisible === "boolean") runtime.settings.minimapVisible = parsed.minimapVisible;
     }
   } catch (_) {}
 }
@@ -727,6 +730,7 @@ function syncSettingsToUI() {
   if (settingsBgmToggleEl) settingsBgmToggleEl.checked = runtime.settings.bgmEnabled;
   if (settingsSfxToggleEl) settingsSfxToggleEl.checked = runtime.settings.sfxEnabled;
   if (settingsFixed169El) settingsFixed169El.checked = runtime.settings.fixed169;
+  if (minimapToggleEl) minimapToggleEl.classList.toggle("active", runtime.settings.minimapVisible);
 }
 
 function applyFixed169() {
@@ -1243,7 +1247,7 @@ function parseMapData(raw) {
         canvasWidth: mmCanvas.width ?? 0,
         canvasHeight: mmCanvas.height ?? 0,
         basedata: mmCanvas.basedata,
-        imageKey: `minimap:canvas`,
+        imageKey: null, // set after mapId is known in loadMap
       };
     }
   }
@@ -3318,6 +3322,7 @@ const MINIMAP_PLAYER_RADIUS = 3;
 const MINIMAP_PORTAL_RADIUS = 2.5;
 
 function drawMinimap() {
+  if (!runtime.settings.minimapVisible) return;
   if (!runtime.map?.miniMap) return;
   if (safeNumber(runtime.map.info.hideMinimap, 0) === 1) return;
 
@@ -3329,10 +3334,10 @@ function drawMinimap() {
   const imgW = img.width;
   const imgH = img.height;
 
-  // Position: top-right corner
+  // Position: top-left corner
   const panelW = imgW + MINIMAP_PADDING * 2;
   const panelH = imgH + MINIMAP_TITLE_HEIGHT + MINIMAP_PADDING * 2;
-  const panelX = canvasEl.width - panelW - 10;
+  const panelX = 10;
   const panelY = 10;
 
   ctx.save();
@@ -3750,6 +3755,11 @@ async function loadMap(mapId, spawnPortalName = null, spawnFromPortalTransfer = 
     runtime.mapId = String(mapId).trim();
     runtime.map = parseMapData(raw);
 
+    // Assign map-specific minimap image key (invalidates cache on map change)
+    if (runtime.map.miniMap) {
+      runtime.map.miniMap.imageKey = `minimap:${runtime.mapId}`;
+    }
+
     const spawnPortalByName = spawnPortalName
       ? runtime.map.portalEntries.find((portal) => portal.name === spawnPortalName)
       : null;
@@ -4045,6 +4055,17 @@ debugCloseEl?.addEventListener("click", () => {
 });
 
 // ── Settings modal ──
+minimapToggleEl?.addEventListener("click", () => {
+  runtime.settings.minimapVisible = !runtime.settings.minimapVisible;
+  minimapToggleEl.classList.toggle("active", runtime.settings.minimapVisible);
+  saveSettings();
+});
+
+// Set initial active state
+if (minimapToggleEl && runtime.settings.minimapVisible) {
+  minimapToggleEl.classList.add("active");
+}
+
 settingsButtonEl?.addEventListener("click", () => {
   settingsModalEl?.classList.toggle("hidden");
 });

@@ -49,6 +49,35 @@ body:has(.canvas-wrapper.fixed-169) {
 }
 
 /* ── Settings button (gear icon) ── */
+.minimap-toggle {
+  position: absolute;
+  top: 10px;
+  right: 94px;
+  z-index: 50;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.5);
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.minimap-toggle:hover {
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+}
+
+.minimap-toggle.active {
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
 .settings-button {
   position: absolute;
   top: 10px;
