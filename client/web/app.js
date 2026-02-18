@@ -3569,6 +3569,10 @@ async function loadMap(mapId, spawnPortalName = null, spawnFromPortalTransfer = 
   runtime.loading.progress = 0;
   runtime.loading.label = "Preparing map data...";
 
+  // Hide chat UI during loading
+  if (chatBarEl) chatBarEl.style.display = "none";
+  if (chatLogEl) chatLogEl.style.display = "none";
+
   try {
     setStatus(`Loading map ${mapId}...`);
 
@@ -3633,6 +3637,10 @@ async function loadMap(mapId, spawnPortalName = null, spawnFromPortalTransfer = 
     runtime.loading.label = "Assets loaded";
     runtime.loading.active = false;
 
+    // Restore chat UI after loading
+    if (chatBarEl) chatBarEl.style.display = "";
+    if (chatLogEl) chatLogEl.style.display = "";
+
     playBgmPath(String(runtime.map.info.bgm ?? ""));
 
     const params = new URLSearchParams(window.location.search);
@@ -3652,6 +3660,10 @@ async function loadMap(mapId, spawnPortalName = null, spawnFromPortalTransfer = 
       runtime.loading.total = 0;
       runtime.loading.loaded = 0;
     }
+
+    // Restore chat UI on error
+    if (chatBarEl) chatBarEl.style.display = "";
+    if (chatLogEl) chatLogEl.style.display = "";
 
     setStatus(`Error: ${error instanceof Error ? error.message : String(error)}`);
   }
