@@ -28,6 +28,9 @@ Status: ✅ Synced
 14. BGM crossfade — 800ms fade-out on map transitions
 15. SFX audio pooling — up to 8 reusable Audio elements per sound
 16. Minimap toggle in Settings > Display
+17. Mob foothold physics — walk on linked footholds, turn at edges/walls
+18. Player renders at layer 7 when airborne (above all map layers)
+19. Simplified player render layer (no more findFootholdBelow per frame)
 
 ## Validation snapshot
 - ✅ `bun run ci` — 128 tests pass across all workspaces

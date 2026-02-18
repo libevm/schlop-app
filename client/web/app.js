@@ -1160,140 +1160,299 @@ async function loadLifeAnimation(type, id) {
 }
 
 // Per-life-entry runtime animation state
-const lifeRuntimeState = new Map(); // key: index in lifeEntries -> { stance, frameIndex, frameTimerMs, ... }
+const lifeRuntimeState = new Map();
 
-const MOB_DEFAULT_SPEED_PXS = 35; // fallback pixels/sec
+// C++ physics constants (per-tick, ~30fps fixed timestep)
+const MOB_GRAVFORCE = 0.14;
+const MOB_SWIMGRAVFORCE = 0.03;
+const MOB_FRICTION = 0.5;
+const MOB_SLOPEFACTOR = 0.1;
+const MOB_GROUNDSLIP = 3.0;
+const MOB_SWIMFRICTION = 0.08;
+const MOB_PHYS_TIMESTEP = 1000 / 30; // ~33ms per C++ tick
+
 const MOB_STAND_MIN_MS = 1500;
 const MOB_STAND_MAX_MS = 4000;
 const MOB_MOVE_MIN_MS = 2000;
 const MOB_MOVE_MAX_MS = 5000;
-const MOB_SPEED_SCALE = 70; // multiply C++ speed factor to get px/s
 
 function randomRange(min, max) {
   return min + Math.random() * (max - min);
 }
 
-/**
- * Get Y position on a foothold at a given X.
- * Returns null if x is outside the foothold's range.
- */
-function getFootholdYAtX(fh, x) {
+/** Get Y on a foothold at X, or null if X is outside range or foothold is a wall. */
+function fhGroundAt(fh, x) {
+  if (!fh) return null;
   const dx = fh.x2 - fh.x1;
-  if (Math.abs(dx) < 0.01) return null; // wall
-  const minX = Math.min(fh.x1, fh.x2);
-  const maxX = Math.max(fh.x1, fh.x2);
-  if (x < minX || x > maxX) return null;
+  if (Math.abs(dx) < 0.01) return null;
   const t = (x - fh.x1) / dx;
+  if (t < -0.01 || t > 1.01) return null;
   return fh.y1 + (fh.y2 - fh.y1) * t;
 }
 
+function fhSlope(fh) {
+  if (!fh) return 0;
+  const dx = fh.x2 - fh.x1;
+  if (Math.abs(dx) < 0.01) return 0;
+  return (fh.y2 - fh.y1) / dx;
+}
+
+function fhLeft(fh) { return Math.min(fh.x1, fh.x2); }
+function fhRight(fh) { return Math.max(fh.x1, fh.x2); }
+function fhIsWall(fh) { return Math.abs(fh.x2 - fh.x1) < 0.01; }
+
+/** Find the foothold directly below (x, y) — closest ground at or below y. */
+function fhIdBelow(map, x, y) {
+  let bestFh = null;
+  let bestY = Infinity;
+  for (const fh of map.footholdLines) {
+    if (fhIsWall(fh)) continue;
+    const gy = fhGroundAt(fh, x);
+    if (gy === null) continue;
+    if (gy >= y && gy < bestY) {
+      bestY = gy;
+      bestFh = fh;
+    }
+  }
+  return bestFh;
+}
+
+/** Get the edge limit for TURNATEDGES — returns the X limit. */
+function fhEdge(map, fhId, goingLeft) {
+  const fh = map.footholdById?.get(String(fhId));
+  if (!fh) return goingLeft ? -30000 : 30000;
+
+  if (goingLeft) {
+    if (!fh.prevId) return fhLeft(fh);
+    const prev = map.footholdById?.get(fh.prevId);
+    if (!prev || fhIsWall(prev)) return fhLeft(fh);
+    if (!prev.prevId) return fhLeft(prev);
+    return -30000;
+  } else {
+    if (!fh.nextId) return fhRight(fh);
+    const next = map.footholdById?.get(fh.nextId);
+    if (!next || fhIsWall(next)) return fhRight(fh);
+    if (!next.nextId) return fhRight(next);
+    return 30000;
+  }
+}
+
+/** Get the wall limit — returns the X where a wall blocks movement. */
+function fhWall(map, fhId, goingLeft, fy) {
+  const fh = map.footholdById?.get(String(fhId));
+  if (!fh) return goingLeft ? map.bounds.minX : map.bounds.maxX;
+  const vertRange = [fy - 50, fy - 1];
+
+  const isBlocking = (f) => {
+    if (!f || !fhIsWall(f)) return false;
+    const top = Math.min(f.y1, f.y2);
+    const bot = Math.max(f.y1, f.y2);
+    return vertRange[0] < bot && vertRange[1] > top;
+  };
+
+  if (goingLeft) {
+    const prev = fh.prevId ? map.footholdById?.get(fh.prevId) : null;
+    if (isBlocking(prev)) return fhLeft(fh);
+    const pp = prev?.prevId ? map.footholdById?.get(prev.prevId) : null;
+    if (isBlocking(pp)) return prev ? fhLeft(prev) : fhLeft(fh);
+    return map.bounds.minX;
+  } else {
+    const next = fh.nextId ? map.footholdById?.get(fh.nextId) : null;
+    if (isBlocking(next)) return fhRight(fh);
+    const nn = next?.nextId ? map.footholdById?.get(next.nextId) : null;
+    if (isBlocking(nn)) return next ? fhRight(next) : fhRight(fh);
+    return map.bounds.maxX;
+  }
+}
+
 /**
- * Walk along linked footholds. Given a current foothold and desired new X,
- * follow prev/next chains if x goes past the current foothold's edge.
- * Returns { fh, x, y } with the resolved position.
+ * Full physics step for a mob PhysicsObject, matching C++ move_object.
+ * phobj: { x, y, hspeed, vspeed, hforce, vforce, fhId, onGround, fhSlope, turnAtEdges }
  */
-function walkOnFootholds(map, currentFh, x, facing) {
-  if (!currentFh) return null;
+function mobPhysicsStep(map, phobj, isSwimMap) {
+  // 1. update_fh — track current foothold
+  const curFh = map.footholdById?.get(String(phobj.fhId)) ?? null;
 
-  const fhLeft = Math.min(currentFh.x1, currentFh.x2);
-  const fhRight = Math.max(currentFh.x1, currentFh.x2);
-
-  // Still within current foothold
-  if (x >= fhLeft && x <= fhRight) {
-    const y = getFootholdYAtX(currentFh, x);
-    return y !== null ? { fh: currentFh, x, y } : null;
+  if (phobj.onGround && curFh) {
+    if (phobj.x > fhRight(curFh) && curFh.nextId) {
+      phobj.fhId = curFh.nextId;
+    } else if (phobj.x < fhLeft(curFh) && curFh.prevId) {
+      phobj.fhId = curFh.prevId;
+    }
+    const newFh = map.footholdById?.get(String(phobj.fhId));
+    if (!newFh || fhIsWall(newFh)) {
+      const below = fhIdBelow(map, phobj.x, phobj.y);
+      phobj.fhId = below ? below.id : (curFh ? curFh.id : "0");
+    }
+  } else {
+    const below = fhIdBelow(map, phobj.x, phobj.y);
+    if (below) phobj.fhId = below.id;
   }
 
-  // Walked past an edge — try to follow the linked foothold
-  let nextFh = null;
-  if (x > fhRight && currentFh.nextId) {
-    nextFh = map.footholdById?.get(currentFh.nextId) ?? null;
-  } else if (x < fhLeft && currentFh.prevId) {
-    nextFh = map.footholdById?.get(currentFh.prevId) ?? null;
+  const fh = map.footholdById?.get(String(phobj.fhId)) ?? null;
+  phobj.fhSlope = fhSlope(fh);
+
+  const ground = fh ? fhGroundAt(fh, phobj.x) : null;
+  if (ground !== null && phobj.vspeed >= 0 && phobj.y >= ground - 1) {
+    phobj.y = ground;
+    phobj.onGround = true;
+    phobj.vspeed = 0;
+  } else if (ground !== null && phobj.onGround) {
+    phobj.y = ground;
   }
 
-  // Check if the next foothold is a wall (vertical)
-  if (nextFh && Math.abs(nextFh.x2 - nextFh.x1) < 0.01) {
-    nextFh = null; // wall — can't walk onto it
+  // 2. Apply forces (move_normal / move_swimming)
+  let hacc = 0, vacc = 0;
+
+  if (isSwimMap) {
+    hacc = phobj.hforce - MOB_SWIMFRICTION * phobj.hspeed;
+    vacc = phobj.vforce - MOB_SWIMFRICTION * phobj.vspeed + MOB_SWIMGRAVFORCE;
+  } else if (phobj.onGround) {
+    hacc = phobj.hforce;
+    vacc = phobj.vforce;
+    if (hacc === 0 && Math.abs(phobj.hspeed) < 0.1) {
+      phobj.hspeed = 0;
+    } else {
+      const inertia = phobj.hspeed / MOB_GROUNDSLIP;
+      let sf = phobj.fhSlope;
+      sf = Math.max(-0.5, Math.min(0.5, sf));
+      hacc -= (MOB_FRICTION + MOB_SLOPEFACTOR * (1 + sf * -inertia)) * inertia;
+    }
+  } else {
+    vacc = MOB_GRAVFORCE;
   }
 
-  if (nextFh) {
-    const nextLeft = Math.min(nextFh.x1, nextFh.x2);
-    const nextRight = Math.max(nextFh.x1, nextFh.x2);
-    const clampedX = Math.max(nextLeft, Math.min(nextRight, x));
-    const y = getFootholdYAtX(nextFh, clampedX);
-    return y !== null ? { fh: nextFh, x: clampedX, y } : null;
+  phobj.hforce = 0;
+  phobj.vforce = 0;
+  phobj.hspeed += hacc;
+  phobj.vspeed += vacc;
+
+  // 3. limit_movement — walls and edges
+  if (Math.abs(phobj.hspeed) > 0.001) {
+    const left = phobj.hspeed < 0;
+    const nextX = phobj.x + phobj.hspeed;
+    let wall = fhWall(map, phobj.fhId, left, phobj.y + phobj.vspeed);
+    let collision = left ? (phobj.x >= wall && nextX <= wall) : (phobj.x <= wall && nextX >= wall);
+
+    if (!collision && phobj.turnAtEdges) {
+      wall = fhEdge(map, phobj.fhId, left);
+      collision = left ? (phobj.x >= wall && nextX <= wall) : (phobj.x <= wall && nextX >= wall);
+    }
+
+    if (collision) {
+      phobj.x = wall;
+      phobj.hspeed = 0;
+      phobj.turnAtEdges = false; // cleared on collision, re-set by AI
+      return; // don't move further this tick
+    }
   }
 
-  // No linked foothold — edge of platform, clamp to current edge
-  return null;
+  if (Math.abs(phobj.vspeed) > 0.001 && fh) {
+    const nextY = phobj.y + phobj.vspeed;
+    const gCur = fhGroundAt(fh, phobj.x) ?? phobj.y;
+    const gNext = fhGroundAt(fh, phobj.x + phobj.hspeed) ?? gCur;
+    if (phobj.y <= gCur && nextY >= gNext) {
+      phobj.y = gNext;
+      phobj.vspeed = 0;
+      phobj.onGround = true;
+    }
+  }
+
+  // 4. Move
+  phobj.x += phobj.hspeed;
+  phobj.y += phobj.vspeed;
+
+  // Clamp to map borders
+  if (phobj.y > map.bounds.maxY + 100) {
+    phobj.y = map.bounds.maxY + 100;
+    phobj.vspeed = 0;
+  }
 }
 
 function initLifeRuntimeStates() {
   lifeRuntimeState.clear();
   if (!runtime.map) return;
 
-  for (let i = 0; i < runtime.map.lifeEntries.length; i++) {
-    const life = runtime.map.lifeEntries[i];
+  const map = runtime.map;
+
+  for (let i = 0; i < map.lifeEntries.length; i++) {
+    const life = map.lifeEntries[i];
     if (life.hide === 1) continue;
 
     const isMob = life.type === "m";
-    const canMove = isMob; // NPCs don't patrol
+    const cacheKey = `${life.type}:${life.id}`;
+    const animData = lifeAnimations.get(cacheKey);
+    const hasMove = !!animData?.stances?.["move"];
 
-    // Find the mob's starting foothold
+    // Find starting foothold
     let startFh = null;
-    if (canMove && life.fh) {
-      startFh = runtime.map.footholdById?.get(String(life.fh)) ?? null;
-    }
-    // Fallback: find foothold at spawn position
-    if (canMove && !startFh) {
-      const found = findFootholdAtXNearY(runtime.map, life.x, life.cy, 50);
+    if (life.fh) startFh = map.footholdById?.get(String(life.fh)) ?? null;
+    if (!startFh) {
+      const found = findFootholdAtXNearY(map, life.x, life.cy, 80);
       startFh = found?.line ?? null;
     }
 
-    // Get mob speed from WZ data (cached in lifeAnimations)
-    let speedPxs = MOB_DEFAULT_SPEED_PXS;
-    const cacheKey = `${life.type}:${life.id}`;
-    const animData = lifeAnimations.get(cacheKey);
-    if (animData?.speed !== undefined) {
-      // C++ formula: (speed + 100) * 0.001 → force per tick
-      // We scale to px/s
-      speedPxs = Math.max(10, (animData.speed + 100) * 0.001 * MOB_SPEED_SCALE);
+    // Snap Y to foothold ground
+    let startY = life.cy;
+    if (startFh) {
+      const gy = fhGroundAt(startFh, life.x);
+      if (gy !== null) startY = gy;
+    }
+
+    // Mob speed from WZ: C++ does (speed+100)*0.001 as force-per-tick
+    let mobSpeed = 0;
+    if (isMob && animData?.speed !== undefined) {
+      mobSpeed = (animData.speed + 100) * 0.001;
     }
 
     const hasPatrolRange = life.rx0 !== life.rx1 && (life.rx0 !== 0 || life.rx1 !== 0);
+    const canMove = isMob && hasMove && mobSpeed > 0;
 
     lifeRuntimeState.set(i, {
       stance: "stand",
       frameIndex: 0,
       frameTimerMs: 0,
-      // Mob physics state
-      posX: life.x,
-      posY: life.cy,
+      // Physics object (mirrors C++ PhysicsObject)
+      phobj: {
+        x: life.x,
+        y: startY,
+        hspeed: 0,
+        vspeed: 0,
+        hforce: 0,
+        vforce: 0,
+        fhId: startFh ? startFh.id : "0",
+        fhSlope: 0,
+        onGround: !!startFh,
+        turnAtEdges: true,
+      },
       facing: life.f === 1 ? 1 : -1,
-      currentFh: startFh,
-      canMove: canMove && startFh !== null && animData?.stances?.["move"],
-      speedPxs,
+      canMove,
+      mobSpeed, // C++ force magnitude per tick
       patrolMin: hasPatrolRange ? life.rx0 : -Infinity,
       patrolMax: hasPatrolRange ? life.rx1 : Infinity,
-      behaviorState: "stand", // "stand" or "move"
+      behaviorState: "stand",
       behaviorTimerMs: randomRange(MOB_STAND_MIN_MS, MOB_STAND_MAX_MS),
+      behaviorCounter: 0,
     });
   }
 }
 
 function updateLifeAnimations(dtMs) {
   if (!runtime.map) return;
+  const map = runtime.map;
+  const isSwimMap = !!map.swim;
 
+  // Accumulate time and step in fixed increments matching C++ timestep
   for (const [idx, state] of lifeRuntimeState) {
-    const life = runtime.map.lifeEntries[idx];
+    const life = map.lifeEntries[idx];
     const cacheKey = `${life.type}:${life.id}`;
     const anim = lifeAnimations.get(cacheKey);
     if (!anim) continue;
 
-    // Update mob patrol behavior
+    // --- Mob AI + physics ---
     if (state.canMove) {
       state.behaviorTimerMs -= dtMs;
+      state.behaviorCounter += dtMs;
 
       if (state.behaviorTimerMs <= 0) {
         if (state.behaviorState === "stand") {
@@ -1304,41 +1463,61 @@ function updateLifeAnimations(dtMs) {
           state.behaviorState = "stand";
           state.behaviorTimerMs = randomRange(MOB_STAND_MIN_MS, MOB_STAND_MAX_MS);
         }
+        state.behaviorCounter = 0;
+        state.phobj.turnAtEdges = true;
       }
 
-      if (state.behaviorState === "move" && state.currentFh) {
-        const dx = state.facing * state.speedPxs * (dtMs / 1000);
-        const newX = state.posX + dx;
-
-        // Check patrol bounds
-        if (newX < state.patrolMin || newX > state.patrolMax) {
-          // Reverse at patrol boundary
-          state.facing = -state.facing;
-          state.posX = Math.max(state.patrolMin, Math.min(state.patrolMax, state.posX));
-        } else {
-          // Try to walk along footholds
-          const result = walkOnFootholds(runtime.map, state.currentFh, newX, state.facing);
-          if (result) {
-            state.posX = result.x;
-            state.posY = result.y;
-            state.currentFh = result.fh;
-          } else {
-            // Hit edge of platform — reverse direction
-            state.facing = -state.facing;
-          }
-        }
+      // Apply movement force (like C++ Mob::update switch on MOVE stance)
+      const ph = state.phobj;
+      if (state.behaviorState === "move") {
+        ph.hforce = state.facing === 1 ? state.mobSpeed : -state.mobSpeed;
       }
 
-      // Set stance based on behavior
-      const desiredStance = state.behaviorState === "move" && anim.stances["move"] ? "move" : "stand";
+      // Patrol bounds: reverse at limits
+      if (ph.x <= state.patrolMin && state.facing === -1) {
+        state.facing = 1;
+        ph.hforce = 0;
+        ph.hspeed = 0;
+        ph.turnAtEdges = true;
+      } else if (ph.x >= state.patrolMax && state.facing === 1) {
+        state.facing = -1;
+        ph.hforce = 0;
+        ph.hspeed = 0;
+        ph.turnAtEdges = true;
+      }
+
+      // Run physics step(s) — step at C++ fixed rate
+      const steps = Math.max(1, Math.round(dtMs / MOB_PHYS_TIMESTEP));
+      for (let s = 0; s < steps; s++) {
+        mobPhysicsStep(map, ph, isSwimMap);
+      }
+
+      // If turnAtEdges was cleared by collision, mob hit an edge → reverse
+      if (!ph.turnAtEdges) {
+        state.facing = -state.facing;
+        ph.turnAtEdges = true;
+      }
+
+      // Set stance
+      const moving = Math.abs(ph.hspeed) > 0.05 && state.behaviorState === "move";
+      const desiredStance = moving && anim.stances["move"] ? "move" : "stand";
       if (state.stance !== desiredStance) {
         state.stance = desiredStance;
         state.frameIndex = 0;
         state.frameTimerMs = 0;
       }
+    } else if (life.type === "m" || life.type === "n") {
+      // Non-moving mobs/NPCs: still apply gravity to snap to ground
+      const ph = state.phobj;
+      if (ph && !ph.onGround) {
+        const steps = Math.max(1, Math.round(dtMs / MOB_PHYS_TIMESTEP));
+        for (let s = 0; s < steps; s++) {
+          mobPhysicsStep(map, ph, isSwimMap);
+        }
+      }
     }
 
-    // Update frame animation
+    // --- Frame animation ---
     const stance = anim.stances[state.stance] ?? anim.stances["stand"];
     if (!stance || stance.frames.length === 0) continue;
 
@@ -1371,9 +1550,9 @@ function drawLifeSprites() {
     const img = getImageByKey(frame.key);
     if (!img) continue;
 
-    // World position — use patrol position for mobs, static for NPCs
-    const worldX = state.patrolEnabled ? state.posX : life.x;
-    const worldY = state.patrolEnabled ? state.posY : life.cy;
+    // World position from physics object
+    const worldX = state.phobj ? state.phobj.x : life.x;
+    const worldY = state.phobj ? state.phobj.y : life.cy;
 
     // Screen position
     const screenX = Math.round(worldX - cam.x + halfW);
@@ -1391,7 +1570,7 @@ function drawLifeSprites() {
     ctx.save();
 
     // Facing: -1 = left (default sprite direction), 1 = right (flipped)
-    const flip = state.patrolEnabled ? state.facing === 1 : life.f === 1;
+    const flip = state.canMove ? state.facing === 1 : life.f === 1;
 
     if (flip) {
       ctx.translate(screenX, screenY);

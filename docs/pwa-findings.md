@@ -28,6 +28,28 @@ The docs UI includes sidebar navigation for markdown files under `docs/`.
 
 ---
 
+## 2026-02-18 09:00 (GMT+11)
+### Summary
+- Mob foothold physics: walk on platforms, follow slopes, turn at edges
+- Player airborne z-index: renders above all layers when jumping
+- Simplified player render layer logic
+
+### Mob Foothold Physics
+- `walkOnFootholds()` follows linked foothold chains (prev/next IDs)
+- Y position interpolated from foothold slope at current X
+- Mobs reverse at foothold edges (null prev/next) and vertical walls
+- Patrol bounds (rx0/rx1) respected as outer limits
+- Speed from `Mob.wz/info.speed` using C++ formula: `(speed+100)*0.001*70`
+- "move" stance frames preloaded alongside "stand"
+- Random behavior cycling: 1.5-4s stand, 2-5s move
+
+### Player Z-Index Fix
+- Airborne player renders at layer 7 (above all map layers)
+- Matches climbing behavior — prevents clipping behind higher-layer objects mid-jump
+- `currentPlayerRenderLayer()` simplified: just uses `player.footholdLayer` when grounded
+
+---
+
 ## 2026-02-18 08:30 (GMT+11)
 ### Summary
 - Animated map objects: multi-frame cycling with per-frame WZ delays
