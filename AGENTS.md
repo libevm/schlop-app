@@ -25,6 +25,14 @@
 8. If setup/run/workflow instructions change, update `README.md` in the same change.
    - Keep setup steps current and runnable for a new contributor.
 
+## Rendering Pipeline Documentation
+- `.memory/canvas-rendering.md` documents the full canvas rendering pipeline:
+  asset loading, caching, draw order, coordinate systems, transitions, and diagnostics.
+- **Any change to the rendering pipeline, draw order, asset caching, preload logic,
+  coordinate transforms, or transition/overlay behavior MUST update `canvas-rendering.md`.**
+- This includes: new draw functions, cache invalidation changes, new asset types,
+  loading screen changes, debug overlay additions, and image decode pipeline changes.
+
 ## Agent Guidance
 - Keep `.memory/` as the full progress snapshot for handoff/resume.
 - Ensure snapshots and progress notes are clear enough for another agent to continue without re-discovery.
