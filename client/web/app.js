@@ -1306,14 +1306,15 @@ async function loadLifeAnimation(type, id) {
 // Per-life-entry runtime animation state
 const lifeRuntimeState = new Map();
 
-// C++ physics constants (per-tick, 8ms timestep = 125fps)
-const MOB_GRAVFORCE = 0.14;
+// C++ physics constants (per-tick values — used internally by friction formulas)
+const MOB_TPS = 125;          // C++ ticks per second (1000 / 8ms)
+const MOB_GRAVFORCE = 0.14;   // px/tick² (used in per-tick context)
 const MOB_SWIMGRAVFORCE = 0.03;
-const MOB_FRICTION = 0.5;
-const MOB_SLOPEFACTOR = 0.1;
-const MOB_GROUNDSLIP = 3.0;
+const MOB_FRICTION = 0.5;     // dimensionless
+const MOB_SLOPEFACTOR = 0.1;  // dimensionless
+const MOB_GROUNDSLIP = 3.0;   // divisor for inertia
 const MOB_SWIMFRICTION = 0.08;
-const MOB_PHYS_TIMESTEP = 8; // C++ Constants::TIMESTEP = 8ms (125fps)
+const MOB_HSPEED_DEADZONE = 0.1; // per-tick deadzone
 
 // (Behavior transitions are now counter-based per C++, not timer-based)
 
@@ -1336,7 +1337,7 @@ const ATTACK_COOLDOWN_MS = 600;    // minimum time between attacks
 // Knockback / stagger constants
 const MOB_HIT_DURATION_MS = 500;   // pain animation duration (~0.5s)
 const MOB_AGGRO_DURATION_MS = 4000; // chase player after stagger (4s)
-const MOB_KB_IMPULSE = 2.5;        // immediate hspeed impulse on hit (px/tick, decays via friction)
+const MOB_KB_IMPULSE = 2.5 * 125;  // immediate hspeed impulse on hit (px/sec, decays via friction)
 
 // C++ damage formula constants
 // Weapon multiplier for 1H Sword (from C++ get_multiplier)
@@ -1632,15 +1633,19 @@ function mobNextMove(state, anim) {
 }
 
 /**
- * Full physics step for a mob/NPC PhysicsObject.
- * Mirrors C++ physics.move_object(phobj):
- *   1. fht.update_fh(phobj)        — foothold tracking
- *   2. move_normal(phobj)           — forces → hacc → hspeed/vspeed
- *   3. fht.limit_movement(phobj)    — wall/edge collision on next position
- *   4. phobj.move()                 — x += hspeed, y += vspeed
+ * Delta-time physics update for a mob/NPC PhysicsObject.
+ *
+ * Speeds (hspeed/vspeed) and forces (hforce/vforce) are stored in px/sec.
+ * Internally we convert to per-tick units for the C++ friction/inertia formulas
+ * (which are tuned for 8ms ticks), then scale the result by dtSec.
+ *
+ * @param {number} dtSec — frame delta in seconds
  */
-function mobPhysicsStep(map, phobj, isSwimMap) {
-  // ── Step 1: C++ fht.update_fh — foothold tracking (BEFORE physics) ──
+function mobPhysicsUpdate(map, phobj, isSwimMap, dtSec) {
+  if (dtSec <= 0) return;
+  const numTicks = dtSec * MOB_TPS; // equivalent C++ ticks this frame
+
+  // ── Step 1: Foothold tracking ──
   if (phobj.onGround) {
     const curFh = map.footholdById?.get(String(phobj.fhId));
     if (curFh) {
@@ -1658,7 +1663,6 @@ function mobPhysicsStep(map, phobj, isSwimMap) {
           phobj.fhId = below.id;
           phobj.fhSlope = fhSlope(below);
         } else {
-          // C++ fhid=0 fallback: phobj.fhid = curfh.id(); phobj.limitx(curfh.x1())
           phobj.fhId = curFh.id;
           if (phobj.x > fhRight(curFh)) phobj.x = fhRight(curFh);
           else phobj.x = fhLeft(curFh);
@@ -1678,7 +1682,6 @@ function mobPhysicsStep(map, phobj, isSwimMap) {
       }
     }
 
-    // C++ update_fh sets onground = (y == ground)
     const snapFh = map.footholdById?.get(String(phobj.fhId));
     if (snapFh) {
       const gy = fhGroundAt(snapFh, phobj.x);
@@ -1690,7 +1693,6 @@ function mobPhysicsStep(map, phobj, isSwimMap) {
       }
     }
   } else {
-    // Airborne: C++ update_fh does fhid = get_fhid_below(x, y)
     const below = fhIdBelow(map, phobj.x, phobj.y);
     if (below) {
       phobj.fhId = below.id;
@@ -1698,85 +1700,89 @@ function mobPhysicsStep(map, phobj, isSwimMap) {
     }
   }
 
-  // ── Step 2: C++ move_normal — compute acceleration, update speed ──
+  // ── Step 2: Physics in per-tick units (C++ formulas), then scale by numTicks ──
+  // Convert px/sec → px/tick for friction/inertia formulas
+  let hspeedTick = phobj.hspeed / MOB_TPS;
+  let vspeedTick = phobj.vspeed / MOB_TPS;
+  const hforceTick = phobj.hforce / MOB_TPS;
+  const vforceTick = phobj.vforce / MOB_TPS;
+
   let hacc = 0, vacc = 0;
 
   if (phobj.onGround) {
-    hacc = phobj.hforce;
-    vacc = phobj.vforce;
+    hacc = hforceTick;
+    vacc = vforceTick;
 
-    if (hacc === 0 && phobj.hspeed < 0.1 && phobj.hspeed > -0.1) {
-      phobj.hspeed = 0;
+    if (hacc === 0 && Math.abs(hspeedTick) < 0.1) {
+      hspeedTick = 0;
     } else {
-      const inertia = phobj.hspeed / MOB_GROUNDSLIP;
+      const inertia = hspeedTick / MOB_GROUNDSLIP;
       const sf = Math.max(-0.5, Math.min(0.5, phobj.fhSlope));
       hacc -= (MOB_FRICTION + MOB_SLOPEFACTOR * (1 + sf * -inertia)) * inertia;
     }
   } else {
-    // Airborne
     if (isSwimMap) {
-      hacc = phobj.hforce - MOB_SWIMFRICTION * phobj.hspeed;
-      vacc = phobj.vforce - MOB_SWIMFRICTION * phobj.vspeed + MOB_SWIMGRAVFORCE;
+      hacc = hforceTick - MOB_SWIMFRICTION * hspeedTick;
+      vacc = vforceTick - MOB_SWIMFRICTION * vspeedTick + MOB_SWIMGRAVFORCE;
     } else {
       vacc = MOB_GRAVFORCE;
     }
   }
 
+  hspeedTick += hacc * numTicks;
+  vspeedTick += vacc * numTicks;
+
+  // Convert back to px/sec
+  phobj.hspeed = hspeedTick * MOB_TPS;
+  phobj.vspeed = vspeedTick * MOB_TPS;
   phobj.hforce = 0;
   phobj.vforce = 0;
-  phobj.hspeed += hacc;
-  phobj.vspeed += vacc;
 
-  // ── Step 3: C++ fht.limit_movement — wall/edge collision on NEXT position ──
-  // C++ checks crnt_x vs next_x = x + hspeed (BEFORE move)
-  if (phobj.onGround && (phobj.hspeed > 0.001 || phobj.hspeed < -0.001)) {
+  // ── Step 3: Wall/edge collision on next position ──
+  const dx = phobj.hspeed * dtSec;
+  if (phobj.onGround && Math.abs(dx) > 0.001) {
     const crntX = phobj.x;
-    const nextX = phobj.x + phobj.hspeed;
-    const left = phobj.hspeed < 0;
+    const nextX = phobj.x + dx;
+    const left = dx < 0;
 
-    // Wall check
     let wall = fhWall(map, phobj.fhId, left, phobj.y);
     let collision = left ? (crntX >= wall && nextX <= wall) : (crntX <= wall && nextX >= wall);
 
-    // Edge check (TURNATEDGES)
     if (!collision && phobj.turnAtEdges) {
       wall = fhEdge(map, phobj.fhId, left);
       collision = left ? (crntX >= wall && nextX <= wall) : (crntX <= wall && nextX >= wall);
     }
 
     if (collision) {
-      // C++ phobj.limitx(wall): x = wall, hspeed = 0
       phobj.x = wall;
       phobj.hspeed = 0;
-      phobj.turnAtEdges = false; // C++ clear_flag(TURNATEDGES)
+      phobj.turnAtEdges = false;
     }
   }
 
-  // Vertical limits
+  // Vertical landing
+  const dy = phobj.vspeed * dtSec;
   if (!phobj.onGround && phobj.vspeed > 0) {
     const crntY = phobj.y;
-    const nextY = phobj.y + phobj.vspeed;
+    const nextY = phobj.y + dy;
     const landFh = fhIdBelow(map, phobj.x, crntY);
     if (landFh) {
       const gy = fhGroundAt(landFh, phobj.x);
       if (gy !== null && crntY <= gy + 1 && nextY >= gy - 1) {
-        // C++ phobj.limity(ground): y = ground, vspeed = 0
         phobj.y = gy;
         phobj.vspeed = 0;
         phobj.onGround = true;
         phobj.fhId = landFh.id;
         phobj.fhSlope = fhSlope(landFh);
-        // Don't apply move — already landed
         return;
       }
     }
   }
 
-  // ── Step 4: C++ phobj.move() — x += hspeed, y += vspeed ──
-  phobj.x += phobj.hspeed;
-  phobj.y += phobj.vspeed;
+  // ── Step 4: Apply displacement ──
+  phobj.x += phobj.hspeed * dtSec;
+  phobj.y += phobj.vspeed * dtSec;
 
-  // Clamp to map borders
   if (phobj.y > map.bounds.maxY + 200) {
     phobj.y = map.bounds.maxY + 200;
     phobj.vspeed = 0;
@@ -1826,7 +1832,7 @@ function initLifeRuntimeStates() {
     // Mob speed from WZ: C++ does (speed+100)*0.001 as force-per-tick at 8ms timestep.
     let mobSpeed = 0;
     if (isMob && animData?.speed !== undefined) {
-      mobSpeed = (animData.speed + 100) * 0.003;
+      mobSpeed = (animData.speed + 100) * 0.003 * MOB_TPS; // px/sec
     }
 
     const hasPatrolRange = life.rx0 !== life.rx1 && (life.rx0 !== 0 || life.rx1 !== 0);
@@ -1874,6 +1880,7 @@ function updateLifeAnimations(dtMs) {
   if (!runtime.map) return;
   const map = runtime.map;
   const isSwimMap = !!map.swim;
+  const dtSec = dtMs / 1000;
 
   // Accumulate time and step in fixed increments matching C++ timestep
   for (const [idx, state] of lifeRuntimeState) {
@@ -1891,17 +1898,12 @@ function updateLifeAnimations(dtMs) {
     } else if (state.canMove && state.phobj) {
       const ph = state.phobj;
       const now = performance.now();
-      const steps = Math.max(1, Math.round(dtMs / MOB_PHYS_TIMESTEP));
 
       // ── Stagger: plays hit1, slides back from knockback impulse ──
       if (state.hitStaggerUntil > 0 && now < state.hitStaggerUntil) {
         // No new force — friction decelerates the KB impulse naturally
         ph.hforce = 0;
-
-        // Run physics so friction slows the slide + foothold limits apply
-        for (let s = 0; s < steps; s++) {
-          mobPhysicsStep(map, ph, isSwimMap);
-        }
+        mobPhysicsUpdate(map, ph, isSwimMap, dtSec);
 
         // Keep hit1 stance
         if (state.stance !== "hit1" && anim?.stances?.["hit1"]) {
@@ -1914,7 +1916,6 @@ function updateLifeAnimations(dtMs) {
         if (state.hitStaggerUntil > 0 && now >= state.hitStaggerUntil) {
           state.hitStaggerUntil = 0;
           state.aggroUntil = now + MOB_AGGRO_DURATION_MS;
-          // Face toward player
           state.facing = runtime.player.x < ph.x ? -1 : 1;
           state.behaviorState = "move";
           state.stance = anim?.stances?.["move"] ? "move" : "stand";
@@ -1941,30 +1942,26 @@ function updateLifeAnimations(dtMs) {
             state.hitCounter = 0;
           }
 
-          // ── Normal patrol AI ──
-          state.hitCounter += steps;
+          // ── Normal patrol AI (dt-based counter) ──
+          state.hitCounter += dtMs; // accumulate ms
 
-          // Counter-based transitions (C++ next_move)
           const curStanceAnim = anim?.stances?.[state.stance] ?? anim?.stances?.["stand"];
           const aniEnd = curStanceAnim && state.frameIndex >= curStanceAnim.frames.length - 1;
-          if (aniEnd && state.hitCounter > 200) {
+          if (aniEnd && state.hitCounter > 1600) { // 200 ticks × 8ms = 1600ms
             mobNextMove(state, anim);
             state.hitCounter = 0;
           }
 
-          // Apply movement force
           if (state.behaviorState === "move") {
             ph.hforce = state.facing === 1 ? state.mobSpeed : -state.mobSpeed;
           }
         }
 
-        // ── Physics step ──
-        for (let s = 0; s < steps; s++) {
-          mobPhysicsStep(map, ph, isSwimMap);
-        }
+        // ── Single dt-based physics update ──
+        mobPhysicsUpdate(map, ph, isSwimMap, dtSec);
 
         // ── Sync visual stance with behavior ──
-        const moving = state.behaviorState === "move" && Math.abs(ph.hspeed) > 0.05;
+        const moving = state.behaviorState === "move" && Math.abs(ph.hspeed) > MOB_TPS * 0.05;
         const desiredStance = moving && anim?.stances?.["move"] ? "move" : "stand";
         if (state.stance !== desiredStance) {
           state.stance = desiredStance;
@@ -1976,10 +1973,7 @@ function updateLifeAnimations(dtMs) {
       // Non-moving mobs/NPCs: still apply gravity to snap to ground
       const ph = state.phobj;
       if (!ph.onGround) {
-        const steps = Math.max(1, Math.round(dtMs / MOB_PHYS_TIMESTEP));
-        for (let s = 0; s < steps; s++) {
-          mobPhysicsStep(map, ph, isSwimMap);
-        }
+        mobPhysicsUpdate(map, ph, isSwimMap, dtSec);
       }
     }
 
@@ -2116,12 +2110,13 @@ function spawnDamageNumber(worldX, worldY, value, critical) {
  * - removed when opacity <= 0
  */
 function updateDamageNumbers(dt) {
-  const ticks = dt * 1000 / MOB_PHYS_TIMESTEP; // approximate # ticks
-  const fadeStep = ticks * (MOB_PHYS_TIMESTEP / DMG_NUMBER_FADE_TIME);
+  // C++ vspeed = -0.25 px/tick at 125 TPS = -31.25 px/sec
+  const risePxPerSec = DMG_NUMBER_VSPEED * MOB_TPS;
+  const fadePerSec = 1.0 / (DMG_NUMBER_FADE_TIME / 1000);
   for (let i = damageNumbers.length - 1; i >= 0; i--) {
     const dn = damageNumbers[i];
-    dn.y += dn.vspeed * ticks;
-    dn.opacity -= fadeStep;
+    dn.y += risePxPerSec * dt;
+    dn.opacity -= fadePerSec * dt;
     if (dn.opacity <= 0) {
       damageNumbers.splice(i, 1);
     }
@@ -2500,7 +2495,7 @@ function updateMobCombatStates(dtMs) {
     const life = runtime.map?.lifeEntries[idx];
     if (!life || life.type !== "m") continue;
 
-    // HIT knockback physics is handled in updateLifeAnimations (uses mobPhysicsStep
+    // HIT knockback physics is handled in updateLifeAnimations (uses mobPhysicsUpdate
     // for proper wall/edge limits). This function only handles dying/respawn/aggro.
 
     // Dying fade-out
@@ -6402,13 +6397,22 @@ function update(dt) {
   updateSummary();
 }
 
+const TARGET_FRAME_MS = 1000 / 60; // 60fps cap
+
 function tick(timestampMs) {
   try {
     if (runtime.previousTimestampMs === null) {
       runtime.previousTimestampMs = timestampMs;
     }
 
-    const dt = Math.min((timestampMs - runtime.previousTimestampMs) / 1000, 0.05);
+    // 60fps cap: skip frame if not enough time has passed
+    const elapsed = timestampMs - runtime.previousTimestampMs;
+    if (elapsed < TARGET_FRAME_MS) {
+      requestAnimationFrame(tick);
+      return;
+    }
+
+    const dt = Math.min(elapsed / 1000, 0.05);
     runtime.previousTimestampMs = timestampMs;
 
     update(dt);
