@@ -5264,6 +5264,10 @@ function updateCamera(dt) {
     const scroll = runtime.portalScroll;
     scroll.elapsedMs += dt * 1000;
 
+    // Update target to player's current position (player may settle during scroll)
+    scroll.targetX = clampCameraXToMapBounds(runtime.map, runtime.player.x);
+    scroll.targetY = clampCameraYToMapBounds(runtime.map, runtime.player.y - cameraHeightBias());
+
     const duration = Math.max(1, scroll.durationMs);
     const t = Math.max(0, Math.min(1, scroll.elapsedMs / duration));
     const easedT = portalMomentumEase(t);
@@ -5274,8 +5278,9 @@ function updateCamera(dt) {
     runtime.camera.y = clampCameraYToMapBounds(runtime.map, runtime.camera.y);
 
     if (t >= 1) {
-      runtime.camera.x = scroll.targetX;
-      runtime.camera.y = scroll.targetY;
+      // Snap to player's current position (may have shifted during scroll)
+      runtime.camera.x = clampCameraXToMapBounds(runtime.map, runtime.player.x);
+      runtime.camera.y = clampCameraYToMapBounds(runtime.map, runtime.player.y - cameraHeightBias());
       scroll.active = false;
     }
 
