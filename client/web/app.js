@@ -75,9 +75,17 @@ const imagePromiseCache = new Map();
 const soundDataUriCache = new Map();
 const soundDataPromiseCache = new Map();
 
-const FACE_ANIMATION_SPEED = 1.6;
+// ─── Canvas / Display ─────────────────────────────────────────────────────────
+const DEFAULT_CANVAS_WIDTH = 1280;
+const DEFAULT_CANVAS_HEIGHT = 960;
+const FIXED_RES_WIDTH = 1280;
+const FIXED_RES_HEIGHT = 960;
+const MIN_CANVAS_WIDTH = 640;
+const MIN_CANVAS_HEIGHT = 320;
+const BG_REFERENCE_WIDTH = 800;
+const BG_REFERENCE_HEIGHT = 600;
 
-// C++ HeavenClient physics constants (per-tick units, TIMESTEP = 8ms)
+// ─── Player Physics (per-tick units, C++ TIMESTEP = 8ms → 125 TPS) ───────────
 const PHYS_TPS = 125;
 const PHYS_GRAVFORCE = 0.14;
 const PHYS_FRICTION = 0.5;
@@ -98,6 +106,8 @@ const PHYS_SWIM_HFORCE = 0.12;
 const PHYS_SWIM_JUMP_MULT = 0.8;
 const PHYS_DEFAULT_SPEED_STAT = 115;
 const PHYS_DEFAULT_JUMP_STAT = 110;
+
+// ─── Portal / Map Transitions ─────────────────────────────────────────────────
 const HIDDEN_PORTAL_REVEAL_DELAY_MS = 500;
 const HIDDEN_PORTAL_FADE_IN_MS = 400;
 const PORTAL_SPAWN_Y_OFFSET = 24;
@@ -106,34 +116,32 @@ const PORTAL_FADE_IN_MS = 240;
 const PORTAL_SCROLL_MIN_MS = 180;
 const PORTAL_SCROLL_MAX_MS = 560;
 const PORTAL_SCROLL_SPEED_PX_PER_SEC = 3200;
-const DEFAULT_CANVAS_WIDTH = 1280;
-const DEFAULT_CANVAS_HEIGHT = 960;
-const BG_REFERENCE_WIDTH = 800;
-const BG_REFERENCE_HEIGHT = 600;
-const MIN_CANVAS_WIDTH = 640;
-const MIN_CANVAS_HEIGHT = 320;
 
-/**
- * Camera Y offset to push the scene lower on tall viewports.
- * Backgrounds are designed for 600px height — content extends ~300px below center.
- * On taller canvases the viewport bottom extends further, showing void below the
- * map content. This bias shifts the camera upward so the viewport bottom stays at
- * the same world-space distance below center as the original 600px design.
- * At 600px: 0. At 1080px: 240. At 1440px: 420. Fully dynamic.
- */
-function cameraHeightBias() {
-  return Math.max(0, (canvasEl.height - BG_REFERENCE_HEIGHT) / 2);
-}
-
+// ─── Character / UI ───────────────────────────────────────────────────────────
+const FACE_ANIMATION_SPEED = 1.6;
 const DEFAULT_STANDARD_CHARACTER_WIDTH = 58;
 const CHAT_BUBBLE_LINE_HEIGHT = 16;
 const CHAT_BUBBLE_HORIZONTAL_PADDING = 8;
 const CHAT_BUBBLE_VERTICAL_PADDING = 6;
 const CHAT_BUBBLE_STANDARD_WIDTH_MULTIPLIER = 3;
+const STATUSBAR_HEIGHT = 34;
+const STATUSBAR_BAR_HEIGHT = 14;
+const STATUSBAR_PADDING_H = 10;
+
+// ─── Persistence Keys ─────────────────────────────────────────────────────────
 const TELEPORT_PRESET_CACHE_KEY = "mapleweb.debug.teleportPreset.v1";
 const SETTINGS_CACHE_KEY = "mapleweb.settings.v1";
-const FIXED_RES_WIDTH = 1280;
-const FIXED_RES_HEIGHT = 960;
+const STAT_CACHE_KEY = "mapleweb.debug.playerStats.v1";
+const CHAT_LOG_HEIGHT_CACHE_KEY = "mapleweb.debug.chatLogHeight.v1";
+const KEYBINDS_STORAGE_KEY = "mapleweb.keybinds.v1";
+
+/**
+ * Camera Y offset: push scene lower on tall viewports.
+ * Backgrounds designed for 600px — bias shifts camera so bottom stays consistent.
+ */
+function cameraHeightBias() {
+  return Math.max(0, (canvasEl.height - BG_REFERENCE_HEIGHT) / 2);
+}
 
 /**
  * Default equipment set for the character.
@@ -408,27 +416,14 @@ async function copyRuntimeSummaryToClipboard() {
 }
 
 function loadCachedTeleportPreset() {
-  try {
-    const raw = localStorage.getItem(TELEPORT_PRESET_CACHE_KEY);
-    if (!raw) return null;
-
-    const parsed = JSON.parse(raw);
-    const x = Number(parsed?.x);
-    const y = Number(parsed?.y);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-
-    return { x, y };
-  } catch {
-    return null;
-  }
+  const parsed = loadJsonFromStorage(TELEPORT_PRESET_CACHE_KEY);
+  if (!parsed) return null;
+  const x = Number(parsed.x), y = Number(parsed.y);
+  return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
 }
 
 function saveCachedTeleportPreset(x, y) {
-  try {
-    localStorage.setItem(TELEPORT_PRESET_CACHE_KEY, JSON.stringify({ x, y }));
-  } catch {
-    // ignore storage failures (private mode/quota)
-  }
+  saveJsonToStorage(TELEPORT_PRESET_CACHE_KEY, { x, y });
 }
 
 function applyManualTeleport(x, y) {
@@ -483,30 +478,16 @@ function initializeTeleportPresetInputs() {
   teleportYInputEl.value = String(Math.round(cached.y));
 }
 
-const STAT_CACHE_KEY = "mapleweb.debug.playerStats.v1";
 
 function loadCachedPlayerStats() {
-  try {
-    const raw = localStorage.getItem(STAT_CACHE_KEY);
-    if (!raw) return null;
-
-    const parsed = JSON.parse(raw);
-    const speed = Number(parsed?.speed);
-    const jump = Number(parsed?.jump);
-    if (!Number.isFinite(speed) || !Number.isFinite(jump)) return null;
-
-    return { speed, jump };
-  } catch {
-    return null;
-  }
+  const parsed = loadJsonFromStorage(STAT_CACHE_KEY);
+  if (!parsed) return null;
+  const speed = Number(parsed.speed), jump = Number(parsed.jump);
+  return Number.isFinite(speed) && Number.isFinite(jump) ? { speed, jump } : null;
 }
 
 function saveCachedPlayerStats(speed, jump) {
-  try {
-    localStorage.setItem(STAT_CACHE_KEY, JSON.stringify({ speed, jump }));
-  } catch {
-    // ignore
-  }
+  saveJsonToStorage(STAT_CACHE_KEY, { speed, jump });
 }
 
 function initializeStatInputs() {
@@ -617,7 +598,6 @@ function appendChatLogMessage(msg) {
   chatLogMessagesEl.scrollTop = chatLogMessagesEl.scrollHeight;
 }
 
-const CHAT_LOG_HEIGHT_CACHE_KEY = "mapleweb.debug.chatLogHeight.v1";
 
 function initChatLogResize() {
   if (!chatLogEl || !chatLogHandleEl) return;
@@ -709,6 +689,19 @@ function resetGameplayInput() {
 function safeNumber(value, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+/** Safe JSON load from localStorage. Returns null on any failure. */
+function loadJsonFromStorage(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+/** Safe JSON save to localStorage. Silently ignores failures. */
+function saveJsonToStorage(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
 }
 
 function childByName(node, name) {
@@ -811,24 +804,17 @@ function soundPathFromName(soundFile) {
 }
 
 function loadSettings() {
-  try {
-    const cached = localStorage.getItem(SETTINGS_CACHE_KEY);
-    if (cached) {
-      const parsed = JSON.parse(cached);
-      if (typeof parsed.bgmEnabled === "boolean") runtime.settings.bgmEnabled = parsed.bgmEnabled;
-      if (typeof parsed.sfxEnabled === "boolean") runtime.settings.sfxEnabled = parsed.sfxEnabled;
-      if (typeof parsed.fixedRes === "boolean") runtime.settings.fixedRes = parsed.fixedRes;
-      // Migrate legacy key
-      if (typeof parsed.fixed169 === "boolean" && typeof parsed.fixedRes !== "boolean") runtime.settings.fixedRes = parsed.fixed169;
-      if (typeof parsed.minimapVisible === "boolean") runtime.settings.minimapVisible = parsed.minimapVisible;
-    }
-  } catch (_) {}
+  const parsed = loadJsonFromStorage(SETTINGS_CACHE_KEY);
+  if (!parsed) return;
+  if (typeof parsed.bgmEnabled === "boolean") runtime.settings.bgmEnabled = parsed.bgmEnabled;
+  if (typeof parsed.sfxEnabled === "boolean") runtime.settings.sfxEnabled = parsed.sfxEnabled;
+  if (typeof parsed.fixedRes === "boolean") runtime.settings.fixedRes = parsed.fixedRes;
+  if (typeof parsed.fixed169 === "boolean" && typeof parsed.fixedRes !== "boolean") runtime.settings.fixedRes = parsed.fixed169;
+  if (typeof parsed.minimapVisible === "boolean") runtime.settings.minimapVisible = parsed.minimapVisible;
 }
 
 function saveSettings() {
-  try {
-    localStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify(runtime.settings));
-  } catch (_) {}
+  saveJsonToStorage(SETTINGS_CACHE_KEY, runtime.settings);
 }
 
 function syncSettingsToUI() {
@@ -1311,55 +1297,44 @@ async function loadLifeAnimation(type, id) {
 // Per-life-entry runtime animation state
 const lifeRuntimeState = new Map();
 
-// C++ physics constants (per-tick values — used internally by friction formulas)
-const MOB_TPS = 125;          // C++ ticks per second (1000 / 8ms)
-const MOB_GRAVFORCE = 0.14;   // px/tick² (used in per-tick context)
+// ─── Mob Physics (per-tick values — used internally by friction formulas) ──────
+const MOB_TPS = 125;              // C++ ticks per second (1000 / 8ms)
+const MOB_GRAVFORCE = 0.14;      // px/tick²
 const MOB_SWIMGRAVFORCE = 0.03;
-const MOB_FRICTION = 0.5;     // dimensionless
-const MOB_SLOPEFACTOR = 0.1;  // dimensionless
-const MOB_GROUNDSLIP = 3.0;   // divisor for inertia
+const MOB_FRICTION = 0.5;
+const MOB_SLOPEFACTOR = 0.1;
+const MOB_GROUNDSLIP = 3.0;
 const MOB_SWIMFRICTION = 0.08;
-const MOB_HSPEED_DEADZONE = 0.1; // per-tick deadzone
+const MOB_HSPEED_DEADZONE = 0.1;
 
-// (Behavior transitions are now counter-based per C++, not timer-based)
-
-// ─── Client-side combat demo ──────────────────────────────────────────────────
-
-const MOB_DEFAULT_HP = 100;
+// ─── Mob Behavior ─────────────────────────────────────────────────────────────
+const MOB_DEFAULT_HP = 100;       // fallback if WZ maxHP missing
 const MOB_RESPAWN_DELAY_MS = 8000;
+const MOB_HIT_DURATION_MS = 500;  // pain animation freeze
+const MOB_AGGRO_DURATION_MS = 4000; // chase player after stagger
+const MOB_KB_SPEED = 150;        // initial knockback speed (px/sec)
+
+// ─── Mob UI ───────────────────────────────────────────────────────────────────
 const MOB_HP_BAR_WIDTH = 60;
 const MOB_HP_BAR_HEIGHT = 5;
 const MOB_HP_SHOW_MS = 3000;
-// C++ DamageNumber constants (from DamageNumber.cpp)
-const DMG_NUMBER_VSPEED = -0.25;         // C++ moveobj.vspeed = -0.25 (px/tick)
-const DMG_NUMBER_FADE_TIME = 1500;       // C++ FADE_TIME in ms
-const DMG_NUMBER_ROW_HEIGHT_NORMAL = 30; // C++ rowheight(false)
-const DMG_NUMBER_ROW_HEIGHT_CRIT = 36;   // C++ rowheight(true)
-// C++ digit advances table (DamageNumber::getadvance)
+
+// ─── Damage Numbers (from C++ DamageNumber.cpp) ──────────────────────────────
+const DMG_NUMBER_VSPEED = -0.25;         // px/tick rise speed
+const DMG_NUMBER_FADE_TIME = 1500;       // ms total fade
+const DMG_NUMBER_ROW_HEIGHT_NORMAL = 30;
+const DMG_NUMBER_ROW_HEIGHT_CRIT = 36;
 const DMG_DIGIT_ADVANCES = [24, 20, 22, 22, 24, 23, 24, 22, 24, 24];
-const ATTACK_COOLDOWN_MS = 600;    // minimum time between attacks
 
-// Knockback / stagger constants
-const MOB_HIT_DURATION_MS = 500;   // pain animation duration (~0.5s)
-const MOB_AGGRO_DURATION_MS = 4000; // chase player after stagger (4s)
-const MOB_KB_SPEED = 150;         // initial knockback speed (px/sec), decays linearly to 0 over stagger
-
-// C++ damage formula constants
-// Weapon multiplier for 1H Sword (from C++ get_multiplier)
-const WEAPON_MULTIPLIER = 4.0;
-// Default mastery for beginner
-const DEFAULT_MASTERY = 0.2;
-// Default critical rate
-const DEFAULT_CRITICAL = 0.05;
-// Default accuracy
-const DEFAULT_ACCURACY = 10;
-// Default attack stat (watk from weapon + base)
-const DEFAULT_WATK = 15;
-// Close-range attack reach: C++ uses afterimage range, we simplify to px rect
+// ─── Combat / Attack ──────────────────────────────────────────────────────────
+const ATTACK_COOLDOWN_MS = 600;
 const ATTACK_RANGE_X = 120;
 const ATTACK_RANGE_Y = 50;
-
-// 1H Sword attack stances (from C++ S1A1M1D attack_stances)
+const WEAPON_MULTIPLIER = 4.0;    // 1H Sword
+const DEFAULT_MASTERY = 0.2;
+const DEFAULT_CRITICAL = 0.05;
+const DEFAULT_ACCURACY = 10;
+const DEFAULT_WATK = 15;
 const SWORD_1H_ATTACK_STANCES = ["stabO1", "stabO2", "swingO1", "swingO2", "swingO3"];
 
 const damageNumbers = []; // { x, y, vspeed, value, critical, opacity, miss }
@@ -1543,18 +1518,8 @@ function fhIsWall(fh) { return Math.abs(fh.x2 - fh.x1) < 0.01; }
 
 /** Find the foothold directly below (x, y) — closest ground at or below y. */
 function fhIdBelow(map, x, y) {
-  let bestFh = null;
-  let bestY = Infinity;
-  for (const fh of map.footholdLines) {
-    if (fhIsWall(fh)) continue;
-    const gy = fhGroundAt(fh, x);
-    if (gy === null) continue;
-    if (gy >= y && gy < bestY) {
-      bestY = gy;
-      bestFh = fh;
-    }
-  }
-  return bestFh;
+  const result = findFootholdBelow(map, x, y);
+  return result ? result.line : null;
 }
 
 /** Get the edge limit for TURNATEDGES — returns the X limit. */
@@ -4560,7 +4525,7 @@ function findGroundLanding(oldX, oldY, newX, newY, map, excludedFootholdId = nul
 
   for (const line of map.footholdLines) {
     if (excludedFootholdId && String(line.id) === String(excludedFootholdId)) continue;
-    if (isWallFoothold(line)) continue;
+    if (fhIsWall(line)) continue;
 
     const segX = line.x2 - line.x1;
     const segY = line.y2 - line.y1;
@@ -4592,17 +4557,9 @@ function findFootholdAtXNearY(map, x, targetY, maxDistance = 24) {
   let best = null;
 
   for (const line of map.footholdLines ?? []) {
-    const dx = line.x2 - line.x1;
-    if (Math.abs(dx) < 0.01) continue;
-
-    const minX = Math.min(line.x1, line.x2);
-    const maxX = Math.max(line.x1, line.x2);
-    if (x < minX - 1 || x > maxX + 1) continue;
-
-    const t = (x - line.x1) / dx;
-    if (t < -0.01 || t > 1.01) continue;
-
-    const yAtX = line.y1 + (line.y2 - line.y1) * t;
+    if (fhIsWall(line)) continue;
+    const yAtX = fhGroundAt(line, x);
+    if (yAtX === null) continue;
     const distance = Math.abs(yAtX - targetY);
     if (distance <= maxDistance && (!best || distance < best.distance)) {
       best = { y: yAtX, line, distance };
@@ -4619,45 +4576,23 @@ function findFootholdById(map, footholdId) {
 
 function findFootholdBelow(map, x, minY, excludedFootholdId = null) {
   let best = null;
-  let bestY = Number.POSITIVE_INFINITY;
+  let bestY = Infinity;
 
-  for (const line of map.footholdLines ?? []) {
-    if (isWallFoothold(line)) continue;
-    if (excludedFootholdId && String(line.id) === String(excludedFootholdId)) continue;
-
-    const minX = Math.min(line.x1, line.x2);
-    const maxX = Math.max(line.x1, line.x2);
-    if (x < minX - 1 || x > maxX + 1) continue;
-
-    const dx = line.x2 - line.x1;
-    if (Math.abs(dx) < 0.01) continue;
-
-    const t = (x - line.x1) / dx;
-    if (t < -0.01 || t > 1.01) continue;
-
-    const yAtX = line.y1 + (line.y2 - line.y1) * t;
-    if (yAtX < minY - 1) continue;
-
-    if (yAtX < bestY) {
-      bestY = yAtX;
-      best = { y: yAtX, line };
+  for (const fh of map.footholdLines ?? []) {
+    if (fhIsWall(fh)) continue;
+    if (excludedFootholdId && String(fh.id) === String(excludedFootholdId)) continue;
+    const gy = fhGroundAt(fh, x);
+    if (gy === null || gy < minY - 1) continue;
+    if (gy < bestY) {
+      bestY = gy;
+      best = { y: gy, line: fh };
     }
   }
 
   return best;
 }
 
-function footholdLeft(foothold) {
-  return Math.min(foothold.x1, foothold.x2);
-}
-
-function footholdRight(foothold) {
-  return Math.max(foothold.x1, foothold.x2);
-}
-
-function isWallFoothold(foothold) {
-  return Math.abs(foothold.x2 - foothold.x1) < 0.01;
-}
+// (footholdLeft, footholdRight, isWallFoothold aliases removed — use fhLeft, fhRight, fhIsWall)
 
 function rangesOverlap(a1, a2, b1, b2) {
   const minA = Math.min(a1, a2);
@@ -4668,7 +4603,7 @@ function rangesOverlap(a1, a2, b1, b2) {
 }
 
 function isBlockingWall(foothold, minY, maxY) {
-  if (!foothold || !isWallFoothold(foothold)) return false;
+  if (!foothold || !fhIsWall(foothold)) return false;
   return rangesOverlap(foothold.y1, foothold.y2, minY, maxY);
 }
 
@@ -4679,12 +4614,12 @@ function getWallX(map, current, left, nextY) {
   if (left) {
     const prev = findFootholdById(map, current.prevId);
     if (isBlockingWall(prev, minY, maxY)) {
-      return footholdLeft(current);
+      return fhLeft(current);
     }
 
     const prevPrev = prev ? findFootholdById(map, prev.prevId) : null;
     if (isBlockingWall(prevPrev, minY, maxY)) {
-      return footholdLeft(prev);
+      return fhLeft(prev);
     }
 
     return map.walls?.left ?? map.bounds.minX;
@@ -4692,12 +4627,12 @@ function getWallX(map, current, left, nextY) {
 
   const next = findFootholdById(map, current.nextId);
   if (isBlockingWall(next, minY, maxY)) {
-    return footholdRight(current);
+    return fhRight(current);
   }
 
   const nextNext = next ? findFootholdById(map, next.nextId) : null;
   if (isBlockingWall(nextNext, minY, maxY)) {
-    return footholdRight(next);
+    return fhRight(next);
   }
 
   return map.walls?.right ?? map.bounds.maxX;
@@ -4716,11 +4651,7 @@ function resolveWallCollision(oldX, newX, nextY, map, footholdId) {
   return collision ? wallX : newX;
 }
 
-function footholdSlope(foothold) {
-  const dx = foothold.x2 - foothold.x1;
-  if (Math.abs(dx) < 0.01) return 0;
-  return (foothold.y2 - foothold.y1) / dx;
-}
+// (footholdSlope alias removed — use fhSlope)
 
 function playerWalkforce() {
   return 0.05 + 0.11 * runtime.player.stats.speed / 100;
@@ -4748,12 +4679,10 @@ function applyGroundPhysics(hspeedTick, hforceTick, slope, numTicks) {
   return hspeedTick + hacc * numTicks;
 }
 
+/** Unclamped Y interpolation (allows extrapolation). For walls, returns min Y. */
 function groundYOnFoothold(foothold, x) {
   const dx = foothold.x2 - foothold.x1;
-  if (Math.abs(dx) < 0.01) {
-    return Math.min(foothold.y1, foothold.y2);
-  }
-
+  if (Math.abs(dx) < 0.01) return Math.min(foothold.y1, foothold.y2);
   const t = (x - foothold.x1) / dx;
   return foothold.y1 + (foothold.y2 - foothold.y1) * t;
 }
@@ -4763,12 +4692,12 @@ function resolveFootholdForX(map, foothold, x) {
   let resolvedX = x;
 
   for (let step = 0; step < 8 && current; step += 1) {
-    const left = footholdLeft(current);
-    const right = footholdRight(current);
+    const left = fhLeft(current);
+    const right = fhRight(current);
 
     if (Math.floor(resolvedX) > right) {
       const next = findFootholdById(map, current.nextId);
-      if (!next || isWallFoothold(next)) {
+      if (!next || fhIsWall(next)) {
         return { foothold: null, x: resolvedX };
       }
 
@@ -4778,7 +4707,7 @@ function resolveFootholdForX(map, foothold, x) {
 
     if (Math.ceil(resolvedX) < left) {
       const prev = findFootholdById(map, current.prevId);
-      if (!prev || isWallFoothold(prev)) {
+      if (!prev || fhIsWall(prev)) {
         return { foothold: null, x: resolvedX };
       }
 
@@ -4956,7 +4885,7 @@ function updatePlayer(dt) {
         const topExitFoothold = exitedFromTop
           ? findFootholdAtXNearY(map, player.x, ropeTopY, 24)
           : null;
-        const canSnapToTopFoothold = !!topExitFoothold && !isWallFoothold(topExitFoothold.line);
+        const canSnapToTopFoothold = !!topExitFoothold && !fhIsWall(topExitFoothold.line);
 
         player.climbing = false;
         player.climbRope = null;
@@ -4993,8 +4922,8 @@ function updatePlayer(dt) {
       findFootholdById(map, player.footholdId) ??
       findFootholdBelow(map, player.x, player.y)?.line;
 
-    const slope = currentFoothold && !isWallFoothold(currentFoothold)
-      ? footholdSlope(currentFoothold)
+    const slope = currentFoothold && !fhIsWall(currentFoothold)
+      ? fhSlope(currentFoothold)
       : 0;
 
     if (player.onGround) {
@@ -5008,7 +4937,7 @@ function updatePlayer(dt) {
 
       if (jumpRequested) {
         const footholdGround =
-          currentFoothold && !isWallFoothold(currentFoothold)
+          currentFoothold && !fhIsWall(currentFoothold)
             ? groundYOnFoothold(currentFoothold, player.x)
             : player.y;
 
@@ -5115,12 +5044,12 @@ function updatePlayer(dt) {
 
     let horizontalApplied = false;
 
-    if (player.onGround && (!currentFoothold || isWallFoothold(currentFoothold))) {
+    if (player.onGround && (!currentFoothold || fhIsWall(currentFoothold))) {
       player.onGround = false;
       player.footholdId = null;
     }
 
-    if (player.onGround && currentFoothold && !isWallFoothold(currentFoothold)) {
+    if (player.onGround && currentFoothold && !fhIsWall(currentFoothold)) {
       const oldX = player.x;
       let nextX = oldX + player.vx * dt;
       nextX = resolveWallCollision(oldX, nextX, player.y, map, currentFoothold.id);
@@ -5130,7 +5059,7 @@ function updatePlayer(dt) {
       const nextFoothold = footholdResolution?.foothold ?? null;
       const resolvedX = footholdResolution?.x ?? nextX;
 
-      if (nextFoothold && !isWallFoothold(nextFoothold)) {
+      if (nextFoothold && !fhIsWall(nextFoothold)) {
         player.x = resolvedX;
         player.y = groundYOnFoothold(nextFoothold, resolvedX);
         player.vy = 0;
@@ -5970,10 +5899,7 @@ function drawPlayerNameLabel() {
 }
 
 // ─── Status Bar (HP / MP / EXP) ──────────────────────────────────────────────
-
-const STATUSBAR_HEIGHT = 34;
-const STATUSBAR_BAR_HEIGHT = 14;
-const STATUSBAR_PADDING_H = 10;
+// (STATUSBAR_HEIGHT, STATUSBAR_BAR_HEIGHT, STATUSBAR_PADDING_H defined in UI constants section)
 
 function drawStatusBar() {
   const player = runtime.player;
@@ -7207,7 +7133,6 @@ settingsMinimapToggleEl?.addEventListener("change", () => {
 
 // ─── Key Bindings Configurator ──────────────────────────────────────────────
 
-const KEYBINDS_STORAGE_KEY = "mapleweb.keybinds.v1";
 
 /** Convert event.code to display name */
 function keyCodeToDisplay(code) {
@@ -7219,21 +7144,15 @@ function keyCodeToDisplay(code) {
 }
 
 function loadKeybinds() {
-  try {
-    const raw = localStorage.getItem(KEYBINDS_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      for (const key of Object.keys(runtime.keybinds)) {
-        if (typeof parsed[key] === "string") runtime.keybinds[key] = parsed[key];
-      }
-    }
-  } catch (_) {}
+  const parsed = loadJsonFromStorage(KEYBINDS_STORAGE_KEY);
+  if (!parsed) return;
+  for (const key of Object.keys(runtime.keybinds)) {
+    if (typeof parsed[key] === "string") runtime.keybinds[key] = parsed[key];
+  }
 }
 
 function saveKeybinds() {
-  try {
-    localStorage.setItem(KEYBINDS_STORAGE_KEY, JSON.stringify(runtime.keybinds));
-  } catch (_) {}
+  saveJsonToStorage(KEYBINDS_STORAGE_KEY, runtime.keybinds);
 }
 
 function syncKeybindButtons() {
