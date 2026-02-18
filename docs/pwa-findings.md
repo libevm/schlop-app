@@ -28,6 +28,45 @@ The docs UI includes sidebar navigation for markdown files under `docs/`.
 
 ---
 
+## 2026-02-18 07:15 (GMT+11)
+### Summary
+- Phase 2 complete: Shared contracts and data model (`@maple/shared-schemas`)
+- Phase 3 complete: Build-assets pipeline (`@maple/build-assets`)
+- Background tiling rewrite to C++ faithful count-based approach
+- Default resolution 1920×1080, fixed 16:9 canvas constraining
+- Non-tiled background edge-extension attempted and reverted
+
+### Phase 2 — Shared Contracts (`packages/shared-schemas/`)
+- 11 entity types: map, mob, npc, character, equip, effect, audio, ui, skill, reactor, item
+- ID normalization (trim, strip leading zeros for numeric IDs)
+- Alias system (henesys → map:100000000, slime → mob:210100, etc.)
+- Section schemas per entity (core/heavy/ref categories for loading strategy)
+- API contracts: success/error envelopes, batch request/response, error codes
+- Runtime data model types: Foothold, Portal, LadderRope, BackgroundLayer, etc.
+- Schema version tracking (1.0.0)
+
+### Phase 3 — Build-Assets Pipeline (`tools/build-assets/`)
+- **Scanner**: Scans WZ JSON tree, produces deterministic inventory (16 namespaces, 22K+ files, 3.7GB)
+- **JSON Reader**: Safe file reader, never throws, handles malformed/BOM/missing files
+- **UOL Resolver**: Resolves WZ UOL references (relative to parent), inlinks, records outlinks
+- **Map Extractor**: Full map parsing (footholds, portals, backgrounds, layers, life, ladders, walls, borders, dependencies)
+- **Mob/NPC Extractor**: Info, stances, frames, sounds, linked entity detection
+- **Character Extractor**: Actions, frame parts with anchors, UOL refs, face flags, type inference
+- **Blob Store**: Content-addressed SHA-256 storage with deduplication
+- **Asset Index**: type:id:section → blob hash mapping, reverse lookup, integrity checking, serialization
+- **Pipeline Report**: Issue tracking by severity, configurable fail threshold, human-readable output
+
+### Display/Background Changes
+- Default resolution: 1920×1080 (was 1280×720)
+- Fixed 16:9: canvas buffer locked at 1920×1080 on large viewports, CSS scales display
+- Background tiling: C++ count-based approach (`htile = VWIDTH/cx + 3`)
+- Edge-extension for type 0 backgrounds: attempted but reverted (causes ugly repeated seams)
+
+### Validation
+- `bun run ci` ✅ — 99 tests across all workspaces
+
+---
+
 ## 2026-02-18 06:30 (GMT+11)
 ### Summary
 - Audio enabled by default — removed "Enable Audio" button and `audioUnlocked` gate
