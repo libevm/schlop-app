@@ -1306,19 +1306,16 @@ async function loadLifeAnimation(type, id) {
 // Per-life-entry runtime animation state
 const lifeRuntimeState = new Map();
 
-// C++ physics constants (per-tick, ~30fps fixed timestep)
+// C++ physics constants (per-tick, 8ms timestep = 125fps)
 const MOB_GRAVFORCE = 0.14;
 const MOB_SWIMGRAVFORCE = 0.03;
 const MOB_FRICTION = 0.5;
 const MOB_SLOPEFACTOR = 0.1;
 const MOB_GROUNDSLIP = 3.0;
 const MOB_SWIMFRICTION = 0.08;
-const MOB_PHYS_TIMESTEP = 1000 / 30; // ~33ms per C++ tick
+const MOB_PHYS_TIMESTEP = 8; // C++ Constants::TIMESTEP = 8ms (125fps)
 
-const MOB_STAND_MIN_MS = 1500;
-const MOB_STAND_MAX_MS = 4000;
-const MOB_MOVE_MIN_MS = 2000;
-const MOB_MOVE_MAX_MS = 5000;
+// (Behavior transitions are now counter-based per C++, not timer-based)
 
 // ─── Client-side combat demo ──────────────────────────────────────────────────
 
@@ -1340,8 +1337,8 @@ const ATTACK_COOLDOWN_MS = 600;    // minimum time between attacks
 // apply_damage sets counter=170, HIT exits at counter>200 → ~30 ticks of KB force
 const MOB_KB_FORCE_GROUND = 0.2;   // C++ KBFORCE when onground
 const MOB_KB_FORCE_AIR = 0.1;      // C++ KBFORCE when airborne
-const MOB_KB_COUNTER_START = 190;   // C++ counter = 170 on hit (raised for snappier feel)
-const MOB_KB_COUNTER_EXIT = 200;    // C++ exits HIT when counter > 200
+const MOB_KB_COUNTER_START = 170;   // C++ apply_damage: counter = 170
+const MOB_KB_COUNTER_EXIT = 200;    // C++ HIT: next = counter > 200
 
 // C++ damage formula constants
 // Weapon multiplier for 1H Sword (from C++ get_multiplier)
@@ -1825,11 +1822,10 @@ function initLifeRuntimeStates() {
       }
     }
 
-    // Mob speed from WZ: C++ does (speed+100)*0.001 as force-per-tick.
-    // Scaled up 3× for more visible patrol movement.
+    // Mob speed from WZ: C++ does (speed+100)*0.001 as force-per-tick at 8ms timestep.
     let mobSpeed = 0;
     if (isMob && animData?.speed !== undefined) {
-      mobSpeed = (animData.speed + 100) * 0.003;
+      mobSpeed = (animData.speed + 100) * 0.001;
     }
 
     const hasPatrolRange = life.rx0 !== life.rx1 && (life.rx0 !== 0 || life.rx1 !== 0);
@@ -1858,8 +1854,7 @@ function initLifeRuntimeStates() {
       patrolMin: hasPatrolRange ? life.rx0 : -Infinity,
       patrolMax: hasPatrolRange ? life.rx1 : Infinity,
       behaviorState: "stand",
-      behaviorTimerMs: randomRange(MOB_STAND_MIN_MS, MOB_STAND_MAX_MS),
-      behaviorCounter: 0,
+
       // Combat state (client-side demo)
       hp: isMob ? MOB_DEFAULT_HP : -1,
       maxHp: isMob ? MOB_DEFAULT_HP : -1,
@@ -2511,7 +2506,7 @@ function updateMobCombatStates(dtMs) {
       state.frameIndex = 0;
       state.frameTimerMs = 0;
       state.behaviorState = "stand";
-      state.behaviorTimerMs = randomRange(MOB_STAND_MIN_MS, MOB_STAND_MAX_MS);
+      state.behaviorState = "stand";
       state.phobj.x = life.x;
       state.phobj.y = life.cy;
       state.phobj.hspeed = 0;
