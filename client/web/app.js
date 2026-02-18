@@ -1336,6 +1336,7 @@ const ATTACK_COOLDOWN_MS = 600;    // minimum time between attacks
 // Knockback / stagger constants
 const MOB_HIT_DURATION_MS = 500;   // pain animation duration (~0.5s)
 const MOB_AGGRO_DURATION_MS = 4000; // chase player after stagger (4s)
+const MOB_KB_IMPULSE = 2.5;        // immediate hspeed impulse on hit (px/tick, decays via friction)
 
 // C++ damage formula constants
 // Weapon multiplier for 1H Sword (from C++ get_multiplier)
@@ -1892,11 +1893,16 @@ function updateLifeAnimations(dtMs) {
       const now = performance.now();
       const steps = Math.max(1, Math.round(dtMs / MOB_PHYS_TIMESTEP));
 
-      // ── Stagger: mob is frozen, plays hit1 animation, no movement ──
+      // ── Stagger: plays hit1, slides back from knockback impulse ──
       if (state.hitStaggerUntil > 0 && now < state.hitStaggerUntil) {
-        // Frozen in pain — zero all velocity, no force
-        ph.hspeed = 0;
+        // No new force — friction decelerates the KB impulse naturally
         ph.hforce = 0;
+
+        // Run physics so friction slows the slide + foothold limits apply
+        for (let s = 0; s < steps; s++) {
+          mobPhysicsStep(map, ph, isSwimMap);
+        }
+
         // Keep hit1 stance
         if (state.stance !== "hit1" && anim?.stances?.["hit1"]) {
           state.stance = "hit1";
@@ -2406,10 +2412,12 @@ function applyAttackToMob(target) {
     const attackerIsLeft = runtime.player.x < worldX;
     state.facing = attackerIsLeft ? -1 : 1;
 
-    // Enter stagger — frozen in place with hit1 animation
+    // Enter stagger — knockback impulse + pain animation
     const now = performance.now();
     state.hitStaggerUntil = now + MOB_HIT_DURATION_MS;
-    state.phobj.hspeed = 0;
+    // Push away from attacker — friction will decelerate during stagger
+    const pushDir = attackerIsLeft ? 1 : -1;
+    state.phobj.hspeed = pushDir * MOB_KB_IMPULSE;
     state.phobj.hforce = 0;
     if (anim?.stances?.["hit1"]) {
       state.stance = "hit1";
