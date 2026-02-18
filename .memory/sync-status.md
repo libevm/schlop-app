@@ -1,6 +1,6 @@
 # .memory Sync Status
 
-Last synced: 2026-02-18T08:20:00+11:00
+Last synced: 2026-02-18T09:00:00+11:00
 Status: ✅ Synced
 
 ## Current authoritative memory files
@@ -14,48 +14,34 @@ Status: ✅ Synced
 - `.memory/physics.md`
 
 ## What was synced in this pass
-1. **Camera height bias**: Camera target is `player.y - cameraHeightBias()` where
-   `cameraHeightBias() = Math.max(0, (canvasHeight - 600) / 2)`. At 600px: 0, at 1080px: 240.
-   Shifts the camera upward on tall viewports so backgrounds (designed for 600px) cover
-   more of the viewport bottom and sky fills the top. Still subject to map bounds clamping.
-2. **Character equipment rendering** (Phase 8):
-   - Hair data loaded from `Character.wz/Hair/00030000.img.json`
-   - Equipment data loaded for default outfit: Coat 01040002, Pants 01060002, Shoes 01072001, Weapon 01302000
-   - `getHairFrameParts()` extracts hair canvas parts from "default" stance (handles nested hairShade imgdirs)
-   - `getEquipFrameParts()` extracts equipment canvas parts for any stance/frame with z-layer names
-   - `getCharacterFrameData()` now includes hair + equipment parts alongside body/head/face
-   - `addCharacterPreloadTasks()` preloads up to 6 frames per action for all parts
-   - Composition uses existing anchor system: body→navel, head→neck→brow, hair→brow, equips→navel/hand
-   - Z-ordering uses `zmap.img.json` layer names from each part's `z` string node
-   - **Climbing parity (C++ CharLook::draw)**:
-     - Weapon hidden during climbing (no ladder/rope stance → skip)
-     - Hair resolves UOLs to `backDefault/backHair` + `backHairBelowCap` (back hair layers)
-     - Face suppressed during climbing
-     - Head uses back section (`../../back/head`)
-     - Coat/Pants/Shoes use their back z-layers (`backMailChest`, `backPants`, `backShoes`)
-3. **Player HUD** (Phase 8 visual):
-   - Player name label below character
-   - Status bar: HP/MP gauge bars + EXP bar + level/job display at canvas bottom
-   - Map name banner: street name + map name shown on map load, fades out after 3s
-   - Player state: `name`, `level`, `job`, `hp/maxHp`, `mp/maxMp`, `exp/maxExp`
-5. **Client-side combat demo** (Phase 8 visual):
-   - Click mobs to attack (350ms cooldown)
-   - Damage range: 8-18 base, 15% crit chance (1.5× multiplier)
-   - Floating damage numbers: rise at 80px/s, fade after 60% of 1200ms lifetime
-   - Mob HP bars: shown for 3s after hit, green/red color based on HP %
-   - Mob hit1 stance animation on hit, die1 + fade on death
-   - Mob respawn after 8s at original spawn position
-   - EXP on kill → level-up increases maxHP/MP/EXP
-   - Hit/Die SFX from Sound.wz/Mob.img
-   - Pointer cursor on mob hover
-   - `findMobAtScreen()` for click targeting
-   - `attackMob()` → damage calc → spawnDamageNumber() + playSfx()
-   - `updateMobCombatStates()` handles hit recovery, dying fade, respawn
-   - damageNumbers[] cleared on map change
-4. **NPC dialogue + scripts**: Full feature (click-to-talk, portraits, scripted options, travel)
-4. **Mob movement speed 3×**: `(speed+100)*0.003`
-5. **Duplicate `roundRect` removed**
-6. **footholdBounds extended with minY/maxY**
+1. **WZ sprite damage numbers** (C++ DamageNumber parity):
+   - Loads digit sprites from `Effect.wz/BasicEff.img`: NoRed0/NoRed1 (normal), NoCri0/NoCri1 (critical)
+   - Indices 0-9 = digit images, index 10 = "MISS" sprite
+   - First digit uses larger sprite (set0), rest use smaller (set1) with alternating ±2px y-shift
+   - Advance spacing matches C++ `getadvance()` table: [24,20,22,22,24,23,24,22,24,24]
+   - Critical digits get +8 (first) / +4 (rest) extra advance
+   - Float-up via C++ `moveobj.vspeed = -0.25` per tick, opacity starts at 1.5 (extended full alpha)
+   - Falls back to styled text if sprites not yet loaded
+2. **C++ knockback physics (faithful):**
+   - HIT stance force: `hforce = flip ? -KBFORCE : KBFORCE` (0.2 ground, 0.1 air)
+   - Runs through `mobPhysicsStep()` with proper wall/edge limits (TURNATEDGES)
+   - C++ edge-hit during HIT: flips mob, stops KB, exits to STAND (Mob::update lines 193-199)
+   - HIT exits at counter>200 → transitions to aggro chase
+   - Removed duplicate KB integration from `updateMobCombatStates`
+3. **Mob aggro/chase after being hit:**
+   - `state.aggro = true` set when HIT stance exits (counter>200 or edge-hit)
+   - Aggro mobs face and chase player position, using normal `mobPhysicsStep` (respects edges)
+   - Aggro expires after 3-6s random timer, mob returns to normal patrol
+   - Aggro reset on respawn
+4. **Mob foothold safety:**
+   - During KB, `turnAtEdges = true` active → `mobPhysicsStep` uses `fhEdge()` to prevent falling off
+   - Edge collision during KB stops knockback sliding, flips mob
+   - All mob movement (patrol, aggro, KB) goes through unified `mobPhysicsStep` with limits
+5. **Prone attack** (C++ parity):
+   - `proneStab` stance when attacking while crouching
+   - Degenerate damage ÷10 (C++ `Player::prepare_attack`)
+6. **Default STR 25** for test character
+7. **Mob sound UOL resolution** — `../` relative paths resolved; fallback to Snail (0100100)
 
 ## Validation snapshot
 - ✅ `bun run ci` — all tests pass across all workspaces
@@ -73,12 +59,14 @@ Status: ✅ Synced
   - Step 40 (map effects): Animated objects ✅, animated backgrounds ✅, event effects deferred
   - Step 41 (reactors): ✅ Complete
   - Step 42 (minimap): ✅ Complete
-  - Step 43 (projectiles): Not started (needs combat system)
+  - Step 43 (projectiles): Not started (needs combat system expansion)
   - Step 44 (audio robustness): ✅ BGM crossfade, SFX pooling
 - **NPC dialogue + scripts**: ✅ Complete
+- **Combat system**: ✅ C++ parity — damage formula, knockback physics, aggro chase, WZ damage sprites
+- **Equipment rendering**: ✅ Complete
+- **Player HUD**: ✅ Complete
 
 ## Next expected update point
 - Phase 7: Networking and multiplayer (needs server protocol)
-- Phase 8: Remaining visual features (equipment rendering, projectiles)
+- Phase 8: Remaining visual features (map weather/effects, projectiles)
 - Phase 9: E2E validation
-- Camera bottom-void: still visible at very large resolutions when camera clamp overrides bias

@@ -1327,9 +1327,13 @@ const MOB_RESPAWN_DELAY_MS = 8000;
 const MOB_HP_BAR_WIDTH = 60;
 const MOB_HP_BAR_HEIGHT = 5;
 const MOB_HP_SHOW_MS = 3000;
-const DMG_NUMBER_RISE_SPEED = 80;  // px/sec
-const DMG_NUMBER_LIFETIME_MS = 1200;
-const DMG_NUMBER_FADE_START = 0.6; // fraction of lifetime before fade begins
+// C++ DamageNumber constants (from DamageNumber.cpp)
+const DMG_NUMBER_VSPEED = -0.25;         // C++ moveobj.vspeed = -0.25 (px/tick)
+const DMG_NUMBER_FADE_TIME = 1500;       // C++ FADE_TIME in ms
+const DMG_NUMBER_ROW_HEIGHT_NORMAL = 30; // C++ rowheight(false)
+const DMG_NUMBER_ROW_HEIGHT_CRIT = 36;   // C++ rowheight(true)
+// C++ digit advances table (DamageNumber::getadvance)
+const DMG_DIGIT_ADVANCES = [24, 20, 22, 22, 24, 23, 24, 22, 24, 24];
 const ATTACK_COOLDOWN_MS = 600;    // minimum time between attacks
 
 // C++ knockback constants (from Mob::update HIT stance + Mob::apply_damage)
@@ -1357,7 +1361,47 @@ const ATTACK_RANGE_Y = 50;
 // 1H Sword attack stances (from C++ S1A1M1D attack_stances)
 const SWORD_1H_ATTACK_STANCES = ["stabO1", "stabO2", "swingO1", "swingO2", "swingO3"];
 
-const damageNumbers = []; // { x, y, value, critical, elapsed, lifetime }
+const damageNumbers = []; // { x, y, vspeed, value, critical, opacity, miss }
+
+// ─── WZ Damage Number Sprites ────────────────────────────────────────────────
+// Loaded from Effect.wz/BasicEff.img: NoRed0/NoRed1 (normal), NoCri0/NoCri1 (critical)
+// Index 0-9 = digit images, index 10 = Miss text
+const dmgDigitImages = {
+  normalFirst: new Array(11).fill(null),  // NoRed0[0..10]
+  normalRest:  new Array(10).fill(null),  // NoRed1[0..9]
+  critFirst:   new Array(11).fill(null),  // NoCri0[0..10]
+  critRest:    new Array(10).fill(null),  // NoCri1[0..9]
+};
+let dmgDigitsLoaded = false;
+
+async function loadDamageNumberSprites() {
+  if (dmgDigitsLoaded) return;
+  try {
+    const json = await fetchJson("/resources/Effect.wz/BasicEff.img.json");
+    if (!json?.$$) return;
+
+    const sets = { NoRed0: "normalFirst", NoRed1: "normalRest", NoCri0: "critFirst", NoCri1: "critRest" };
+    for (const node of json.$$) {
+      const key = sets[node.$imgdir];
+      if (!key) continue;
+      const arr = dmgDigitImages[key];
+      for (let i = 0; i < (node.$$?.length ?? 0) && i < arr.length; i++) {
+        const frame = node.$$[i];
+        if (!frame?.basedata) continue;
+        let ox = 0, oy = 0;
+        for (const sub of frame.$$?? []) {
+          if (sub.$vector) { ox = parseInt(sub.x) || 0; oy = parseInt(sub.y) || 0; }
+        }
+        const img = new Image();
+        img.src = `data:image/png;base64,${frame.basedata}`;
+        arr[i] = { img, w: parseInt(frame.width) || 0, h: parseInt(frame.height) || 0, ox, oy };
+      }
+    }
+    dmgDigitsLoaded = true;
+  } catch (e) {
+    console.warn("[dmg-sprites] Failed to load BasicEff digit sprites", e);
+  }
+}
 
 // NPC interaction — click any visible NPC to open dialogue (no range limit)
 
@@ -1761,6 +1805,8 @@ function initLifeRuntimeStates() {
       maxHp: isMob ? MOB_DEFAULT_HP : -1,
       hpShowUntil: 0,
       hitCounter: 0,       // C++ counter for HIT stance duration
+      aggro: false,         // C++ mode==2 → aggro; set after being hit
+      aggroTarget: null,    // { x, y } of player when aggro started
       dying: false,
       dead: false,
       respawnAt: 0,
@@ -1794,60 +1840,94 @@ function updateLifeAnimations(dtMs) {
 
       state.hitCounter += steps;
 
-      if (state.hitCounter > MOB_KB_COUNTER_EXIT) {
-        // C++ next_move() — exit HIT, return to patrol
+      // C++ Mob::update: if TURNATEDGES cleared → flip, set flag, exit HIT
+      if (!ph.turnAtEdges) {
+        state.facing = -state.facing;
+        ph.turnAtEdges = true;
+        // C++ sets STAND when hitting edge during HIT
         state.stance = "stand";
         state.frameIndex = 0;
         state.frameTimerMs = 0;
         state.hitCounter = 0;
-        state.behaviorState = "stand";
-        state.behaviorTimerMs = randomRange(500, 1500);
+        ph.hspeed = 0;
+        // Transition to aggro chase
+        state.aggro = true;
+        state.behaviorState = "move";
+        state.behaviorTimerMs = randomRange(3000, 6000);
+      } else if (state.hitCounter > MOB_KB_COUNTER_EXIT) {
+        // C++ next_move() from HIT → MOVE (chase player)
+        state.stance = anim?.stances?.["move"] ? "move" : "stand";
+        state.frameIndex = 0;
+        state.frameTimerMs = 0;
+        state.hitCounter = 0;
         ph.hspeed = 0;
         ph.turnAtEdges = true;
+        // Set aggro — mob chases player after being hit
+        state.aggro = true;
+        state.behaviorState = "move";
+        state.behaviorTimerMs = randomRange(3000, 6000);
+        // Face toward player
+        const playerX = runtime.player.x;
+        state.facing = playerX < ph.x ? -1 : 1;
       } else {
-        // Apply KB force each tick — direction is opposite to facing (mob faces attacker)
-        // C++ flip convention: flip=true → mob faces right → hforce = -KBFORCE (push left)
-        // Our facing: -1=left,1=right. KB pushes opposite to facing.
+        // Apply KB force each tick — direction is AWAY from attacker
+        // C++ flip=true means facing right, hforce = flip ? -KBFORCE : KBFORCE
+        // Mob faces attacker (set in apply_damage), KB pushes opposite direction
+        // Our facing: -1=left,1=right. facing=1 means facing right → push left.
         const kbForce = ph.onGround ? MOB_KB_FORCE_GROUND : MOB_KB_FORCE_AIR;
-        ph.hforce = -state.facing * kbForce;
-        ph.turnAtEdges = true; // keep edge checking active during KB
+        // C++ hforce = flip ? -KBFORCE : KBFORCE (flip=facing right, push left)
+        ph.hforce = state.facing === 1 ? -kbForce : kbForce;
 
         // Run through normal mobPhysicsStep — handles wall/edge limits, foothold tracking
         for (let s = 0; s < steps; s++) {
           mobPhysicsStep(map, ph, isSwimMap);
         }
-
-        // If hit a wall/edge, stop knockback sliding
-        if (!ph.turnAtEdges) {
-          ph.hspeed = 0;
-          ph.turnAtEdges = true;
-        }
       }
     } else if (state.canMove && !state.dying && !state.dead && !inHitStance) {
-      // ── Normal patrol AI ──
-      state.behaviorTimerMs -= dtMs;
-      state.behaviorCounter += dtMs;
+      const ph = state.phobj;
 
-      if (state.behaviorTimerMs <= 0) {
-        if (state.behaviorState === "stand") {
-          state.behaviorState = "move";
-          state.behaviorTimerMs = randomRange(MOB_MOVE_MIN_MS, MOB_MOVE_MAX_MS);
-          state.facing = Math.random() < 0.5 ? -1 : 1;
-        } else {
+      // ── Aggro chase: mob pursues player after being hit ──
+      if (state.aggro) {
+        state.behaviorTimerMs -= dtMs;
+
+        // Aggro expires → return to normal patrol
+        if (state.behaviorTimerMs <= 0) {
+          state.aggro = false;
           state.behaviorState = "stand";
           state.behaviorTimerMs = randomRange(MOB_STAND_MIN_MS, MOB_STAND_MAX_MS);
+        } else {
+          // Chase: face toward player and move
+          const playerX = runtime.player.x;
+          const dx = playerX - ph.x;
+          state.facing = dx < 0 ? -1 : 1;
+          state.behaviorState = "move";
+          ph.hforce = state.facing === 1 ? state.mobSpeed : -state.mobSpeed;
         }
-        state.behaviorCounter = 0;
-        state.phobj.turnAtEdges = true;
+      } else {
+        // ── Normal patrol AI ──
+        state.behaviorTimerMs -= dtMs;
+        state.behaviorCounter += dtMs;
+
+        if (state.behaviorTimerMs <= 0) {
+          if (state.behaviorState === "stand") {
+            state.behaviorState = "move";
+            state.behaviorTimerMs = randomRange(MOB_MOVE_MIN_MS, MOB_MOVE_MAX_MS);
+            state.facing = Math.random() < 0.5 ? -1 : 1;
+          } else {
+            state.behaviorState = "stand";
+            state.behaviorTimerMs = randomRange(MOB_STAND_MIN_MS, MOB_STAND_MAX_MS);
+          }
+          state.behaviorCounter = 0;
+          ph.turnAtEdges = true;
+        }
+
+        // Apply movement force (like C++ Mob::update switch on MOVE stance)
+        if (state.behaviorState === "move") {
+          ph.hforce = state.facing === 1 ? state.mobSpeed : -state.mobSpeed;
+        }
       }
 
-      // Apply movement force (like C++ Mob::update switch on MOVE stance)
-      const ph = state.phobj;
-      if (state.behaviorState === "move") {
-        ph.hforce = state.facing === 1 ? state.mobSpeed : -state.mobSpeed;
-      }
-
-      // Patrol bounds: reverse at limits
+      // Patrol bounds: reverse at limits (applies to both aggro and normal)
       if (ph.x <= state.patrolMin && state.facing === -1) {
         state.facing = 1;
         ph.hforce = 0;
@@ -2000,28 +2080,55 @@ function drawLifeSprites() {
 
 // ─── Damage Numbers ──────────────────────────────────────────────────────────
 
+/**
+ * Spawn a damage number. Matches C++ DamageNumber constructor:
+ * - moveobj.vspeed = -0.25
+ * - opacity starts at 1.5 (stays at full alpha beyond 1.0, then fades)
+ */
 function spawnDamageNumber(worldX, worldY, value, critical) {
   damageNumbers.push({
     x: worldX + (Math.random() - 0.5) * 20,
     y: worldY - 30,
+    vspeed: DMG_NUMBER_VSPEED,
     value,
     critical: !!critical,
-    elapsed: 0,
-    lifetime: DMG_NUMBER_LIFETIME_MS,
+    miss: value <= 0,
+    opacity: 1.5,  // C++ opacity.set(1.5f)
   });
 }
 
+/**
+ * Update damage numbers. C++ DamageNumber::update:
+ * - moveobj.move() → y += vspeed each tick
+ * - opacity -= TIMESTEP / FADE_TIME each tick
+ * - removed when opacity <= 0
+ */
 function updateDamageNumbers(dt) {
+  const ticks = dt * 1000 / MOB_PHYS_TIMESTEP; // approximate # ticks
+  const fadeStep = ticks * (MOB_PHYS_TIMESTEP / DMG_NUMBER_FADE_TIME);
   for (let i = damageNumbers.length - 1; i >= 0; i--) {
     const dn = damageNumbers[i];
-    dn.elapsed += dt * 1000;
-    dn.y -= DMG_NUMBER_RISE_SPEED * dt;
-    if (dn.elapsed >= dn.lifetime) {
+    dn.y += dn.vspeed * ticks;
+    dn.opacity -= fadeStep;
+    if (dn.opacity <= 0) {
       damageNumbers.splice(i, 1);
     }
   }
 }
 
+/**
+ * C++ DamageNumber::getadvance — spacing between digit sprites
+ */
+function dmgGetAdvance(digitIndex, isCritical, isFirst) {
+  const base = DMG_DIGIT_ADVANCES[digitIndex] ?? 22;
+  if (isCritical) return isFirst ? base + 8 : base + 4;
+  return isFirst ? base + 2 : base;
+}
+
+/**
+ * Draw damage numbers using WZ digit sprites (C++ DamageNumber::draw).
+ * Falls back to styled text if sprites aren't loaded yet.
+ */
 function drawDamageNumbers() {
   const cam = runtime.camera;
   const halfW = canvasEl.width / 2;
@@ -2030,25 +2137,75 @@ function drawDamageNumbers() {
   for (const dn of damageNumbers) {
     const screenX = Math.round(dn.x - cam.x + halfW);
     const screenY = Math.round(dn.y - cam.y + halfH);
-
-    const fadeStart = dn.lifetime * DMG_NUMBER_FADE_START;
-    const alpha = dn.elapsed > fadeStart
-      ? Math.max(0, 1 - (dn.elapsed - fadeStart) / (dn.lifetime - fadeStart))
-      : 1;
+    const alpha = Math.min(1, Math.max(0, dn.opacity));
+    if (alpha <= 0) continue;
 
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.font = dn.critical ? "bold 20px Arial, sans-serif" : "bold 16px Arial, sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
 
-    // Shadow
-    ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
-    ctx.fillText(String(dn.value), screenX + 1, screenY + 1);
+    if (dmgDigitsLoaded && !dn.miss) {
+      // ── WZ sprite rendering (C++ DamageNumber::draw) ──
+      const digits = String(dn.value);
+      const firstDigit = parseInt(digits[0]);
+      const isCrit = dn.critical;
+      const firstSet = isCrit ? dmgDigitImages.critFirst : dmgDigitImages.normalFirst;
+      const restSet = isCrit ? dmgDigitImages.critRest : dmgDigitImages.normalRest;
 
-    // Text
-    ctx.fillStyle = dn.critical ? "#fbbf24" : "#ffffff";
-    ctx.fillText(String(dn.value), screenX, screenY);
+      // Calculate total width for centering (C++ shift = total / 2)
+      let totalW = dmgGetAdvance(firstDigit, isCrit, true);
+      for (let i = 1; i < digits.length; i++) {
+        const d = parseInt(digits[i]);
+        if (i < digits.length - 1) {
+          const next = parseInt(digits[i + 1]);
+          totalW += (dmgGetAdvance(d, isCrit, false) + dmgGetAdvance(next, isCrit, false)) / 2;
+        } else {
+          totalW += dmgGetAdvance(d, isCrit, false);
+        }
+      }
+      const shift = totalW / 2;
+
+      let drawX = screenX - shift;
+
+      // First digit (larger sprite from set0)
+      const firstSprite = firstSet[firstDigit];
+      if (firstSprite?.img?.complete) {
+        ctx.drawImage(firstSprite.img, drawX - firstSprite.ox, screenY - firstSprite.oy);
+      }
+      drawX += dmgGetAdvance(firstDigit, isCrit, true);
+
+      // Remaining digits (from set1, with alternating ±2 y-shift — C++ yshift)
+      for (let i = 1; i < digits.length; i++) {
+        const d = parseInt(digits[i]);
+        const yShift = (i % 2) ? -2 : 2;  // C++ (i%2) ? -2 : 2
+        const sprite = restSet[d];
+        if (sprite?.img?.complete) {
+          ctx.drawImage(sprite.img, drawX - sprite.ox, screenY - sprite.oy + yShift);
+        }
+        let advance;
+        if (i < digits.length - 1) {
+          const next = parseInt(digits[i + 1]);
+          advance = (dmgGetAdvance(d, isCrit, false) + dmgGetAdvance(next, isCrit, false)) / 2;
+        } else {
+          advance = dmgGetAdvance(d, isCrit, false);
+        }
+        drawX += advance;
+      }
+    } else if (dmgDigitsLoaded && dn.miss) {
+      // Miss sprite (index 10 in first-digit set)
+      const missSprite = dmgDigitImages.normalFirst[10];
+      if (missSprite?.img?.complete) {
+        ctx.drawImage(missSprite.img, screenX - missSprite.ox, screenY - missSprite.oy);
+      }
+    } else {
+      // Fallback: styled text (before WZ sprites load)
+      ctx.font = dn.critical ? "bold 20px Arial, sans-serif" : "bold 16px Arial, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "rgba(0,0,0,0.7)";
+      ctx.fillText(dn.miss ? "MISS" : String(dn.value), screenX + 1, screenY + 1);
+      ctx.fillStyle = dn.miss ? "#aaa" : (dn.critical ? "#fbbf24" : "#fff");
+      ctx.fillText(dn.miss ? "MISS" : String(dn.value), screenX, screenY);
+    }
 
     ctx.restore();
   }
@@ -2325,55 +2482,13 @@ function updatePlayerAttack(dt) {
 
 function updateMobCombatStates(dtMs) {
   const now = performance.now();
-  // Number of fixed timestep ticks this frame (~30fps C++ tick)
-  const numTicks = Math.max(1, Math.round(dtMs / MOB_PHYS_TIMESTEP));
 
   for (const [idx, state] of lifeRuntimeState) {
     const life = runtime.map?.lifeEntries[idx];
     if (!life || life.type !== "m") continue;
 
-    // ── C++ Mob::update HIT stance: apply knockback force per tick ──
-    // C++ code: case Stance::HIT:
-    //   double KBFORCE = phobj.onground ? 0.2 : 0.1;
-    //   phobj.hforce = flip ? -KBFORCE : KBFORCE;
-    // counter++ each tick, exits HIT when counter > 200
-    if (state.stance === "hit1" && !state.dying) {
-      state.hitCounter += numTicks;
-
-      if (state.hitCounter > MOB_KB_COUNTER_EXIT) {
-        // C++ next_move() — exit HIT, return to patrol
-        state.stance = "stand";
-        state.frameIndex = 0;
-        state.frameTimerMs = 0;
-        state.hitCounter = 0;
-        state.behaviorState = "stand";
-        state.behaviorTimerMs = randomRange(500, 1500);
-      } else if (state.phobj && state.canMove) {
-        // Apply knockback force each tick (C++ Mob::update HIT case)
-        const onGround = state.phobj.onGround;
-        const kbForce = onGround ? MOB_KB_FORCE_GROUND : MOB_KB_FORCE_AIR;
-        // C++ flip convention: flip=true means facing right, hforce pushes left (-KBFORCE)
-        // Our facing: -1=left, 1=right. KB pushes opposite to facing direction.
-        const forceDir = -state.facing;
-        state.phobj.hforce = forceDir * kbForce;
-
-        // Integrate force → acceleration → speed → position (C++ move_normal)
-        // hacc = hforce, then friction: hacc -= (FRICTION + SLOPEFACTOR*(1+slope*-inertia)) * inertia
-        const hforce = state.phobj.hforce;
-        let hspeed = state.phobj.hspeed || 0;
-        const inertia = hspeed / MOB_GROUNDSLIP;
-        const slope = state.phobj.fhSlope || 0;
-        const clampedSlope = Math.max(-0.5, Math.min(0.5, slope));
-        let hacc = hforce;
-        if (onGround) {
-          hacc -= (MOB_FRICTION + MOB_SLOPEFACTOR * (1 + clampedSlope * -inertia)) * inertia;
-        }
-        hspeed += hacc * numTicks;
-        state.phobj.hspeed = hspeed;
-        state.phobj.x += hspeed * numTicks;
-        state.phobj.hforce = 0;
-      }
-    }
+    // HIT knockback physics is handled in updateLifeAnimations (uses mobPhysicsStep
+    // for proper wall/edge limits). This function only handles dying/respawn/aggro.
 
     // Dying fade-out
     if (state.dying && !state.dead) {
@@ -2394,6 +2509,8 @@ function updateMobCombatStates(dtMs) {
       state.dyingElapsed = 0;
       state.hp = state.maxHp;
       state.hitCounter = 0;
+      state.aggro = false;
+      state.aggroTarget = null;
       state.stance = "stand";
       state.frameIndex = 0;
       state.frameTimerMs = 0;
@@ -6565,6 +6682,8 @@ async function loadMap(mapId, spawnPortalName = null, spawnFromPortalTransfer = 
 
   // Start loading map string names in background (non-blocking)
   loadMapStringData().catch(() => {});
+  // Preload WZ damage number digit sprites (non-blocking)
+  loadDamageNumberSprites().catch(() => {});
 
   try {
     setStatus(`Loading map ${mapId}...`);
