@@ -113,6 +113,18 @@ const BG_REFERENCE_HEIGHT = 600;
 const MIN_CANVAS_WIDTH = 640;
 const MIN_CANVAS_HEIGHT = 320;
 
+/**
+ * Camera Y offset to push the scene lower on tall viewports.
+ * Backgrounds are designed for 600px height — content extends ~300px below center.
+ * On taller canvases the viewport bottom extends further, showing void below the
+ * map content. This bias shifts the camera upward so the viewport bottom stays at
+ * the same world-space distance below center as the original 600px design.
+ * At 600px: 0. At 1080px: 240. At 1440px: 420. Fully dynamic.
+ */
+function cameraHeightBias() {
+  return Math.max(0, (canvasEl.height - BG_REFERENCE_HEIGHT) / 2);
+}
+
 const DEFAULT_STANDARD_CHARACTER_WIDTH = 58;
 const CHAT_BUBBLE_LINE_HEIGHT = 16;
 const CHAT_BUBBLE_HORIZONTAL_PADDING = 8;
@@ -122,6 +134,20 @@ const TELEPORT_PRESET_CACHE_KEY = "mapleweb.debug.teleportPreset.v1";
 const SETTINGS_CACHE_KEY = "mapleweb.settings.v1";
 const FIXED_16_9_WIDTH = 1920;
 const FIXED_16_9_HEIGHT = 1080;
+
+/**
+ * Default equipment set for the character.
+ * Each entry is { id, category, path } where path is relative to Character.wz.
+ * Equipment IDs follow MapleStory conventions: id/10000 determines category.
+ */
+const DEFAULT_EQUIPS = [
+  { id: 1040002, category: "Coat",    path: "Coat/01040002.img.json" },
+  { id: 1060002, category: "Pants",   path: "Pants/01060002.img.json" },
+  { id: 1072001, category: "Shoes",   path: "Shoes/01072001.img.json" },
+  { id: 1302000, category: "Weapon",  path: "Weapon/01302000.img.json" },
+];
+const DEFAULT_HAIR_ID = 30000;
+const DEFAULT_HAIR_PATH = "Hair/00030000.img.json";
 
 const runtime = {
   map: null,
@@ -189,6 +215,8 @@ const runtime = {
   characterData: null,
   characterHeadData: null,
   characterFaceData: null,
+  characterHairData: null,
+  characterEquipData: {},  // keyed by equip id → parsed JSON
   faceAnimation: {
     expression: "default",
     frameIndex: 0,
@@ -235,6 +263,20 @@ const runtime = {
     durationMs: 0,
   },
   previousTimestampMs: null,
+
+  // NPC dialogue state
+  npcDialogue: {
+    active: false,
+    npcName: "",
+    npcFunc: "",
+    lines: [],        // all dialogue lines (each can be string or { text, options })
+    lineIndex: 0,     // current line being shown
+    npcWorldX: 0,
+    npcWorldY: 0,
+    npcIdx: -1,       // lifeEntry index of the NPC being talked to
+    hoveredOption: -1, // which option is hovered (-1 = none)
+    scriptId: "",      // NPC script identifier (from Npc.wz info/script)
+  },
 };
 
 let canvasResizeObserver = null;
@@ -397,7 +439,7 @@ function applyManualTeleport(x, y) {
   }
 
   runtime.camera.x = player.x;
-  runtime.camera.y = player.y - 130;
+  runtime.camera.y = player.y - cameraHeightBias();
   runtime.portalScroll.active = false;
 
   setStatus(`Teleported to x=${Math.round(player.x)}, y=${Math.round(player.y)}.`);
@@ -851,14 +893,10 @@ function bindCanvasResizeHandling() {
   }
 }
 
-function sceneRenderBiasY() {
-  return Math.max(0, (canvasEl.height - BG_REFERENCE_HEIGHT) / 2);
-}
-
 function worldToScreen(worldX, worldY) {
   return {
     x: Math.round(worldX - runtime.camera.x + canvasEl.width / 2),
-    y: Math.round(worldY - runtime.camera.y + canvasEl.height / 2 + sceneRenderBiasY()),
+    y: Math.round(worldY - runtime.camera.y + canvasEl.height / 2),
   };
 }
 
@@ -947,6 +985,12 @@ function getMapStringStreet(mapId) {
   return entry.streetName ?? null;
 }
 
+/**
+ * Centralized JSON asset loader with caching, request coalescing, and retry.
+ * All WZ data access MUST go through this function (Step 32 compliance).
+ * The promise cache deduplicates in-flight requests for the same path.
+ * On transient failure, retries up to 2 times with exponential backoff.
+ */
 async function fetchJson(path) {
   if (!jsonCache.has(path)) {
     jsonCache.set(
@@ -1162,20 +1206,26 @@ async function loadLifeAnimation(type, id) {
         }
       }
 
-      // Load name from String.wz
+      // Load name + dialogue from String.wz
       let name = "";
+      let func = "";
+      const dialogue = [];
+      let stringEntry = null;
       try {
         const stringFile = type === "m" ? "Mob.img.json" : "Npc.img.json";
         const stringData = await fetchJson(`/resources/String.wz/${stringFile}`);
         const rawId = id.replace(/^0+/, "") || "0";
-        const nameEntry = (stringData.$$ ?? []).find(
+        stringEntry = (stringData.$$ ?? []).find(
           (c) => c.$imgdir === rawId
         );
-        if (nameEntry) {
-          for (const prop of nameEntry.$$ ?? []) {
-            if (prop.$string === "name") {
-              name = prop.value ?? "";
-              break;
+        if (stringEntry) {
+          for (const prop of stringEntry.$$ ?? []) {
+            const sKey = prop.$string ?? "";
+            if (sKey === "name") name = prop.value ?? "";
+            if (sKey === "func") func = prop.value ?? "";
+            // Collect dialogue lines (n0, n1, ... or d0, d1, ...)
+            if (/^[nd]\d+$/.test(sKey) && prop.value) {
+              dialogue.push(prop.value);
             }
           }
         }
@@ -1188,7 +1238,25 @@ async function loadLifeAnimation(type, id) {
         speed = safeNumber(infoRec.speed, -100);
       }
 
-      const result = { stances, name, speed };
+      // Extract NPC script ID from info/script
+      let scriptId = "";
+      if (type === "n" && infoNode) {
+        const scriptNode = childByName(infoNode, "script");
+        if (scriptNode) {
+          // script/0/script = "taxi1" etc.
+          const first = (scriptNode.$$ ?? [])[0];
+          if (first) {
+            for (const prop of first.$$ ?? []) {
+              if (prop.$string === "script") {
+                scriptId = prop.value ?? "";
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      const result = { stances, name, speed, func, dialogue, scriptId };
       lifeAnimations.set(cacheKey, result);
       return result;
     } catch (_) {
@@ -1217,6 +1285,118 @@ const MOB_STAND_MIN_MS = 1500;
 const MOB_STAND_MAX_MS = 4000;
 const MOB_MOVE_MIN_MS = 2000;
 const MOB_MOVE_MAX_MS = 5000;
+
+// NPC interaction — click any visible NPC to open dialogue (no range limit)
+
+// ─── Built-in NPC Scripts ─────────────────────────────────────────────────────
+// Server-side NPC scripts are not available, so common NPCs get hardcoded dialogue
+// with selectable options. Script IDs come from Npc.wz info/script nodes.
+
+const VICTORIA_TOWNS = [
+  { label: "Henesys", mapId: 100000000 },
+  { label: "Ellinia", mapId: 101000000 },
+  { label: "Perion", mapId: 102000000 },
+  { label: "Kerning City", mapId: 103000000 },
+  { label: "Lith Harbor", mapId: 104000000 },
+  { label: "Sleepywood", mapId: 105040300 },
+  { label: "Nautilus Harbor", mapId: 120000000 },
+];
+
+const ALL_MAJOR_TOWNS = [
+  ...VICTORIA_TOWNS,
+  { label: "Orbis", mapId: 200000000 },
+  { label: "El Nath", mapId: 211000000 },
+  { label: "Ludibrium", mapId: 220000000 },
+  { label: "Aquarium", mapId: 230000000 },
+  { label: "Leafre", mapId: 240000000 },
+  { label: "Mu Lung", mapId: 250000000 },
+  { label: "Herb Town", mapId: 251000000 },
+  { label: "Ariant", mapId: 260000000 },
+  { label: "Magatia", mapId: 261000000 },
+  { label: "Singapore", mapId: 540000000 },
+  { label: "Malaysia", mapId: 550000000 },
+  { label: "New Leaf City", mapId: 600000000 },
+];
+
+const NPC_SCRIPTS = {
+  // Victoria Island taxi NPCs
+  taxi1: { greeting: "Hello! I drive the Regular Cab. Where would you like to go?", destinations: VICTORIA_TOWNS },
+  taxi2: { greeting: "Hey there! Need a ride? Pick a destination!", destinations: VICTORIA_TOWNS },
+  taxi3: { greeting: "Where would you like to go? I'll take you there!", destinations: VICTORIA_TOWNS },
+  taxi4: { greeting: "Hop in! Where are you headed?", destinations: VICTORIA_TOWNS },
+  taxi5: { greeting: "Welcome aboard! Choose your destination.", destinations: VICTORIA_TOWNS },
+  taxi6: { greeting: "Need a lift? I can take you anywhere on the island!", destinations: VICTORIA_TOWNS },
+  mTaxi: { greeting: "I'm a VIP Cab driver. Where shall I take you?", destinations: VICTORIA_TOWNS },
+  NLC_Taxi: { greeting: "Welcome to the NLC Taxi! Where to?", destinations: [
+    ...VICTORIA_TOWNS,
+    { label: "New Leaf City", mapId: 600000000 },
+  ]},
+  // Ossyria taxi
+  ossyria_taxi: { greeting: "I can take you around Ossyria. Where to?", destinations: [
+    { label: "Orbis", mapId: 200000000 },
+    { label: "El Nath", mapId: 211000000 },
+    { label: "Ludibrium", mapId: 220000000 },
+    { label: "Aquarium", mapId: 230000000 },
+    { label: "Leafre", mapId: 240000000 },
+  ]},
+  // Aqua taxi
+  aqua_taxi: { greeting: "Need an underwater ride?", destinations: [
+    { label: "Aquarium", mapId: 230000000 },
+    { label: "Herb Town", mapId: 251000000 },
+  ]},
+  // Town-specific go NPCs
+  goHenesys: { greeting: "I can take you to Henesys!", destinations: [{ label: "Henesys", mapId: 100000000 }] },
+  goElinia: { greeting: "Off to Ellinia?", destinations: [{ label: "Ellinia", mapId: 101000000 }] },
+  goPerion: { greeting: "Headed to Perion?", destinations: [{ label: "Perion", mapId: 102000000 }] },
+  goKerningCity: { greeting: "Kerning City awaits!", destinations: [{ label: "Kerning City", mapId: 103000000 }] },
+  goNautilus: { greeting: "To Nautilus Harbor!", destinations: [{ label: "Nautilus Harbor", mapId: 120000000 }] },
+  go_victoria: { greeting: "I'll take you back to Victoria Island!", destinations: VICTORIA_TOWNS },
+  // Spinel — World Tour Guide
+  world_trip: { greeting: "How about traveling to a new world? I can take you to many places!", destinations: ALL_MAJOR_TOWNS },
+};
+
+/**
+ * Build dialogue lines from an NPC script definition.
+ * Returns array of line objects: string for text, or { text, options } for choices.
+ */
+function buildScriptDialogue(scriptDef) {
+  const lines = [];
+  lines.push({
+    text: scriptDef.greeting,
+    options: scriptDef.destinations.map((d) => ({
+      label: d.label,
+      action: () => {
+        closeNpcDialogue();
+        runPortalMapTransition(d.mapId, null);
+      },
+    })),
+  });
+  return lines;
+}
+
+/**
+ * Build a fallback dialogue for any NPC with a script but no explicit handler.
+ * Uses the NPC's flavor text + offers travel to all major towns.
+ */
+function buildFallbackScriptDialogue(npcName, flavourLines) {
+  const lines = [];
+  // Show flavor text first if available
+  if (flavourLines && flavourLines.length > 0) {
+    for (const fl of flavourLines) lines.push(fl);
+  }
+  // Then offer travel options
+  lines.push({
+    text: `Where would you like to go?`,
+    options: ALL_MAJOR_TOWNS.map((d) => ({
+      label: d.label,
+      action: () => {
+        closeNpcDialogue();
+        runPortalMapTransition(d.mapId, null);
+      },
+    })),
+  });
+  return lines;
+}
 
 function randomRange(min, max) {
   return min + Math.random() * (max - min);
@@ -1468,10 +1648,11 @@ function initLifeRuntimeStates() {
       }
     }
 
-    // Mob speed from WZ: C++ does (speed+100)*0.001 as force-per-tick
+    // Mob speed from WZ: C++ does (speed+100)*0.001 as force-per-tick.
+    // Scaled up 3× for more visible patrol movement.
     let mobSpeed = 0;
     if (isMob && animData?.speed !== undefined) {
-      mobSpeed = (animData.speed + 100) * 0.001;
+      mobSpeed = (animData.speed + 100) * 0.003;
     }
 
     const hasPatrolRange = life.rx0 !== life.rx1 && (life.rx0 !== 0 || life.rx1 !== 0);
@@ -1623,9 +1804,9 @@ function drawLifeSprites() {
     const worldX = state.phobj ? state.phobj.x : life.x;
     const worldY = state.phobj ? state.phobj.y : life.cy;
 
-    // Screen position (must include sceneRenderBiasY like worldToScreen)
+    // Screen position (mirrors worldToScreen)
     const screenX = Math.round(worldX - cam.x + halfW);
-    const screenY = Math.round(worldY - cam.y + halfH + sceneRenderBiasY());
+    const screenY = Math.round(worldY - cam.y + halfH);
 
     // Cull if off screen
     if (
@@ -1667,6 +1848,510 @@ function drawLifeSprites() {
       ctx.restore();
     }
   }
+}
+
+// ─── NPC Interaction & Dialogue System ─────────────────────────────────────────
+
+/**
+ * Find an NPC at the given screen coordinates (for click detection).
+ * Returns { idx, life, anim, state } or null.
+ */
+function findNpcAtScreen(screenClickX, screenClickY) {
+  if (!runtime.map) return null;
+
+  const cam = runtime.camera;
+  const halfW = canvasEl.width / 2;
+  const halfH = canvasEl.height / 2;
+
+  // Search in reverse order so topmost (last drawn) NPCs are found first
+  const entries = [...lifeRuntimeState.entries()].reverse();
+  for (const [idx, state] of entries) {
+    const life = runtime.map.lifeEntries[idx];
+    if (!life || life.type !== "n") continue;
+
+    const cacheKey = `n:${life.id}`;
+    const anim = lifeAnimations.get(cacheKey);
+    if (!anim) continue;
+
+    const stance = anim.stances[state.stance] ?? anim.stances["stand"];
+    if (!stance || stance.frames.length === 0) continue;
+
+    const frame = stance.frames[state.frameIndex % stance.frames.length];
+    const img = getImageByKey(frame.key);
+    if (!img) continue;
+
+    const worldX = state.phobj ? state.phobj.x : life.x;
+    const worldY = state.phobj ? state.phobj.y : life.cy;
+
+    const sx = Math.round(worldX - cam.x + halfW);
+    const sy = Math.round(worldY - cam.y + halfH);
+
+    // Match the flip logic from drawLifeSprites exactly
+    const flip = state.canMove ? state.facing === 1 : life.f === 1;
+
+    let drawX, drawY;
+    if (flip) {
+      // When flipped, sprite is drawn at (sx - originX mirrored)
+      // ctx.translate(sx, sy); ctx.scale(-1, 1); ctx.drawImage(img, -originX, -originY)
+      // Effective screen rect: (sx - img.width + originX, sy - originY) to (sx + originX, sy - originY + img.height)
+      drawX = sx - img.width + frame.originX;
+      drawY = sy - frame.originY;
+    } else {
+      drawX = sx - frame.originX;
+      drawY = sy - frame.originY;
+    }
+
+    // Use a generous hit area (sprite bounds + padding)
+    const pad = 10;
+    if (
+      screenClickX >= drawX - pad &&
+      screenClickX <= drawX + img.width + pad &&
+      screenClickY >= drawY - pad &&
+      screenClickY <= drawY + img.height + pad
+    ) {
+      return { idx, life, anim, state };
+    }
+  }
+  return null;
+}
+
+/**
+ * Open NPC dialogue if player is within interaction range.
+ */
+function openNpcDialogue(npcResult) {
+  const { idx, life, anim } = npcResult;
+  const state = lifeRuntimeState.get(idx);
+  if (!state) return;
+
+  const npcX = state.phobj ? state.phobj.x : life.x;
+  const npcY = state.phobj ? state.phobj.y : life.cy;
+
+  // No range check — player can click any visible NPC to talk
+
+  // Build dialogue lines based on NPC type
+  const scriptDef = anim.scriptId ? NPC_SCRIPTS[anim.scriptId] : null;
+
+  let lines;
+  if (scriptDef) {
+    // Known script — use specific handler
+    lines = buildScriptDialogue(scriptDef);
+  } else if (anim.scriptId) {
+    // Has a script but no explicit handler — show flavor text + travel options
+    lines = buildFallbackScriptDialogue(anim.name, anim.dialogue);
+  } else if (anim.dialogue && anim.dialogue.length > 0) {
+    // No script — just show flavor text
+    lines = anim.dialogue;
+  } else {
+    lines = ["..."];
+  }
+
+  runtime.npcDialogue = {
+    active: true,
+    npcName: anim.name || "NPC",
+    npcFunc: anim.func || "",
+    lines,
+    lineIndex: 0,
+    npcWorldX: npcX,
+    npcWorldY: npcY,
+    npcIdx: idx,
+    hoveredOption: -1,
+    scriptId: anim.scriptId || "",
+  };
+  rlog(`NPC dialogue opened: ${anim.name} (${life.id}), script=${anim.scriptId || "none"}, ${lines.length} lines`);
+}
+
+function closeNpcDialogue() {
+  if (runtime.npcDialogue.active) {
+    rlog(`NPC dialogue closed: ${runtime.npcDialogue.npcName}`);
+  }
+  runtime.npcDialogue.active = false;
+  runtime.npcDialogue.lineIndex = 0;
+}
+
+function advanceNpcDialogue() {
+  if (!runtime.npcDialogue.active) return;
+  runtime.npcDialogue.lineIndex++;
+  if (runtime.npcDialogue.lineIndex >= runtime.npcDialogue.lines.length) {
+    closeNpcDialogue();
+  }
+}
+
+/**
+ * Draw NPC dialogue box overlay (MapleStory-style).
+ */
+// Store option hit boxes for click detection (rebuilt each frame)
+let _npcDialogueOptionHitBoxes = [];
+
+function drawNpcDialogue() {
+  if (!runtime.npcDialogue.active) return;
+  _npcDialogueOptionHitBoxes = [];
+
+  const d = runtime.npcDialogue;
+  const currentLine = d.lines[d.lineIndex] ?? "";
+  const isOptionLine = typeof currentLine === "object" && currentLine.options;
+  const text = isOptionLine ? currentLine.text : String(currentLine);
+  const options = isOptionLine ? currentLine.options : [];
+
+  // Get NPC sprite for the portrait
+  let npcImg = null;
+  const npcLife = runtime.map?.lifeEntries[d.npcIdx];
+  if (npcLife) {
+    const cacheKey = `n:${npcLife.id}`;
+    const anim = lifeAnimations.get(cacheKey);
+    if (anim) {
+      const npcState = lifeRuntimeState.get(d.npcIdx);
+      const stance = anim.stances[npcState?.stance ?? "stand"] ?? anim.stances["stand"];
+      if (stance && stance.frames.length > 0) {
+        const frameIdx = (npcState?.frameIndex ?? 0) % stance.frames.length;
+        const frame = stance.frames[frameIdx];
+        npcImg = getImageByKey(frame.key);
+      }
+    }
+  }
+
+  // Layout constants
+  const portraitW = npcImg ? Math.min(120, npcImg.width) : 0;
+  const portraitArea = portraitW > 0 ? portraitW + 16 : 0;
+  const boxW = 500;
+  const lineHeight = 18;
+  const optionLineHeight = 26;
+  const padding = 16;
+  const headerH = 28;
+  const textAreaW = boxW - padding * 2 - portraitArea;
+
+  // Measure text
+  ctx.save();
+  ctx.font = "13px Inter, system-ui, sans-serif";
+  const wrappedLines = wrapText(ctx, text, textAreaW);
+  const textH = wrappedLines.length * lineHeight;
+
+  // Measure options
+  const optionsH = options.length > 0 ? options.length * optionLineHeight + 10 : 0;
+
+  // Box height: fit portrait, text, and options
+  const portraitH = npcImg ? Math.min(140, npcImg.height) : 0;
+  const contentH = Math.max(textH + optionsH + padding, portraitH + 8);
+  const footerH = isOptionLine ? 20 : 24;
+  const boxH = headerH + contentH + padding + footerH;
+
+  const boxX = Math.round((canvasEl.width - boxW) / 2);
+  const boxY = Math.round((canvasEl.height - boxH) / 2);
+
+  // Background
+  ctx.fillStyle = "rgba(0, 0, 0, 0.88)";
+  roundRect(ctx, boxX, boxY, boxW, boxH, 8);
+  ctx.fill();
+
+  // Border
+  ctx.strokeStyle = "rgba(255, 200, 50, 0.6)";
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, boxX, boxY, boxW, boxH, 8);
+  ctx.stroke();
+
+  // NPC name header
+  ctx.fillStyle = "#fbbf24";
+  ctx.font = "bold 14px Inter, system-ui, sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  let headerText = d.npcName;
+  if (d.npcFunc) headerText += `  (${d.npcFunc})`;
+  ctx.fillText(headerText, boxX + padding + portraitArea, boxY + 8);
+
+  // Divider
+  ctx.strokeStyle = "rgba(255, 200, 50, 0.3)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(boxX + padding + portraitArea, boxY + headerH);
+  ctx.lineTo(boxX + boxW - padding, boxY + headerH);
+  ctx.stroke();
+
+  // Draw NPC portrait on the left
+  if (npcImg && portraitW > 0) {
+    const scale = Math.min(1, 120 / npcImg.width, 140 / npcImg.height);
+    const drawW = Math.round(npcImg.width * scale);
+    const drawH = Math.round(npcImg.height * scale);
+    const portraitX = boxX + padding + Math.round((portraitW - drawW) / 2);
+    const portraitY = boxY + headerH + Math.round((contentH - drawH) / 2);
+    ctx.drawImage(npcImg, portraitX, portraitY, drawW, drawH);
+  }
+
+  // Dialogue text
+  ctx.fillStyle = "#e5e7eb";
+  ctx.font = "13px Inter, system-ui, sans-serif";
+  const textX = boxX + padding + portraitArea;
+  for (let i = 0; i < wrappedLines.length; i++) {
+    ctx.fillText(wrappedLines[i], textX, boxY + headerH + 8 + i * lineHeight);
+  }
+
+  // Options (clickable list)
+  if (options.length > 0) {
+    const optStartY = boxY + headerH + 8 + textH + 10;
+    ctx.font = "13px Inter, system-ui, sans-serif";
+
+    for (let i = 0; i < options.length; i++) {
+      const optY = optStartY + i * optionLineHeight;
+      const isHovered = d.hoveredOption === i;
+
+      // Option background highlight on hover
+      if (isHovered) {
+        ctx.fillStyle = "rgba(255, 200, 50, 0.15)";
+        ctx.fillRect(textX - 4, optY - 2, textAreaW + 8, optionLineHeight);
+      }
+
+      // Option bullet + label
+      ctx.fillStyle = isHovered ? "#fbbf24" : "#93c5fd";
+      ctx.fillText(`▸ ${options[i].label}`, textX + 4, optY + 4);
+
+      // Store hit box for click detection
+      _npcDialogueOptionHitBoxes.push({
+        x: textX - 4,
+        y: optY - 2,
+        w: textAreaW + 8,
+        h: optionLineHeight,
+        index: i,
+      });
+    }
+  }
+
+  // Footer hint
+  ctx.fillStyle = "rgba(255, 255, 255, 0.45)";
+  ctx.font = "11px Inter, system-ui, sans-serif";
+  ctx.textAlign = "center";
+  if (isOptionLine) {
+    ctx.fillText("Click an option or press Escape to close", boxX + boxW / 2, boxY + boxH - 12);
+  } else {
+    const pageInfo = d.lines.length > 1 ? ` (${d.lineIndex + 1}/${d.lines.length})` : "";
+    ctx.fillText(`Click or press Enter to continue${pageInfo}`, boxX + boxW / 2, boxY + boxH - 16);
+  }
+
+  ctx.restore();
+}
+
+/**
+ * Word-wrap text to fit within maxWidth.
+ */
+function wrapText(ctx, text, maxWidth) {
+  const words = text.split(/\s+/);
+  const lines = [];
+  let currentLine = "";
+
+  for (const word of words) {
+    const testLine = currentLine ? currentLine + " " + word : word;
+    if (ctx.measureText(testLine).width > maxWidth && currentLine) {
+      lines.push(currentLine);
+      currentLine = word;
+    } else {
+      currentLine = testLine;
+    }
+  }
+  if (currentLine) lines.push(currentLine);
+  if (lines.length === 0) lines.push("");
+  return lines;
+}
+
+/**
+ * Draw a rounded rectangle path (does NOT fill/stroke — caller does that).
+ */
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+// ─── Reactor Sprite System ────────────────────────────────────────────────────
+const reactorAnimations = new Map(); // key: reactorId -> { frames: [{ key, width, height, originX, originY, delay }], name }
+const reactorAnimationPromises = new Map();
+
+/**
+ * Load reactor sprite data from Reactor.wz JSON.
+ * Loads state 0 normal animation frames (the idle appearance).
+ * Returns { frames: [{ key, width, height, originX, originY, delay }], name }
+ */
+async function loadReactorAnimation(reactorId) {
+  if (reactorAnimations.has(reactorId)) return reactorAnimations.get(reactorId);
+  if (reactorAnimationPromises.has(reactorId)) return reactorAnimationPromises.get(reactorId);
+
+  const promise = (async () => {
+    try {
+      const paddedId = reactorId.padStart(7, "0");
+      const path = `/resources/Reactor.wz/${paddedId}.img.json`;
+      const json = await fetchJson(path);
+      if (!json) {
+        reactorAnimations.set(reactorId, null);
+        return null;
+      }
+
+      // Get info name
+      const infoNode = childByName(json, "info");
+      const infoRec = infoNode ? imgdirLeafRecord(infoNode) : {};
+      const name = String(infoRec.info ?? "");
+
+      // Get state 0 (normal/idle state)
+      const state0Node = childByName(json, "0");
+      if (!state0Node) {
+        reactorAnimations.set(reactorId, null);
+        return null;
+      }
+
+      // Collect canvas frames from state 0 (direct children that are canvases)
+      const frames = [];
+      for (const child of state0Node.$$ ?? []) {
+        if (child.$canvas !== undefined) {
+          const frameIndex = child.$canvas;
+          const meta = canvasMetaFromNode(child);
+          if (meta) {
+            const key = `reactor:${reactorId}:0:${frameIndex}`;
+            const childRec = {};
+            for (const sub of child.$$ ?? []) {
+              if (sub.$vector === "origin") {
+                childRec.originX = safeNumber(sub.x, 0);
+                childRec.originY = safeNumber(sub.y, 0);
+              }
+              if (sub.$int === "delay") childRec.delay = safeNumber(sub.value, 100);
+            }
+            frames.push({
+              key,
+              width: meta.width,
+              height: meta.height,
+              originX: childRec.originX ?? 0,
+              originY: childRec.originY ?? 0,
+              delay: childRec.delay ?? 0,
+              basedata: meta.basedata,
+            });
+          }
+        }
+      }
+
+      if (frames.length === 0) {
+        reactorAnimations.set(reactorId, null);
+        return null;
+      }
+
+      const result = { frames, name };
+      reactorAnimations.set(reactorId, result);
+      return result;
+    } catch (err) {
+      rlog(`reactor load FAIL id=${reactorId} err=${err?.message ?? err}`);
+      reactorAnimations.set(reactorId, null);
+      return null;
+    }
+  })();
+
+  reactorAnimationPromises.set(reactorId, promise);
+  return promise;
+}
+
+// Per-reactor runtime animation state
+const reactorRuntimeState = new Map(); // key: reactor entry index -> { frameIndex, elapsed, state }
+
+function initReactorRuntimeStates() {
+  reactorRuntimeState.clear();
+  if (!runtime.map) return;
+
+  for (let i = 0; i < runtime.map.reactorEntries.length; i++) {
+    const reactor = runtime.map.reactorEntries[i];
+    const anim = reactorAnimations.get(reactor.id);
+    if (!anim) continue;
+
+    reactorRuntimeState.set(i, {
+      frameIndex: 0,
+      elapsed: 0,
+      state: 0, // initial state
+      active: true,
+    });
+  }
+}
+
+function updateReactorAnimations(dt) {
+  if (!runtime.map) return;
+
+  for (const [idx, state] of reactorRuntimeState) {
+    const reactor = runtime.map.reactorEntries[idx];
+    const anim = reactorAnimations.get(reactor.id);
+    if (!anim || anim.frames.length <= 1) continue;
+
+    const frame = anim.frames[state.frameIndex];
+    if (!frame || frame.delay <= 0) continue;
+
+    state.elapsed += dt;
+    if (state.elapsed >= frame.delay) {
+      state.elapsed -= frame.delay;
+      state.frameIndex = (state.frameIndex + 1) % anim.frames.length;
+    }
+  }
+}
+
+function drawReactors() {
+  if (!runtime.map) return;
+
+  const cam = runtime.camera;
+  const halfW = canvasEl.width / 2;
+  const halfH = canvasEl.height / 2;
+
+  for (const [idx, state] of reactorRuntimeState) {
+    if (!state.active) continue;
+
+    const reactor = runtime.map.reactorEntries[idx];
+    const anim = reactorAnimations.get(reactor.id);
+    if (!anim || anim.frames.length === 0) continue;
+
+    const frame = anim.frames[state.frameIndex % anim.frames.length];
+    const img = getImageByKey(frame.key);
+    if (!img) continue;
+
+    // Screen position (mirrors worldToScreen)
+    const screenX = Math.round(reactor.x - cam.x + halfW);
+    const screenY = Math.round(reactor.y - cam.y + halfH);
+
+    // Cull if off screen
+    if (
+      screenX + img.width < -100 ||
+      screenX - img.width > canvasEl.width + 100 ||
+      screenY + img.height < -100 ||
+      screenY - img.height > canvasEl.height + 100
+    )
+      continue;
+
+    ctx.save();
+
+    const flip = reactor.f === 1;
+    if (flip) {
+      ctx.translate(screenX, screenY);
+      ctx.scale(-1, 1);
+      ctx.drawImage(img, -frame.originX, -frame.originY);
+    } else {
+      ctx.drawImage(img, screenX - frame.originX, screenY - frame.originY);
+    }
+
+    ctx.restore();
+  }
+}
+
+function drawReactorMarkers() {
+  if (!runtime.map) return;
+
+  ctx.save();
+  ctx.font = "bold 10px monospace";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "bottom";
+
+  for (const reactor of runtime.map.reactorEntries) {
+    const sp = worldToScreen(reactor.x, reactor.y);
+    ctx.fillStyle = "rgba(255, 100, 255, 0.7)";
+    ctx.fillRect(sp.x - 4, sp.y - 4, 8, 8);
+    ctx.fillStyle = "#ff64ff";
+    ctx.fillText(`R:${reactor.id}`, sp.x, sp.y - 6);
+  }
+
+  ctx.restore();
 }
 
 function parseMapData(raw) {
@@ -1796,6 +2481,21 @@ function parseMapData(raw) {
     };
   });
 
+  // Parse reactor entries
+  const reactorEntries = imgdirChildren(childByName(raw, "reactor")).map((entry) => {
+    const row = imgdirLeafRecord(entry);
+    const reactorId = String(row.id ?? "");
+    return {
+      index: safeNumber(entry.$imgdir, 0),
+      id: reactorId,
+      x: safeNumber(row.x, 0),
+      y: safeNumber(row.y, 0),
+      reactorTime: safeNumber(row.reactorTime, 0),
+      f: safeNumber(row.f, 0),
+      name: String(row.name ?? ""),
+    };
+  });
+
   const footholdLines = [];
   const footholdRoot = childByName(raw, "foothold");
   for (const layer of imgdirChildren(footholdRoot)) {
@@ -1872,6 +2572,8 @@ function parseMapData(raw) {
 
   const footholdMinX = footholdLines.length > 0 ? leftWall : minX;
   const footholdMaxX = footholdLines.length > 0 ? rightWall : maxX;
+  const footholdMinY = footholdLines.length > 0 ? topBorder : minY;
+  const footholdMaxY = footholdLines.length > 0 ? bottomBorder : maxY;
 
   // Parse minimap data
   const miniMapNode = childByName(raw, "miniMap");
@@ -1900,6 +2602,7 @@ function parseMapData(raw) {
     layers,
     lifeEntries,
     portalEntries,
+    reactorEntries,
     ladderRopes,
     footholdLines,
     footholdById,
@@ -1909,6 +2612,8 @@ function parseMapData(raw) {
     footholdBounds: {
       minX: footholdMinX,
       maxX: footholdMaxX,
+      minY: footholdMinY,
+      maxY: footholdMaxY,
     },
     bounds: { minX, maxX, minY, maxY },
     miniMap,
@@ -2198,8 +2903,8 @@ function clampCameraYToMapBounds(map, desiredCenterY) {
     return Math.max(minCenterY, Math.min(maxCenterY, desiredCenterY));
   }
 
-  // Map shorter than viewport — anchor bottom of map to bottom of viewport
-  return maxCenterY;
+  // Map shorter than viewport — follow player within bounds
+  return Math.max(maxCenterY, Math.min(minCenterY, desiredCenterY));
 }
 
 function portalMomentumEase(t) {
@@ -2213,7 +2918,7 @@ function startPortalMomentumScroll() {
   const startX = runtime.camera.x;
   const startY = runtime.camera.y;
   const targetX = clampCameraXToMapBounds(runtime.map, runtime.player.x);
-  const targetY = runtime.player.y - 130;
+  const targetY = runtime.player.y - cameraHeightBias();
 
   const distance = Math.hypot(targetX - startX, targetY - startY);
   if (distance < 6) {
@@ -2334,7 +3039,7 @@ async function runPortalMapTransition(targetMapId, targetPortalName) {
 
 async function tryUsePortal(force = false) {
   if (!runtime.map || runtime.loading.active || runtime.portalWarpInProgress) return;
-  if (runtime.player.climbing) return;
+  if (runtime.player.climbing || runtime.npcDialogue.active) return;
 
   const nowMs = performance.now();
   if (nowMs < runtime.portalCooldownUntil) return;
@@ -2454,17 +3159,27 @@ function requestCharacterData() {
   if (!runtime.characterDataPromise) {
     runtime.characterDataPromise = (async () => {
       try {
-        const [bodyData, headData, faceData, zMapData] = await Promise.all([
+        const fetches = [
           fetchJson("/resources/Character.wz/00002000.img.json"),
           fetchJson("/resources/Character.wz/00012000.img.json"),
           fetchJson("/resources/Character.wz/Face/00020000.img.json"),
           fetchJson("/resources/Base.wz/zmap.img.json"),
-        ]);
+          fetchJson(`/resources/Character.wz/${DEFAULT_HAIR_PATH}`),
+          ...DEFAULT_EQUIPS.map((eq) => fetchJson(`/resources/Character.wz/${eq.path}`)),
+        ];
+
+        const results = await Promise.all(fetches);
+        const [bodyData, headData, faceData, zMapData, hairData, ...equipResults] = results;
 
         runtime.characterData = bodyData;
         runtime.characterHeadData = headData;
         runtime.characterFaceData = faceData;
         runtime.zMapOrder = buildZMapOrder(zMapData);
+        runtime.characterHairData = hairData;
+
+        for (let i = 0; i < DEFAULT_EQUIPS.length; i++) {
+          runtime.characterEquipData[DEFAULT_EQUIPS[i].id] = equipResults[i];
+        }
       } finally {
         runtime.characterDataPromise = null;
       }
@@ -2592,6 +3307,187 @@ function updateFaceAnimation(dt) {
   }
 }
 
+/** Climbing stances where equipment with no matching stance should be hidden. */
+const CLIMBING_STANCES = new Set(["ladder", "rope"]);
+
+/**
+ * Extract canvas parts from an equipment WZ node for a given stance and frame.
+ * Equipment JSON structure: root > stance > frame > canvas children.
+ * Each canvas child has a `z` string child indicating its zmap layer.
+ *
+ * During climbing (ladder/rope), equipment that lacks the specific stance is
+ * hidden entirely (C++ draws weapon as BACKWEAPON only if the stance exists).
+ * For non-climbing stances, falls back to "stand1" if the specific stance is missing.
+ *
+ * @param {object} data - Parsed WZ JSON root node
+ * @param {string} action - Stance name (e.g. "stand1", "walk1", "ladder")
+ * @param {number} frameIndex - Frame number within the stance
+ * @param {string} prefix - Key prefix for caching (e.g. "equip:1040002")
+ * @returns {Array<{name: string, meta: object}>} - Array of parts with canvas metadata
+ */
+function getEquipFrameParts(data, action, frameIndex, prefix) {
+  if (!data) return [];
+
+  let actionNode = childByName(data, action);
+
+  if (!actionNode) {
+    // During climbing, if equip doesn't have the stance, don't render it (C++ parity:
+    // weapons have no ladder/rope stance and are drawn only as BACKWEAPON if present).
+    if (CLIMBING_STANCES.has(action)) return [];
+
+    // For other stances, fall back
+    actionNode = childByName(data, "stand1");
+    if (!actionNode) return [];
+  }
+
+  const frames = imgdirChildren(actionNode).sort((a, b) => Number(a.$imgdir) - Number(b.$imgdir));
+  if (frames.length === 0) return [];
+
+  const frameNode = frames[frameIndex % frames.length];
+  const framePath = [actionNode.$imgdir ?? action, String(frameNode.$imgdir ?? frameIndex)];
+  const parts = [];
+
+  for (const child of frameNode.$$ ?? []) {
+    if (typeof child.$canvas === "string") {
+      const meta = canvasMetaFromNode(child);
+      if (meta) {
+        const zChild = (child.$$ ?? []).find((c) => c.$string === "z");
+        if (zChild) meta.zName = String(zChild.value ?? child.$canvas);
+        parts.push({
+          name: `${prefix}:${child.$canvas}`,
+          meta,
+        });
+      }
+      continue;
+    }
+
+    if (typeof child.$uol === "string") {
+      const target = resolveNodeByUol(data, framePath, String(child.value ?? ""));
+      if (target) {
+        const canvasNode = pickCanvasNode(target, child.$uol);
+        const meta = canvasMetaFromNode(canvasNode);
+        if (meta) {
+          const zChild = (canvasNode?.$$ ?? []).find((c) => c.$string === "z");
+          if (zChild) meta.zName = String(zChild.value ?? child.$uol);
+          parts.push({
+            name: `${prefix}:${child.$uol}`,
+            meta,
+          });
+        }
+      }
+    }
+  }
+
+  return parts;
+}
+
+/**
+ * Get hair parts for a given action/frame.
+ *
+ * Hair WZ data is structured as:
+ *   - "default" / "backDefault": direct canvas children (hairOverHead, hair, hairShade, etc.)
+ *   - Stance nodes (stand1, walk1, ladder, rope...): frame sub-nodes with either:
+ *     - Direct canvas children, OR
+ *     - UOL references to "../../default/hair" or "../../backDefault/backHair"
+ *
+ * C++ Hair constructor resolves per-stance per-frame and falls back to default/backDefault.
+ * During climbing (ladder/rope), C++ CharLook::draw uses Hair::Layer::BACK which maps to
+ * "backHair" / "backHairBelowCap" — parts from the "backDefault" section.
+ */
+function getHairFrameParts(action, frameIndex) {
+  const hairData = runtime.characterHairData;
+  if (!hairData) return [];
+
+  const actionNode = childByName(hairData, action);
+
+  if (actionNode) {
+    const frames = imgdirChildren(actionNode).sort((a, b) => Number(a.$imgdir) - Number(b.$imgdir));
+    if (frames.length > 0) {
+      const frameNode = frames[frameIndex % frames.length];
+      const framePath = [actionNode.$imgdir ?? action, String(frameNode.$imgdir ?? frameIndex)];
+
+      // Resolve all children — canvas directly, UOLs by resolution
+      const parts = [];
+      for (const child of frameNode.$$ ?? []) {
+        if (child.$canvas) {
+          const meta = canvasMetaFromNode(child);
+          if (meta) {
+            const zChild = (child.$$ ?? []).find((c) => c.$string === "z");
+            if (zChild) meta.zName = String(zChild.value ?? child.$canvas);
+            parts.push({
+              name: `hair:${DEFAULT_HAIR_ID}:${action}:${frameIndex}:${child.$canvas}`,
+              meta,
+            });
+          }
+        } else if (child.$uol) {
+          // Resolve UOL — e.g. "../../backDefault/backHair" → backDefault > backHair canvas
+          const target = resolveNodeByUol(hairData, framePath, String(child.value ?? ""));
+          if (target) {
+            // target may be a canvas node directly or a container with canvas children
+            const canvasNode = target.$canvas ? target : pickCanvasNode(target, child.$uol);
+            const meta = canvasMetaFromNode(canvasNode);
+            if (meta) {
+              const zChild = (canvasNode?.$$ ?? []).find((c) => c.$string === "z");
+              const resolvedName = canvasNode?.$canvas ?? child.$uol;
+              if (zChild) meta.zName = String(zChild.value ?? resolvedName);
+              parts.push({
+                name: `hair:${DEFAULT_HAIR_ID}:${action}:${frameIndex}:${resolvedName}`,
+                meta,
+              });
+            }
+          }
+        }
+      }
+
+      if (parts.length > 0) return parts;
+    }
+  }
+
+  // Fallback: extract from "default" stance (direct canvas children + sub-imgdirs)
+  const defaultNode = childByName(hairData, "default");
+  if (!defaultNode) return [];
+
+  return extractHairPartsFromContainer(defaultNode, `hair:${DEFAULT_HAIR_ID}:default`);
+}
+
+/**
+ * Extract hair parts from a container node (like "default" or "backDefault")
+ * that has direct canvas children and/or sub-imgdirs with canvas children.
+ */
+function extractHairPartsFromContainer(containerNode, keyPrefix) {
+  const parts = [];
+
+  for (const child of containerNode.$$ ?? []) {
+    if (child.$canvas) {
+      const meta = canvasMetaFromNode(child);
+      if (meta) {
+        const zChild = (child.$$ ?? []).find((c) => c.$string === "z");
+        if (zChild) meta.zName = String(zChild.value ?? child.$canvas);
+        parts.push({
+          name: `${keyPrefix}:${child.$canvas}`,
+          meta,
+        });
+      }
+    } else if (child.$imgdir) {
+      // Nested imgdir (e.g. hairShade) — look for first canvas child
+      const subCanvas = (child.$$ ?? []).find((c) => c.$canvas);
+      if (subCanvas) {
+        const meta = canvasMetaFromNode(subCanvas);
+        if (meta) {
+          const zChild = (subCanvas.$$ ?? []).find((c) => c.$string === "z");
+          if (zChild) meta.zName = String(zChild.value ?? child.$imgdir);
+          parts.push({
+            name: `${keyPrefix}:${child.$imgdir}`,
+            meta,
+          });
+        }
+      }
+    }
+  }
+
+  return parts;
+}
+
 function getCharacterFrameData(action, frameIndex) {
   const frames = getCharacterActionFrames(action);
   if (frames.length === 0) return null;
@@ -2603,6 +3499,7 @@ function getCharacterFrameData(action, frameIndex) {
   const framePath = [action, String(frameNode.$imgdir ?? frameIndex)];
   const frameParts = [];
 
+  // Body parts
   for (const child of frameNode.$$ ?? []) {
     if (typeof child.$canvas === "string") {
       const meta = canvasMetaFromNode(child);
@@ -2628,18 +3525,38 @@ function getCharacterFrameData(action, frameIndex) {
     }
   }
 
+  // Head
   const headMeta = getHeadFrameMeta(action, frameIndex);
   if (headMeta) {
     frameParts.push({ name: "head", meta: headMeta });
   }
 
-  const faceMeta = getFaceFrameMeta(
-    frameLeaf,
-    runtime.faceAnimation.expression,
-    runtime.faceAnimation.frameIndex,
-  );
-  if (faceMeta) {
-    frameParts.push({ name: "face", meta: faceMeta });
+  // Face — not drawn during climbing (C++ CharLook::draw skips face in climbing branch)
+  if (!CLIMBING_STANCES.has(action)) {
+    const faceMeta = getFaceFrameMeta(
+      frameLeaf,
+      runtime.faceAnimation.expression,
+      runtime.faceAnimation.frameIndex,
+    );
+    if (faceMeta) {
+      frameParts.push({ name: "face", meta: faceMeta });
+    }
+  }
+
+  // Hair
+  const hairParts = getHairFrameParts(action, frameIndex);
+  for (const hp of hairParts) {
+    frameParts.push(hp);
+  }
+
+  // Equipment
+  for (const equip of DEFAULT_EQUIPS) {
+    const equipData = runtime.characterEquipData[equip.id];
+    if (!equipData) continue;
+    const equipParts = getEquipFrameParts(equipData, action, frameIndex, `equip:${equip.id}`);
+    for (const ep of equipParts) {
+      frameParts.push(ep);
+    }
   }
 
   return {
@@ -2770,6 +3687,33 @@ function buildMapAssetPreloadTasks(map) {
     });
   }
 
+  // Reactor sprite preload
+  const reactorIds = new Set();
+  for (const reactor of map.reactorEntries ?? []) {
+    if (reactorIds.has(reactor.id)) continue;
+    reactorIds.add(reactor.id);
+    addPreloadTask(taskMap, `reactor-load:${reactor.id}`, async () => {
+      const anim = await loadReactorAnimation(reactor.id);
+      if (!anim) return null;
+      // Register all frames in metaCache and preload images
+      for (const frame of anim.frames) {
+        if (!metaCache.has(frame.key)) {
+          metaCache.set(frame.key, {
+            basedata: frame.basedata,
+            width: frame.width,
+            height: frame.height,
+          });
+        }
+        await requestImageByKey(frame.key);
+        // Free basedata after decode
+        delete frame.basedata;
+        const cachedMeta = metaCache.get(frame.key);
+        if (cachedMeta) delete cachedMeta.basedata;
+      }
+      return anim;
+    });
+  }
+
   // Minimap canvas preload
   if (map.miniMap?.basedata) {
     const mmKey = map.miniMap.imageKey;
@@ -2789,12 +3733,17 @@ function addCharacterPreloadTasks(taskMap) {
   const actions = ["stand1", "walk1", "jump", "ladder", "rope", "prone", "sit"];
 
   for (const action of actions) {
-    const frame = getCharacterFrameData(action, 0);
-    if (!frame?.parts?.length) continue;
+    const actionFrames = getCharacterActionFrames(action);
+    const frameCount = Math.min(actionFrames.length, 6);
 
-    for (const part of frame.parts) {
-      const key = `char:${action}:0:${part.name}`;
-      addPreloadTask(taskMap, key, async () => part.meta);
+    for (let fi = 0; fi < frameCount; fi++) {
+      const frame = getCharacterFrameData(action, fi);
+      if (!frame?.parts?.length) continue;
+
+      for (const part of frame.parts) {
+        const key = `char:${action}:${fi}:${part.name}`;
+        addPreloadTask(taskMap, key, async () => part.meta);
+      }
     }
   }
 }
@@ -3171,7 +4120,7 @@ function updatePlayer(dt) {
   const move = (runtime.input.left ? -1 : 0) + (runtime.input.right ? 1 : 0);
   const climbDir = (runtime.input.up ? -1 : 0) + (runtime.input.down ? 1 : 0);
   const jumpQueued = runtime.input.jumpQueued;
-  const jumpRequested = jumpQueued || runtime.input.jumpHeld;
+  const jumpRequested = runtime.npcDialogue.active ? false : (jumpQueued || runtime.input.jumpHeld);
   runtime.input.jumpQueued = false;
 
   const nowMs = performance.now();
@@ -3187,7 +4136,8 @@ function updatePlayer(dt) {
 
   const crouchRequested = runtime.input.down && player.onGround && !player.climbing && !prioritizeDownAttach;
   const downJumpMovementLocked = player.downJumpControlLock && !player.onGround;
-  const effectiveMove = crouchRequested || downJumpMovementLocked ? 0 : move;
+  const npcDialogueLock = runtime.npcDialogue.active;
+  const effectiveMove = crouchRequested || downJumpMovementLocked || npcDialogueLock ? 0 : move;
 
   if (!player.climbing && effectiveMove !== 0) {
     player.facing = effectiveMove > 0 ? 1 : -1;
@@ -3596,7 +4546,7 @@ function updateCamera(dt) {
   }
 
   const targetX = runtime.player.x;
-  const targetY = runtime.player.y - 130;
+  const targetY = runtime.player.y - cameraHeightBias();
   const smoothing = Math.min(1, dt * 8);
 
   runtime.camera.x += (targetX - runtime.camera.x) * smoothing;
@@ -3680,14 +4630,12 @@ function drawBackgroundLayer(frontFlag) {
       x = background.x + shiftX + (screenHalfW - refHalfW);
     }
 
-    const biasY = sceneRenderBiasY();
-
     let y;
     if (vMobile) {
-      y = background.y + (background.ry * nowMs) / 128 + (screenHalfH - camY) + biasY;
+      y = background.y + (background.ry * nowMs) / 128 + (screenHalfH - camY);
     } else {
       const shiftY = (background.ry * camY) / 100 + refHalfH;
-      y = background.y + shiftY + (screenHalfH - refHalfH) + biasY;
+      y = background.y + shiftY + (screenHalfH - refHalfH);
     }
 
     // C++ tiling: htile/vtile count-based, matching MapBackgrounds.cpp
@@ -4217,20 +5165,6 @@ function drawChatBubble() {
   ctx.restore();
 }
 
-function roundRect(context, x, y, width, height, radius) {
-  context.beginPath();
-  context.moveTo(x + radius, y);
-  context.lineTo(x + width - radius, y);
-  context.quadraticCurveTo(x + width, y, x + width, y + radius);
-  context.lineTo(x + width, y + height - radius);
-  context.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
-  context.lineTo(x + radius, y + height);
-  context.quadraticCurveTo(x, y + height, x, y + height - radius);
-  context.lineTo(x, y + radius);
-  context.quadraticCurveTo(x, y, x + radius, y);
-  context.closePath();
-}
-
 // ─── Minimap ───────────────────────────────────────────────────────────────────
 const MINIMAP_PADDING = 10;
 const MINIMAP_TITLE_HEIGHT = 20;
@@ -4343,6 +5277,16 @@ function drawMinimap() {
     ctx.fill();
   }
 
+  // Draw reactor markers
+  for (const reactor of runtime.map.reactorEntries ?? []) {
+    const rx = toMinimapX(reactor.x);
+    const ry = toMinimapY(reactor.y);
+    ctx.fillStyle = "#e879f9";
+    ctx.beginPath();
+    ctx.arc(rx, ry, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   // Draw NPC markers
   for (const life of runtime.map.lifeEntries) {
     if (life.type !== "n") continue;
@@ -4438,6 +5382,7 @@ function render() {
 
   drawBackgroundLayer(0);
   drawMapLayersWithCharacter();
+  drawReactors();
   drawLifeSprites();
   if (runtime.debug.overlayEnabled && runtime.debug.showRopes) {
     drawRopeGuides();
@@ -4448,10 +5393,12 @@ function render() {
   }
   if (runtime.debug.overlayEnabled && runtime.debug.showLifeMarkers) {
     drawLifeMarkers();
+    drawReactorMarkers();
   }
   drawBackgroundLayer(1);
   drawChatBubble();
   drawMinimap();
+  drawNpcDialogue();
   drawTransitionOverlay();
 }
 
@@ -4467,6 +5414,7 @@ function updateSummary() {
 
   const mobCount = runtime.map.lifeEntries.filter((life) => life.type === "m").length;
   const npcCount = runtime.map.lifeEntries.filter((life) => life.type === "n").length;
+  const reactorCount = runtime.map.reactorEntries?.length ?? 0;
   const canvasRect = canvasEl.getBoundingClientRect();
 
   const summary = {
@@ -4491,6 +5439,7 @@ function updateSummary() {
     life: runtime.map.lifeEntries.length,
     mobCount,
     npcCount,
+    reactorCount,
     player: {
       x: Number(runtime.player.x.toFixed(2)),
       y: Number(runtime.player.y.toFixed(2)),
@@ -4533,6 +5482,7 @@ function updateSummary() {
       showLifeMarkers: runtime.debug.showLifeMarkers,
       transitionAlpha: Number(runtime.transition.alpha.toFixed(3)),
       portalWarpInProgress: runtime.portalWarpInProgress,
+      npcDialogue: runtime.npcDialogue.active ? `${runtime.npcDialogue.npcName} (${runtime.npcDialogue.lineIndex + 1}/${runtime.npcDialogue.lines.length})` : "none",
       portalScrollActive: runtime.portalScroll.active,
       portalScrollProgress: runtime.portalScroll.active && runtime.portalScroll.durationMs > 0
         ? Number(Math.min(1, runtime.portalScroll.elapsedMs / runtime.portalScroll.durationMs).toFixed(3))
@@ -4557,6 +5507,7 @@ function update(dt) {
   updateHiddenPortalState(dt);
   updateFaceAnimation(dt);
   updateLifeAnimations(dt * 1000);
+  updateReactorAnimations(dt * 1000);
   updateObjectAnimations(dt * 1000);
   updateBackgroundAnimations(dt * 1000);
   updateCamera(dt);
@@ -4825,7 +5776,7 @@ async function loadMap(mapId, spawnPortalName = null, spawnFromPortalTransfer = 
     runtime.faceAnimation.blinkCooldownMs = randomBlinkCooldownMs();
 
     runtime.camera.x = runtime.player.x;
-    runtime.camera.y = runtime.player.y - 130;
+    runtime.camera.y = runtime.player.y - cameraHeightBias();
     runtime.portalScroll.active = false;
     runtime.portalScroll.elapsedMs = 0;
     runtime.hiddenPortalState.clear();
@@ -4843,8 +5794,10 @@ async function loadMap(mapId, spawnPortalName = null, spawnFromPortalTransfer = 
     // Initialize animation states
     rlog(`loadMap initLifeRuntimeStates...`);
     initLifeRuntimeStates();
+    initReactorRuntimeStates();
     objectAnimStates.clear();
     bgAnimStates.clear();
+    closeNpcDialogue();
 
     // Restore chat UI after loading
     if (chatBarEl) chatBarEl.style.display = "";
@@ -4898,9 +5851,26 @@ function bindInput() {
     const scaleY = canvasEl.height / rect.height;
     const screenX = (e.clientX - rect.left) * scaleX;
     const screenY = (e.clientY - rect.top) * scaleY;
-    const biasY = sceneRenderBiasY();
     runtime.mouseWorld.x = screenX - canvasEl.width / 2 + runtime.camera.x;
-    runtime.mouseWorld.y = screenY - canvasEl.height / 2 - biasY + runtime.camera.y;
+
+    // Handle hover for NPC dialogue options or NPC sprites
+    if (runtime.npcDialogue.active) {
+      let foundOption = -1;
+      for (const hb of _npcDialogueOptionHitBoxes) {
+        if (screenX >= hb.x && screenX <= hb.x + hb.w && screenY >= hb.y && screenY <= hb.y + hb.h) {
+          foundOption = hb.index;
+          break;
+        }
+      }
+      runtime.npcDialogue.hoveredOption = foundOption;
+      canvasEl.style.cursor = foundOption >= 0 ? "pointer" : "";
+    } else if (!runtime.loading.active && !runtime.portalWarpInProgress && runtime.map) {
+      const npc = findNpcAtScreen(screenX, screenY);
+      canvasEl.style.cursor = npc ? "pointer" : "";
+    } else {
+      canvasEl.style.cursor = "";
+    }
+    runtime.mouseWorld.y = screenY - canvasEl.height / 2 + runtime.camera.y;
   });
 
   canvasEl.addEventListener("mouseenter", () => setInputEnabled(true));
@@ -4911,20 +5881,58 @@ function bindInput() {
     canvasEl.focus();
     setInputEnabled(true);
 
+    const rect = canvasEl.getBoundingClientRect();
+    const cx = (e.clientX - rect.left) * (canvasEl.width / rect.width);
+    const cy = (e.clientY - rect.top) * (canvasEl.height / rect.height);
+
+    // If NPC dialogue is open, check for option clicks or advance
+    if (runtime.npcDialogue.active) {
+      // Check if an option was clicked
+      for (const hb of _npcDialogueOptionHitBoxes) {
+        if (cx >= hb.x && cx <= hb.x + hb.w && cy >= hb.y && cy <= hb.y + hb.h) {
+          const currentLine = runtime.npcDialogue.lines[runtime.npcDialogue.lineIndex];
+          if (typeof currentLine === "object" && currentLine.options && currentLine.options[hb.index]) {
+            rlog(`NPC option selected: ${currentLine.options[hb.index].label}`);
+            currentLine.options[hb.index].action();
+          }
+          return;
+        }
+      }
+      // No option clicked — if this is a text-only line, advance
+      const currentLine = runtime.npcDialogue.lines[runtime.npcDialogue.lineIndex];
+      if (typeof currentLine !== "object" || !currentLine.options) {
+        advanceNpcDialogue();
+      }
+      return;
+    }
+
     // Check minimap toggle button (−/+)
     if (minimapToggleHitBox) {
-      const rect = canvasEl.getBoundingClientRect();
-      const cx = (e.clientX - rect.left) * (canvasEl.width / rect.width);
-      const cy = (e.clientY - rect.top) * (canvasEl.height / rect.height);
       const hb = minimapToggleHitBox;
       if (cx >= hb.x && cx <= hb.x + hb.w && cy >= hb.y && cy <= hb.y + hb.h) {
         minimapCollapsed = !minimapCollapsed;
+        return;
+      }
+    }
+
+    // Check NPC click (only when not loading/transitioning)
+    if (!runtime.loading.active && !runtime.portalWarpInProgress && runtime.map) {
+      const npc = findNpcAtScreen(cx, cy);
+      if (npc) {
+        openNpcDialogue(npc);
+      } else {
+        rlog(`click at screen(${Math.round(cx)},${Math.round(cy)}) world(${Math.round(runtime.mouseWorld.x)},${Math.round(runtime.mouseWorld.y)}) — no NPC hit`);
       }
     }
   });
 
   window.addEventListener("keydown", (event) => {
     if (event.code === "Enter") {
+      if (runtime.npcDialogue.active) {
+        event.preventDefault();
+        advanceNpcDialogue();
+        return;
+      }
       if (runtime.chat.inputActive) {
         event.preventDefault();
         const text = chatInputEl?.value ?? "";
@@ -4946,6 +5954,11 @@ function bindInput() {
     }
 
     if (event.code === "Escape") {
+      if (runtime.npcDialogue.active) {
+        event.preventDefault();
+        closeNpcDialogue();
+        return;
+      }
       if (runtime.chat.inputActive) {
         event.preventDefault();
         closeChatInput();

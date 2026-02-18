@@ -28,6 +28,92 @@ The docs UI includes sidebar navigation for markdown files under `docs/`.
 
 ---
 
+## 2026-02-18 07:45 (GMT+11)
+### Summary
+- Character equipment rendering: hair, coat, pants, shoes, weapon with C++ climbing parity
+
+### Character Equipment System
+- Default outfit: Hair 30000, Coat 1040002, Pants 1060002, Shoes 1072001, Weapon 1302000
+- `getEquipFrameParts()`: extracts equipment canvas parts per-stance per-frame with z-layer names
+- `getHairFrameParts()`: resolves UOLs for stance-specific hair (front vs back via `default`/`backDefault`)
+- `extractHairPartsFromContainer()`: handles direct canvas + nested imgdir (e.g. hairShade) containers
+- All parts composed via existing anchor system: body→navel, head→neck→brow, hair→brow, equips→navel/hand
+- Z-ordering from `zmap.img.json` layer names (each canvas part has a `z` string child)
+- Preloads up to 6 frames per action for all character parts
+
+### C++ Climbing Parity
+- **Weapon**: hidden during climbing — equip has no ladder/rope stance → `getEquipFrameParts` returns `[]`
+- **Hair**: ladder/rope UOLs resolve to `backDefault/backHair` (back hair layers) instead of front hair
+- **Face**: suppressed during climbing (C++ `CharLook::draw` skips face in climbing branch)
+- **Head**: uses back section (`../../back/head` UOL)
+- **Coat/Pants/Shoes**: use back z-layers (`backMailChest`, `backPants`, `backShoes`) from climbing stances
+- **Body**: uses `backBody` z-layer from climbing stance
+
+### Validation
+- Automated: `bun run ci` ✅ — all tests pass
+
+---
+
+## 2026-02-18 07:10 (GMT+11)
+### Summary
+- Camera height bias for tall viewports, NPC dialogue with portraits + scripted options, mob speed increase
+
+### Camera Height Bias
+- `cameraHeightBias() = Math.max(0, (canvasHeight - 600) / 2)`
+- Shifts camera target upward on viewports taller than 600px (BG reference height)
+- At 600px: 0, at 1080px: 240, at 1440px: 420
+- Backgrounds designed for 600px now cover more of viewport bottom; sky fills top
+- Applied at all 4 camera target sites; still subject to map bounds clamping
+- Known limitation: at very large resolutions when camera clamp overrides bias, some bottom void may still appear at map edges
+
+### NPC Dialogue System
+- Click any visible NPC to open dialogue (no range limit)
+- NPC portrait (animated sprite) shown on left side of dialogue box
+- `scriptId` extracted from `Npc.wz info/script` nodes
+- **Scripted NPCs** (646 unique scripts found): known scripts (taxis, Spinel/world_trip, etc.) show specific greeting + clickable destination options. Unknown scripts show flavor text + travel options to all major towns
+- **Non-scripted NPCs**: show flavor text only (`n0`/`n1`/`d0`/`d1` from `String.wz`)
+- Clickable option list with hover highlight (gold), pointer cursor
+- Options trigger `runPortalMapTransition` for travel destinations
+- Enter/click advances text pages, Escape closes
+- Player movement/jumping/portals locked during dialogue
+- Dialogue closed on map change; state in debug panel
+
+### Other Changes
+- Mob patrol speed 3× (`(speed+100)*0.003`)
+- Phase 5 Step 32: `fetchJson` is the single centralized WZ JSON loader (caching + coalescing)
+- Removed duplicate `roundRect` function (was causing SyntaxError)
+- `footholdBounds` extended with `minY`/`maxY`
+
+### Validation
+- Automated: `bun run ci` ✅ — all tests pass
+
+---
+
+## 2026-02-18 06:20 (GMT+11)
+### Summary
+- Phase 8 Step 41: Reactor subsystem — parse, load, preload, render, debug markers
+
+### Reactor Implementation
+- **Parsing**: `parseMapData()` now extracts `reactorEntries` from map JSON (`id`, `x`, `y`, `reactorTime`, `f`, `name`)
+- **Loading**: `loadReactorAnimation(reactorId)` fetches from `Reactor.wz/{padded7}.img.json`, reads state 0 canvas frames with origin/delay metadata
+- **Preloading**: reactor sprites registered in `buildMapAssetPreloadTasks()`, frames decoded and basedata freed after preload (same pattern as mobs/NPCs)
+- **Rendering**: `drawReactors()` draws reactor sprites at world positions with origin-based anchoring, flip support, off-screen culling, `sceneRenderBiasY()` included
+- **Animation**: `updateReactorAnimations(dt)` cycles multi-frame reactor animations using WZ delay values
+- **Runtime state**: `reactorRuntimeState` Map tracks `frameIndex`, `elapsed`, `state`, `active` per reactor
+- **Debug**: magenta reactor markers in debug overlay (`drawReactorMarkers`), reactor dots on minimap (purple/fuchsia), `reactorCount` in debug summary
+- **Data**: 475 maps in dataset have reactors, at least 1 reachable from default test maps (100030000)
+- **Cleanup**: `initReactorRuntimeStates()` called on map load, clears on map change
+
+### Render Pipeline Update
+- Reactors drawn after map layers, before life sprites (step 6 in pipeline)
+- Reactor markers shown alongside life markers when debug overlay enabled
+
+### Validation
+- Automated: `bun run ci` ✅ — all tests pass
+- Manual: reactor sprites should be visible on maps with reactor data (e.g., 100030000)
+
+---
+
 ## 2026-02-18 09:00 (GMT+11)
 ### Summary
 - Mob foothold physics: walk on platforms, follow slopes, turn at edges

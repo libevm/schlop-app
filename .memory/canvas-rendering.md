@@ -22,15 +22,18 @@ tick(timestampMs)          ← requestAnimationFrame
 3. If !runtime.map  → drawTransitionOverlay() → return
 4. drawBackgroundLayer(0)       ← back backgrounds (front=0)
 5. drawMapLayersWithCharacter() ← tiles + objects + player (z-sorted)
-6. drawLifeSprites()            ← mobs + NPCs
-7. drawRopeGuides()             ← debug overlay (if enabled)
-8. drawPortals()                ← portal sprites
-9. drawFootholdOverlay()        ← debug overlay (if enabled)
-10. drawLifeMarkers()           ← debug overlay (if enabled)
-11. drawBackgroundLayer(1)      ← front backgrounds (front=1)
-12. drawChatBubble()
-13. drawMinimap()
-14. drawTransitionOverlay()     ← fade-in/out black overlay
+6. drawReactors()               ← reactor sprites (state 0 idle)
+7. drawLifeSprites()            ← mobs + NPCs
+8. drawRopeGuides()             ← debug overlay (if enabled)
+9. drawPortals()                ← portal sprites
+10. drawFootholdOverlay()       ← debug overlay (if enabled)
+11. drawLifeMarkers()           ← debug overlay (if enabled)
+    drawReactorMarkers()        ← debug overlay (magenta, if life markers enabled)
+12. drawBackgroundLayer(1)      ← front backgrounds (front=1)
+13. drawChatBubble()
+14. drawMinimap()
+15. drawNpcDialogue()           ← NPC dialogue box with portrait + options
+16. drawTransitionOverlay()     ← fade-in/out black overlay
 ```
 
 ## Coordinate Systems
@@ -39,9 +42,10 @@ tick(timestampMs)          ← requestAnimationFrame
 - **Screen coords**: canvas pixel positions. (0,0) = top-left.
 - `worldToScreen(worldX, worldY)` → `{ x, y }` screen position
   - `screenX = worldX - camera.x + canvasWidth/2`
-  - `screenY = worldY - camera.y + canvasHeight/2 + sceneRenderBiasY()`
-- `sceneRenderBiasY()` = `max(0, (canvasHeight - BG_REFERENCE_HEIGHT) / 2)` — centers scene vertically
-- `BG_REFERENCE_WIDTH = 1366`, `BG_REFERENCE_HEIGHT = 768` — C++ reference resolution
+  - `screenY = worldY - camera.y + canvasHeight/2`
+- **No vertical bias**: `sceneRenderBiasY()` was removed — it shifted world rendering down
+  on tall canvases, causing the character to render off-screen when camera clamped to map bounds.
+- `BG_REFERENCE_WIDTH = 800`, `BG_REFERENCE_HEIGHT = 600` — C++ reference resolution (used for background parallax only)
 
 ## Drawing Primitives
 
@@ -102,7 +106,51 @@ getImageByKey(key)                           ← synchronous, used in render loo
 | Portal          | `portal:{type}:{frame}`                             |
 | Life sprite     | `life:{type}:{id}:{stance}:{frame}`                 |
 | Character       | `char:{action}:{frame}:{partName}`                  |
+| Reactor         | `reactor:{reactorId}:{state}:{frameIdx}`            |
 | Minimap         | `minimap:{mapId}`                                   |
+
+### Character Equipment Rendering
+
+The character is composed from multiple WZ data sources, all positioned via anchor-based
+composition using `composeCharacterPlacements()`:
+
+**Data Sources** (loaded by `requestCharacterData()`):
+- `Character.wz/00002000.img.json` — body (provides `navel`, `neck` anchors)
+- `Character.wz/00012000.img.json` — head (anchors to `neck`, provides `brow`)
+- `Character.wz/Face/00020000.img.json` — face (anchors to `brow`)
+- `Character.wz/Hair/00030000.img.json` — hair (anchors to `brow`)
+- `Character.wz/Coat/*.img.json` — top (anchors to `navel`)
+- `Character.wz/Pants/*.img.json` — bottom (anchors to `navel`)
+- `Character.wz/Shoes/*.img.json` — shoes (anchors to `navel`)
+- `Character.wz/Weapon/*.img.json` — weapon (anchors to `hand`)
+- `Base.wz/zmap.img.json` — z-order layer names
+
+**Default Equipment** (`DEFAULT_EQUIPS` constant):
+- Coat `01040002`, Pants `01060002`, Shoes `01072001`, Weapon `01302000`
+- Hair `00030000` (`DEFAULT_HAIR_ID`)
+
+**Part Extraction**:
+- Body/head/face: existing extractors (`getCharacterActionFrames`, `getHeadFrameMeta`, `getFaceFrameMeta`)
+- Hair: `getHairFrameParts()` — reads from `default` stance (direct canvas children + sub-imgdirs like `hairShade`)
+- Equipment: `getEquipFrameParts()` — reads stance/frame canvas children with `z` string for zmap layer name
+
+**Composition** (`composeCharacterPlacements()`):
+1. Body placed first at player position (via origin)
+2. Body provides anchors: `navel`, `neck`, `hand` (arm part)
+3. Remaining parts iterate using `pickAnchorName()` — finds matching anchor in already-placed anchors
+4. Each part positioned by `topLeftFromAnchor()` using its own origin + map vectors
+5. Z-ordered by `zOrderForPart()` using `zmap.img.json` layer index
+
+**Climbing Parity** (C++ `CharLook::draw` climbing branch):
+- Weapon: hidden during climbing (`getEquipFrameParts` returns `[]` when `CLIMBING_STANCES` has action and equip has no stance)
+- Hair: uses `backHair`/`backHairBelowCap` from `backDefault` via UOL resolution (e.g. `../../backDefault/backHair`)
+- Face: not drawn during climbing (suppressed in `getCharacterFrameData`)
+- Head: uses back section (`../../back/head` UOL resolved by `getHeadFrameMeta`)
+- Coat/Pants/Shoes: use back z-layers (`backMailChest`, `backPants`, `backShoes`) from their climbing stances
+- Body: uses `backBody` z-layer from climbing stance
+
+**Preloading**: `addCharacterPreloadTasks()` preloads up to 6 frames per action for all character
+parts (body, head, face, hair, equipment). Keys: `char:{action}:{frame}:{partName}`.
 
 ### canvasMetaFromNode(canvasNode)
 
@@ -167,15 +215,47 @@ Life sprite frames extract basedata into separate objects, so deleting `frame.ba
 `drawLifeSprites()`:
 - Iterates `lifeRuntimeState` entries
 - Position from `state.phobj.x` / `state.phobj.y` (physics object)
-- Screen Y **must include `sceneRenderBiasY()`** to match `worldToScreen` used by all other draws
+- Screen Y uses `worldY - cam.y + halfH` — same formula as `worldToScreen`
 - Facing from `state.facing` (mobs) or `life.f` (NPCs)
 - Off-screen culling with 100px margin
 - Origin-based positioning from frame metadata (`frame.originX`, `frame.originY`)
 - Does NOT use `drawWorldImage` — handles flip via `ctx.translate/scale` directly
 - Name labels: yellow for NPCs, pink for mobs
 
-> **Critical:** `drawLifeSprites` uses manual screen positioning (not `worldToScreen`).
-> Any changes to `worldToScreen` or `sceneRenderBiasY` must be mirrored here.
+> **Note:** `drawLifeSprites` uses manual screen positioning (not `worldToScreen`).
+> Any changes to `worldToScreen` must be mirrored here.
+
+## Reactors
+
+`drawReactors()`:
+- Iterates `reactorRuntimeState` entries
+- Position from `reactor.x` / `reactor.y` (static map positions)
+- Screen Y uses `worldY - cam.y + halfH` — same formula as `worldToScreen`
+- Facing from `reactor.f` flag
+- Off-screen culling with 100px margin
+- Origin-based positioning from frame metadata
+- Only renders state 0 (idle/normal) — state transitions require server
+
+### Reactor Loading
+
+- `loadReactorAnimation(reactorId)` loads from `Reactor.wz/{padded7}.img.json`
+- Reads state 0 canvas frames (direct children with `$canvas`)
+- Extracts origin, delay from frame metadata
+- Cached in `reactorAnimations` Map keyed `reactorId`
+- 475 maps in the dataset have reactor entries
+
+### Reactor Runtime State
+
+- `reactorRuntimeState` Map keyed by reactor entry index
+- Tracks `frameIndex`, `elapsed` (animation timer), `state`, `active`
+- `initReactorRuntimeStates()` called on map load (after preload)
+- `updateReactorAnimations(dt)` advances frame timers each tick
+
+### Reactor Debug
+
+- `drawReactorMarkers()` — magenta squares + reactor IDs (shown with life markers)
+- Reactor dots on minimap — purple/fuchsia color (`#e879f9`)
+- `reactorCount` in debug panel summary
 
 ## Portal Transitions
 
@@ -233,3 +313,31 @@ tryUsePortal()
   Diagnostic logging added to identify which key is affected.
 - **Transition overlay during fade-in**: `drawTransitionOverlay()` is at end of normal
   render path, so fade-in works correctly when rendering pipeline is healthy.
+
+## Resolved Issues
+
+- **Character off-screen on tall resolutions** (fixed): Two issues combined:
+  1. `sceneRenderBiasY()` shifted all rendering down by `(canvasHeight-600)/2` without
+     camera compensation. At 1080p: 240px extra shift, pushing player to 84% down screen.
+     Fix: removed `sceneRenderBiasY()` entirely from world rendering.
+  2. Camera target was `player.y - 130` (arbitrary offset pushing player below center).
+     The C++ client actually centers the player: `camera.y = VHEIGHT/2 - position.y()`.
+     Fix: changed camera target to `player.y - cameraHeightBias()`.
+- **Camera height bias** (`cameraHeightBias()`): `Math.max(0, (canvasHeight - 600) / 2)`.
+  Shifts the camera target upward on viewports taller than the 600px reference height.
+  Backgrounds are designed for 600px — on taller canvases they don't cover the bottom.
+  The bias pushes the scene down so sky backgrounds fill the top and ground content covers
+  more of the bottom. At 600px: 0. At 1080px: 240. At 1440px: 420.
+  Applied at all 4 camera target sites (teleport, portal scroll, smooth follow, map load).
+  Still subject to `clampCameraYToMapBounds` — at map bottom edges, clamp may override bias.
+- **Short-map camera clamping** (fixed): when map is shorter than viewport, camera follows
+  player between anchor-top and anchor-bottom positions, preventing void on both sides
+  while keeping the player on-screen.
+- **NPC dialogue overlay**: drawn after minimap, before transition overlay. Blocks player
+  movement, jumping, and portal use while active. MapleStory-style box with NPC portrait,
+  name/function header, word-wrapped text, clickable options for scripted NPCs, page
+  navigation, and footer hint.
+- **NPC interaction system**: click any visible NPC to open dialogue. No range limit.
+  NPCs with known scripts (taxis, Spinel) show specific options. NPCs with unknown scripts
+  show flavor text + travel options to all major towns. NPCs without scripts show flavor text.
+  Cursor changes to pointer on NPC hover. Option highlight on hover with gold color.
