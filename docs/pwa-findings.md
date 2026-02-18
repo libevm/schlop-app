@@ -28,6 +28,32 @@ The docs UI includes sidebar navigation for markdown files under `docs/`.
 
 ---
 
+## 2026-02-18 08:00 (GMT+11)
+### Summary
+- Minimap: top-left, toggle button, per-map cache key, String.wz name lookup
+- Mob/NPC sprites: load from Mob.wz/Npc.wz, animated stand stances, name labels
+- Chat UI hidden during loading screen
+- Removed duplicate HUD text overlay
+
+### Minimap System
+- Parses `miniMap` node from map JSON (centerX, centerY, mag, canvas basedata)
+- Image key per map (`minimap:{mapId}`) ensures cache invalidation on map change
+- Map name from `String.wz/Map.img.json` lazy-loaded on first use
+- Player (green), portal (yellow), NPC (blue) dot markers
+- Toggle button in topbar with localStorage persistence
+
+### Mob/NPC Sprite Rendering
+- Loads `Mob.wz/{paddedId}.img.json` / `Npc.wz/{paddedId}.img.json`
+- Supports `info.link` redirect for aliased entities
+- Animation: stand stance, frame cycling with delay timers
+- Origin-based positioning (foot anchor point)
+- Name labels from `String.wz/Mob.img.json` / `Npc.img.json`
+- NPCs yellow, mobs pink, dark background behind text
+- basedata freed after image decode to save memory
+- Off-screen culling for performance
+
+---
+
 ## 2026-02-18 07:30 (GMT+11)
 ### Summary
 - Phase 4 complete: Asset API server (`@maple/server`)

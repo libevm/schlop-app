@@ -19,6 +19,10 @@ Status: ✅ Synced
 5. Background tiling rewrite to match C++ MapBackgrounds.cpp count-based approach
 6. Default resolution changed to 1920×1080
 7. Fixed 16:9 display mode properly constrains canvas
+8. Minimap overlay — top-left, toggle button, map-specific caching, map names from String.wz
+9. Mob/NPC sprite rendering — load from Mob.wz/Npc.wz, animation system, name labels, String.wz names
+10. Chat UI hidden during loading screen
+11. Removed duplicate HUD overlay (map/action/frame text)
 
 ## Validation snapshot
 - ✅ `bun run ci` — 128 tests pass across all workspaces
