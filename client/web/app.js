@@ -4949,14 +4949,17 @@ function updatePlayer(dt) {
   // Update attack animation (handles its own timer + termination)
   updatePlayerAttack(dt);
 
-  // Attack stance overrides normal action while attacking
+  // Cancel attack if player starts moving or jumping (MapleStory behavior)
+  if (player.attacking && (move !== 0 || !player.onGround || player.climbing)) {
+    player.attacking = false;
+  }
+
+  // Attack stance overrides normal action while attacking (standing still)
   if (player.attacking && player.attackStance) {
     const attackAction = player.attackStance;
     if (player.action !== attackAction) {
       player.action = attackAction;
-      // attackFrameIndex/Timer managed by updatePlayerAttack
     }
-    // Use attack frame indices for rendering
     player.frameIndex = player.attackFrameIndex;
   } else {
     const nextAction = player.climbing
