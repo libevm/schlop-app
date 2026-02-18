@@ -1268,9 +1268,11 @@ function parseMapData(raw) {
     .map((entry) => {
       const row = imgdirLeafRecord(entry);
       const index = safeNumber(entry.$imgdir, 0);
+      const baseKey = `back:${row.bS}:${row.no}:${row.ani ?? 0}`;
       return {
         index,
-        key: `back:${row.bS}:${row.no}:${row.ani ?? 0}`,
+        key: baseKey,
+        baseKey,
         bS: String(row.bS ?? ""),
         no: String(row.no ?? "0"),
         ani: safeNumber(row.ani, 0),
@@ -1284,6 +1286,9 @@ function parseMapData(raw) {
         x: safeNumber(row.x, 0),
         y: safeNumber(row.y, 0),
         alpha: safeNumber(row.a, 255) / 255,
+        // Animation fields — populated during preload for ani=1 backgrounds
+        frameCount: 1,
+        frameDelays: null,
       };
     })
     .sort((a, b) => a.index - b.index);
@@ -1519,6 +1524,54 @@ async function loadBackgroundMeta(entry) {
 function requestBackgroundMeta(entry) {
   if (!entry.key || !entry.bS) return;
   requestMeta(entry.key, () => loadBackgroundMeta(entry));
+}
+
+/**
+ * Load all frames for an animated background (ani=1) and register in metaCache.
+ */
+async function loadAnimatedBackgroundFrames(entry) {
+  if (entry.ani !== 1) return null;
+
+  const path = `/resources/Map.wz/Back/${entry.bS}.img.json`;
+  const json = await fetchJson(path);
+  const group = childByName(json, "ani");
+  const node = childByName(group, entry.no);
+  if (!node) return null;
+
+  const frameNodes = (node.$$ ?? []).filter(
+    (c) => c.$imgdir !== undefined && /^\d+$/.test(c.$imgdir)
+  );
+  if (frameNodes.length <= 1) return null;
+
+  const delays = [];
+  for (const frameNode of frameNodes) {
+    const frameIdx = frameNode.$imgdir;
+    const canvasNode = pickCanvasNode(node, frameIdx);
+    if (!canvasNode) continue;
+
+    const meta = canvasMetaFromNode(canvasNode);
+    if (!meta) continue;
+
+    const key = `${entry.baseKey}:f${frameIdx}`;
+    if (!metaCache.has(key)) {
+      metaCache.set(key, meta);
+    }
+
+    let delay = 100;
+    for (const sub of frameNode.$$ ?? []) {
+      if (sub.$int === "delay") delay = safeNumber(sub.value, 100);
+    }
+    if (canvasNode !== frameNode) {
+      for (const sub of canvasNode.$$ ?? []) {
+        if (sub.$int === "delay") delay = safeNumber(sub.value, delay);
+      }
+    }
+    delays.push(Math.max(delay, 30));
+
+    await requestImageByKey(key);
+  }
+
+  return delays.length > 1 ? { frameCount: delays.length, delays } : null;
 }
 
 async function loadTileMeta(tile) {
@@ -2192,6 +2245,25 @@ function buildMapAssetPreloadTasks(map) {
   for (const background of map.backgrounds ?? []) {
     if (!background.key || !background.bS) continue;
     addPreloadTask(taskMap, background.key, () => loadBackgroundMeta(background));
+    // Detect and preload animated background frames
+    if (background.ani === 1) {
+      const animKey = `back-anim:${background.baseKey}`;
+      if (!taskMap.has(animKey)) {
+        const bgsWithSameBase = (map.backgrounds ?? []).filter(
+          (b) => b.baseKey === background.baseKey && b.ani === 1
+        );
+        addPreloadTask(taskMap, animKey, async () => {
+          const result = await loadAnimatedBackgroundFrames(background);
+          if (result) {
+            for (const b of bgsWithSameBase) {
+              b.frameCount = result.frameCount;
+              b.frameDelays = result.delays;
+            }
+          }
+          return result;
+        });
+      }
+    }
   }
 
   for (const layer of map.layers ?? []) {
@@ -3143,9 +3215,18 @@ function drawBackgroundLayer(frontFlag) {
   for (const background of runtime.map.backgrounds) {
     if ((background.front ? 1 : 0) !== frontFlag) continue;
 
+    // Determine frame key for animated backgrounds
+    let frameKey = background.key;
+    if (background.frameDelays && background.frameCount > 1) {
+      const state = bgAnimStates.get(background.index);
+      if (state) {
+        frameKey = `${background.baseKey}:f${state.frameIndex}`;
+      }
+    }
+
     requestBackgroundMeta(background);
-    const image = getImageByKey(background.key);
-    const meta = metaCache.get(background.key);
+    const image = getImageByKey(frameKey) ?? getImageByKey(background.key);
+    const meta = metaCache.get(frameKey) ?? metaCache.get(background.key);
     if (!image || !meta) continue;
 
     const origin = meta.vectors.origin ?? { x: 0, y: 0 };
@@ -3216,6 +3297,29 @@ function drawBackgroundLayer(frontFlag) {
 
 // Object animation states: keyed by "layer:objId" -> { frameIndex, timerMs }
 const objectAnimStates = new Map();
+// Background animation states: keyed by bg index -> { frameIndex, timerMs }
+const bgAnimStates = new Map();
+
+function updateBackgroundAnimations(dtMs) {
+  if (!runtime.map) return;
+
+  for (const bg of runtime.map.backgrounds) {
+    if (!bg.frameDelays || bg.frameCount <= 1) continue;
+
+    let state = bgAnimStates.get(bg.index);
+    if (!state) {
+      state = { frameIndex: 0, timerMs: 0 };
+      bgAnimStates.set(bg.index, state);
+    }
+
+    state.timerMs += dtMs;
+    const delay = bg.frameDelays[state.frameIndex % bg.frameDelays.length];
+    if (state.timerMs >= delay) {
+      state.timerMs -= delay;
+      state.frameIndex = (state.frameIndex + 1) % bg.frameCount;
+    }
+  }
+}
 
 function updateObjectAnimations(dtMs) {
   if (!runtime.map) return;
@@ -4020,6 +4124,7 @@ function update(dt) {
   updateFaceAnimation(dt);
   updateLifeAnimations(dt * 1000);
   updateObjectAnimations(dt * 1000);
+  updateBackgroundAnimations(dt * 1000);
   updateCamera(dt);
   updateSummary();
 }
@@ -4153,6 +4258,36 @@ async function playBgmPath(bgmPath) {
   }
 }
 
+const SFX_POOL_SIZE = 8;
+const sfxPool = new Map(); // key -> Audio[]
+
+function getSfxFromPool(dataUri) {
+  let pool = sfxPool.get(dataUri);
+  if (!pool) {
+    pool = [];
+    sfxPool.set(dataUri, pool);
+  }
+
+  // Find an idle audio element
+  for (const audio of pool) {
+    if (audio.paused || audio.ended) {
+      audio.currentTime = 0;
+      return audio;
+    }
+  }
+
+  // Create a new one if pool isn't full
+  if (pool.length < SFX_POOL_SIZE) {
+    const audio = new Audio(dataUri);
+    audio.volume = 0.45;
+    pool.push(audio);
+    return audio;
+  }
+
+  // All busy — skip this SFX
+  return null;
+}
+
 async function playSfx(soundFile, soundName) {
   runtime.audioDebug.lastSfx = `${soundFile}/${soundName}`;
   runtime.audioDebug.lastSfxAtMs = performance.now();
@@ -4162,9 +4297,11 @@ async function playSfx(soundFile, soundName) {
 
   try {
     const dataUri = await requestSoundDataUri(soundFile, soundName);
-    const audio = new Audio(dataUri);
-    audio.volume = 0.45;
-    audio.play().catch(() => {});
+    const audio = getSfxFromPool(dataUri);
+    if (audio) {
+      audio.volume = 0.45;
+      audio.play().catch(() => {});
+    }
   } catch (error) {
     console.warn("[audio] sfx failed", soundFile, soundName, error);
   }
@@ -4259,6 +4396,7 @@ async function loadMap(mapId, spawnPortalName = null, spawnFromPortalTransfer = 
     // Initialize animation states
     initLifeRuntimeStates();
     objectAnimStates.clear();
+    bgAnimStates.clear();
 
     // Restore chat UI after loading
     if (chatBarEl) chatBarEl.style.display = "";
