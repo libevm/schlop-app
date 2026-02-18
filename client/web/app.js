@@ -868,6 +868,47 @@ function worldPointFromTopLeft(meta, image, topLeft, vectorName, flipped) {
   };
 }
 
+// ─── Map String Data ──────────────────────────────────────────────────────────
+let mapStringData = null;
+let mapStringDataPromise = null;
+
+async function loadMapStringData() {
+  if (mapStringData) return mapStringData;
+  if (mapStringDataPromise) return mapStringDataPromise;
+  mapStringDataPromise = (async () => {
+    const raw = await fetchJson("/resources/String.wz/Map.img.json");
+    const lookup = {};
+    for (const region of raw.$$ ?? []) {
+      for (const entry of region.$$ ?? []) {
+        const mapId = entry.$imgdir;
+        if (!mapId) continue;
+        const rec = {};
+        for (const prop of entry.$$ ?? []) {
+          if (prop.$string) rec[prop.$string] = prop.value ?? "";
+        }
+        lookup[mapId] = rec;
+      }
+    }
+    mapStringData = lookup;
+    return lookup;
+  })();
+  return mapStringDataPromise;
+}
+
+function getMapStringName(mapId) {
+  if (!mapStringData) return null;
+  const entry = mapStringData[String(mapId).replace(/^0+/, "") || "0"];
+  if (!entry) return null;
+  return entry.mapName ?? null;
+}
+
+function getMapStringStreet(mapId) {
+  if (!mapStringData) return null;
+  const entry = mapStringData[String(mapId).replace(/^0+/, "") || "0"];
+  if (!entry) return null;
+  return entry.streetName ?? null;
+}
+
 async function fetchJson(path) {
   if (!jsonCache.has(path)) {
     jsonCache.set(
@@ -1188,6 +1229,25 @@ function parseMapData(raw) {
   const footholdMinX = footholdLines.length > 0 ? leftWall : minX;
   const footholdMaxX = footholdLines.length > 0 ? rightWall : maxX;
 
+  // Parse minimap data
+  const miniMapNode = childByName(raw, "miniMap");
+  let miniMap = null;
+  if (miniMapNode) {
+    const mmRec = imgdirLeafRecord(miniMapNode);
+    const mmCanvas = (miniMapNode.$$ ?? []).find((c) => c.$canvas !== undefined);
+    if (mmCanvas && mmCanvas.basedata) {
+      miniMap = {
+        centerX: safeNumber(mmRec.centerX, 0),
+        centerY: safeNumber(mmRec.centerY, 0),
+        mag: safeNumber(mmRec.mag, 0),
+        canvasWidth: mmCanvas.width ?? 0,
+        canvasHeight: mmCanvas.height ?? 0,
+        basedata: mmCanvas.basedata,
+        imageKey: `minimap:canvas`,
+      };
+    }
+  }
+
   return {
     info,
     swim: safeNumber(info.swim, 0) === 1,
@@ -1207,6 +1267,7 @@ function parseMapData(raw) {
       maxX: footholdMaxX,
     },
     bounds: { minX, maxX, minY, maxY },
+    miniMap,
   };
 }
 
@@ -1868,6 +1929,18 @@ function buildMapAssetPreloadTasks(map) {
       const key = portalMetaKey(portal, frame);
       addPreloadTask(taskMap, key, () => loadPortalMeta(portal, frame));
     }
+  }
+
+  // Minimap canvas preload
+  if (map.miniMap?.basedata) {
+    const mmKey = map.miniMap.imageKey;
+    addPreloadTask(taskMap, mmKey, async () => {
+      return {
+        basedata: map.miniMap.basedata,
+        width: map.miniMap.canvasWidth,
+        height: map.miniMap.canvasHeight,
+      };
+    });
   }
 
   return taskMap;
@@ -3237,20 +3310,111 @@ function roundRect(context, x, y, width, height, radius) {
   context.closePath();
 }
 
-function drawHud() {
-  if (!runtime.map) return;
+// ─── Minimap ───────────────────────────────────────────────────────────────────
+const MINIMAP_PADDING = 10;
+const MINIMAP_TITLE_HEIGHT = 20;
+const MINIMAP_BORDER_RADIUS = 6;
+const MINIMAP_PLAYER_RADIUS = 3;
+const MINIMAP_PORTAL_RADIUS = 2.5;
 
-  const text = `Map ${runtime.mapId} • ${runtime.map.info.mapMark ?? ""} • ${runtime.player.action} frame ${runtime.player.frameIndex}`;
+function drawMinimap() {
+  if (!runtime.map?.miniMap) return;
+  if (safeNumber(runtime.map.info.hideMinimap, 0) === 1) return;
+
+  const mm = runtime.map.miniMap;
+  const img = getImageByKey(mm.imageKey);
+  if (!img) return;
+
+  const scale = Math.pow(2, mm.mag);
+  const imgW = img.width;
+  const imgH = img.height;
+
+  // Position: top-right corner
+  const panelW = imgW + MINIMAP_PADDING * 2;
+  const panelH = imgH + MINIMAP_TITLE_HEIGHT + MINIMAP_PADDING * 2;
+  const panelX = canvasEl.width - panelW - 10;
+  const panelY = 10;
 
   ctx.save();
-  ctx.fillStyle = "rgba(2, 6, 23, 0.7)";
-  ctx.fillRect(10, 10, Math.min(canvasEl.width - 20, 520), 28);
-  ctx.fillStyle = "#e2e8f0";
-  ctx.font = "13px Inter, system-ui, sans-serif";
+
+  // Panel background with rounded corners
+  roundRect(ctx, panelX, panelY, panelW, panelH, MINIMAP_BORDER_RADIUS);
+  ctx.fillStyle = "rgba(2, 6, 23, 0.75)";
+  ctx.fill();
+  ctx.strokeStyle = "rgba(148, 163, 184, 0.4)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Title bar
+  const mapName = getMapStringName(runtime.mapId) ?? String(runtime.map.info.mapMark ?? runtime.mapId ?? "");
+  ctx.fillStyle = "#94a3b8";
+  ctx.font = "bold 11px Inter, system-ui, sans-serif";
   ctx.textBaseline = "middle";
-  ctx.fillText(text, 18, 24);
-  ctx.restore();
+  ctx.textAlign = "left";
+  const titleMaxW = panelW - MINIMAP_PADDING * 2;
+  ctx.fillText(mapName, panelX + MINIMAP_PADDING, panelY + MINIMAP_TITLE_HEIGHT / 2 + 1, titleMaxW);
+
+  // Separator line under title
+  ctx.strokeStyle = "rgba(148, 163, 184, 0.25)";
+  ctx.beginPath();
+  ctx.moveTo(panelX + 4, panelY + MINIMAP_TITLE_HEIGHT);
+  ctx.lineTo(panelX + panelW - 4, panelY + MINIMAP_TITLE_HEIGHT);
+  ctx.stroke();
+
+  // Draw minimap image
+  const imgX = panelX + MINIMAP_PADDING;
+  const imgY = panelY + MINIMAP_TITLE_HEIGHT + MINIMAP_PADDING;
+  ctx.drawImage(img, imgX, imgY);
+
+  // World-to-minimap coordinate transform:
+  // minimapPos = (worldPos + centerOffset) / scale
+  const toMinimapX = (worldX) => imgX + (worldX + mm.centerX) / scale;
+  const toMinimapY = (worldY) => imgY + (worldY + mm.centerY) / scale;
+
+  // Clip markers to minimap image area
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(imgX, imgY, imgW, imgH);
+  ctx.clip();
+
+  // Draw portal markers (type 2 = visible map-transfer portals)
+  for (const portal of runtime.map.portalEntries) {
+    if (portal.type !== 2) continue;
+    const px = toMinimapX(portal.x);
+    const py = toMinimapY(portal.y);
+    ctx.fillStyle = "#fbbf24";
+    ctx.beginPath();
+    ctx.arc(px, py, MINIMAP_PORTAL_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Draw NPC markers
+  for (const life of runtime.map.lifeEntries) {
+    if (life.type !== "n") continue;
+    const lx = toMinimapX(life.x);
+    const ly = toMinimapY(life.cy ?? life.y);
+    ctx.fillStyle = "#38bdf8";
+    ctx.beginPath();
+    ctx.arc(lx, ly, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Draw player marker
+  const px = toMinimapX(runtime.player.x);
+  const py = toMinimapY(runtime.player.y);
+  ctx.fillStyle = "#22c55e";
+  ctx.beginPath();
+  ctx.arc(px, py, MINIMAP_PLAYER_RADIUS, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  ctx.restore(); // unclip
+  ctx.restore(); // outer save
 }
+
+
 
 function drawLoadingScreen() {
   const progress = Math.max(0, Math.min(1, runtime.loading.progress || 0));
@@ -3325,7 +3489,7 @@ function render() {
   }
   drawBackgroundLayer(1);
   drawChatBubble();
-  drawHud();
+  drawMinimap();
   drawTransitionOverlay();
 }
 
@@ -3572,6 +3736,9 @@ async function loadMap(mapId, spawnPortalName = null, spawnFromPortalTransfer = 
   // Hide chat UI during loading
   if (chatBarEl) chatBarEl.style.display = "none";
   if (chatLogEl) chatLogEl.style.display = "none";
+
+  // Start loading map string names in background (non-blocking)
+  loadMapStringData().catch(() => {});
 
   try {
     setStatus(`Loading map ${mapId}...`);
