@@ -1929,19 +1929,17 @@ function updateLifeAnimations(dtMs) {
           ph.turnAtEdges = true;
         }
 
-        // ── Aggro chase: mob walks toward player, stops when close ──
+        // ── Aggro chase: mob walks toward player, overshoots, turns back ──
         if (state.aggroUntil > 0 && now < state.aggroUntil) {
-          const distToPlayer = Math.abs(runtime.player.x - ph.x);
-          if (distToPlayer < 40) {
-            // Close enough — stand and face player, no force
-            state.facing = runtime.player.x < ph.x ? -1 : 1;
-            state.behaviorState = "stand";
-            ph.hforce = 0;
-          } else {
-            state.facing = runtime.player.x < ph.x ? -1 : 1;
-            state.behaviorState = "move";
-            ph.hforce = state.facing === 1 ? state.mobSpeed : -state.mobSpeed;
+          // Only flip direction once the mob has overshot the player by 60px
+          const diff = runtime.player.x - ph.x; // positive = player is right
+          const pastPlayer = (state.facing === 1 && diff < -60) ||
+                             (state.facing === -1 && diff > 60);
+          if (pastPlayer) {
+            state.facing = -state.facing;
           }
+          state.behaviorState = "move";
+          ph.hforce = state.facing === 1 ? state.mobSpeed : -state.mobSpeed;
         } else {
           // Aggro expired → resume normal patrol
           if (state.aggroUntil > 0) {
