@@ -233,12 +233,14 @@ TURNATEDGES:
   When edge collision clears the flag → AI reverses facing, re-sets flag
 ```
 
-### Mob Spawn
+### Mob/NPC Spawn
 
 - Position from `life.x`, `life.cy` (map data)
-- Spawns `onGround = false` — gravity pulls to nearest foothold
-- Starting foothold from `life.fh` (for tracking, not Y snap)
-- Non-moving mobs/NPCs also get gravity each frame until landed
+- If `life.fh` (foothold ID) exists: look up foothold, snap Y to `fhGroundAt(fh, life.x)`,
+  start `onGround = true` — matches C++ default `onground = true` with immediate `update_fh` snap
+- Fallback: `findFootholdAtXNearY(map, life.x, life.cy, 60)` within 60px tolerance
+- Only if no valid foothold found: start at `life.cy` with `onGround = false`, gravity pulls down
+- Non-moving mobs/NPCs also get gravity each frame until landed (for the no-foothold case)
 
 ### Mob Foothold Helpers (separate from player helpers)
 
