@@ -684,8 +684,10 @@ const wzCursor = {
   state: 0,          // Current state (0=IDLE, 1=CANCLICK, 12=CLICKING)
   frameIndex: 0,
   frameTimer: 0,
-  x: 0,
-  y: 0,
+  x: 0,              // canvas-space X (for game hit detection)
+  y: 0,              // canvas-space Y
+  clientX: 0,        // viewport-space X (for HTML overlay positioning)
+  clientY: 0,        // viewport-space Y
   visible: true,
   loaded: false,
   clickState: false, // True while mouse is held down
@@ -763,13 +765,27 @@ function updateCursorAnimation(dtMs) {
   }
 }
 
-function drawWZCursor() {
-  if (!wzCursor.loaded || !wzCursor.visible) return;
+// Cursor rendered as HTML overlay so it stays on top of all UI
+const _cursorEl = document.createElement("img");
+_cursorEl.id = "wz-cursor";
+_cursorEl.style.cssText = "position:fixed;z-index:99999;pointer-events:none;image-rendering:pixelated;display:none;";
+document.body.appendChild(_cursorEl);
+
+function updateCursorElement() {
+  if (!wzCursor.loaded) return;
+  if (!wzCursor.visible) { _cursorEl.style.display = "none"; return; }
   const st = wzCursor.states[wzCursor.state] || wzCursor.states[CURSOR_IDLE];
-  if (!st) return;
+  if (!st) { _cursorEl.style.display = "none"; return; }
   const frame = st.frames[wzCursor.frameIndex % st.frames.length];
   if (!frame || !frame.complete) return;
-  ctx.drawImage(frame, wzCursor.x, wzCursor.y);
+  if (_cursorEl.src !== frame.src) _cursorEl.src = frame.src;
+  _cursorEl.style.display = "block";
+  _cursorEl.style.left = `${wzCursor.clientX}px`;
+  _cursorEl.style.top = `${wzCursor.clientY}px`;
+}
+
+function drawWZCursor() {
+  // no-op — cursor is now an HTML overlay updated in updateCursorElement()
 }
 
 // ── UI Sounds ──
@@ -3416,7 +3432,7 @@ function drawNpcDialogue() {
   // Box height: fit portrait, text, and options
   const portraitH = npcImg ? Math.min(140, npcImg.height) : 0;
   const contentH = Math.max(textH + optionsH + padding, portraitH + 8);
-  const footerH = isOptionLine ? 20 : 24;
+  const footerH = 30;
   const boxH = headerH + contentH + padding + footerH;
 
   const boxX = Math.round((canvasEl.width - boxW) / 2);
@@ -3534,59 +3550,46 @@ function drawNpcDialogue() {
     }
   }
 
-  // ── Footer: hint text + End Chat button ──
+  // ── Footer: Cancel + Next buttons ──
   const footerY = boxY + boxH - footerH;
+  const btnH = 20;
+  const btnY = footerY + Math.round((footerH - btnH) / 2);
+  const btnGap = 8;
 
-  // "End Chat" button (right side of footer)
-  const endBtnW = 60;
-  const endBtnH = 18;
-  const endBtnX = boxX + boxW - padding - endBtnW;
-  const endBtnY = footerY + Math.round((footerH - endBtnH) / 2);
-  const endBtnHovered = d.hoveredOption === -99;
-
-  // Button background
-  const btnGrad = ctx.createLinearGradient(endBtnX, endBtnY, endBtnX, endBtnY + endBtnH);
-  if (endBtnHovered) {
-    btnGrad.addColorStop(0, "#f4f6fa");
-    btnGrad.addColorStop(1, "#e0e6f0");
-  } else {
-    btnGrad.addColorStop(0, "#eef1f6");
-    btnGrad.addColorStop(1, "#d8dee8");
+  // Helper to draw a footer button
+  function drawFooterBtn(label, bx, bw, hoverIndex) {
+    const isHov = d.hoveredOption === hoverIndex;
+    const g = ctx.createLinearGradient(bx, btnY, bx, btnY + btnH);
+    g.addColorStop(0, isHov ? "#f4f6fa" : "#eef1f6");
+    g.addColorStop(1, isHov ? "#e0e6f0" : "#d8dee8");
+    ctx.fillStyle = g;
+    roundRect(ctx, bx, btnY, bw, btnH, 2);
+    ctx.fill();
+    ctx.strokeStyle = isHov ? "#6080b0" : "#8a9bb5";
+    ctx.lineWidth = 1;
+    roundRect(ctx, bx, btnY, bw, btnH, 2);
+    ctx.stroke();
+    ctx.fillStyle = isHov ? "#2a3650" : "#4a6490";
+    ctx.font = 'bold 10px "Dotum", Arial, sans-serif';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(label, bx + bw / 2, btnY + btnH / 2);
+    _npcDialogueOptionHitBoxes.push({ x: bx, y: btnY, w: bw, h: btnH, index: hoverIndex });
   }
-  ctx.fillStyle = btnGrad;
-  roundRect(ctx, endBtnX, endBtnY, endBtnW, endBtnH, 2);
-  ctx.fill();
-  ctx.strokeStyle = endBtnHovered ? "#6080b0" : "#8a9bb5";
-  ctx.lineWidth = 1;
-  roundRect(ctx, endBtnX, endBtnY, endBtnW, endBtnH, 2);
-  ctx.stroke();
 
-  ctx.fillStyle = endBtnHovered ? "#2a3650" : "#4a6490";
-  ctx.font = 'bold 10px "Dotum", Arial, sans-serif';
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("End Chat", endBtnX + endBtnW / 2, endBtnY + endBtnH / 2);
+  // Cancel button (right-most)
+  const cancelBtnW = 56;
+  const cancelBtnX = boxX + boxW - padding - cancelBtnW;
+  drawFooterBtn("Cancel", cancelBtnX, cancelBtnW, -99);
 
-  // Register end button hit box (use special index -99)
-  _npcDialogueOptionHitBoxes.push({
-    x: endBtnX,
-    y: endBtnY,
-    w: endBtnW,
-    h: endBtnH,
-    index: -99,
-  });
-
-  // Hint text (left of button)
-  ctx.fillStyle = "#6b82a8";
-  ctx.font = '11px "Dotum", Arial, sans-serif';
-  ctx.textAlign = "left";
-  ctx.textBaseline = "middle";
-  const hintY = endBtnY + endBtnH / 2;
-  if (isOptionLine) {
-    ctx.fillText("Click an option", boxX + padding, hintY);
-  } else {
-    const pageInfo = d.lines.length > 1 ? ` (${d.lineIndex + 1}/${d.lines.length})` : "";
-    ctx.fillText(`Enter to continue${pageInfo}`, boxX + padding, hintY);
+  // Next button (only for text lines, not option-selection lines)
+  if (!isOptionLine) {
+    const pageInfo = d.lines.length > 1 ? `  ${d.lineIndex + 1}/${d.lines.length}` : "";
+    const nextLabel = `Next${pageInfo}`;
+    ctx.font = 'bold 10px "Dotum", Arial, sans-serif';
+    const nextBtnW = Math.round(ctx.measureText(nextLabel).width) + 20;
+    const nextBtnX = cancelBtnX - btnGap - nextBtnW;
+    drawFooterBtn(nextLabel, nextBtnX, nextBtnW, -98);
   }
 
   ctx.restore();
@@ -8880,9 +8883,11 @@ function bindInput() {
     const screenX = (e.clientX - rect.left) * scaleX;
     const screenY = (e.clientY - rect.top) * scaleY;
 
-    // Track WZ cursor position
+    // Track WZ cursor position (canvas-space and viewport-space)
     wzCursor.x = Math.round(screenX);
     wzCursor.y = Math.round(screenY);
+    wzCursor.clientX = e.clientX;
+    wzCursor.clientY = e.clientY;
 
     runtime.mouseWorld.x = screenX - gameViewWidth() / 2 + runtime.camera.x;
 
@@ -8896,6 +8901,7 @@ function bindInput() {
         }
       }
       runtime.npcDialogue.hoveredOption = foundOption;
+      // Any hit box match (options, Next, Cancel) → clickable cursor
       if (!wzCursor.clickState) setCursorState(foundOption !== -1 ? CURSOR_CANCLICK : CURSOR_IDLE);
     } else if (!runtime.loading.active && !runtime.portalWarpInProgress && runtime.map) {
       const npc = findNpcAtScreen(screenX, screenY);
@@ -8906,8 +8912,21 @@ function bindInput() {
     runtime.mouseWorld.y = screenY - gameViewHeight() / 2 + runtime.camera.y;
   });
 
-  canvasEl.addEventListener("mouseenter", () => { setInputEnabled(true); wzCursor.visible = true; });
-  canvasEl.addEventListener("mouseleave", () => { setInputEnabled(false); wzCursor.visible = false; });
+  canvasEl.addEventListener("mouseenter", () => { setInputEnabled(true); });
+  canvasEl.addEventListener("mouseleave", () => { setInputEnabled(false); });
+
+  // Track cursor position globally so it stays visible over UI overlays
+  const _wrapperEl = canvasEl.parentElement;
+  if (_wrapperEl) {
+    _wrapperEl.addEventListener("mouseenter", () => { wzCursor.visible = true; });
+    _wrapperEl.addEventListener("mouseleave", () => { wzCursor.visible = false; updateCursorElement(); });
+    _wrapperEl.addEventListener("mousemove", (e) => {
+      wzCursor.clientX = e.clientX;
+      wzCursor.clientY = e.clientY;
+      wzCursor.visible = true;
+      updateCursorElement();
+    });
+  }
   canvasEl.addEventListener("focus", () => setInputEnabled(true));
   canvasEl.addEventListener("blur", () => setInputEnabled(false));
   canvasEl.addEventListener("pointerdown", (e) => {
@@ -8927,8 +8946,13 @@ function bindInput() {
       for (const hb of _npcDialogueOptionHitBoxes) {
         if (cx >= hb.x && cx <= hb.x + hb.w && cy >= hb.y && cy <= hb.y + hb.h) {
           if (hb.index === -99) {
-            // End Chat button
+            // Cancel button
             closeNpcDialogue();
+            return;
+          }
+          if (hb.index === -98) {
+            // Next button
+            advanceNpcDialogue();
             return;
           }
           const currentLine = runtime.npcDialogue.lines[runtime.npcDialogue.lineIndex];
