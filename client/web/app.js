@@ -6070,16 +6070,24 @@ function updateObjectAnimations(dtMs) {
       }
 
       // Accumulate opacity per tick using current frame's rate of change.
-      // opcstep = dtMs * (a1 - a0) / delay — drives opacity toward end value.
-      // No hard snap at frame boundaries: opacity carries over smoothly.
+      // opcstep = dtMs * (a1 - a0) / rampDelay — drives opacity toward end value.
+      // For "start invisible" frames (a0=0): hold at 0 for the first half of the
+      // delay to create a visible cooldown gap, then ramp at 2× speed.
       const fi = state.frameIndex % obj.frameDelays.length;
       const frameDelay = obj.frameDelays[fi];
       const opc = obj.frameOpacities?.[fi];
       if (opc && frameDelay > 0) {
-        const opcStep = dtMs * (opc.end - opc.start) / frameDelay;
-        state.opacity += opcStep;
-        if (state.opacity < 0) state.opacity = 0;
-        else if (state.opacity > 255) state.opacity = 255;
+        const isCooldownFrame = opc.start === 0;
+        const holdMs = isCooldownFrame ? frameDelay * 0.5 : 0;
+        if (isCooldownFrame && state.timerMs < holdMs) {
+          state.opacity = 0; // hold fully off during cooldown
+        } else {
+          const rampDelay = isCooldownFrame ? (frameDelay - holdMs) : frameDelay;
+          const opcStep = dtMs * (opc.end - opc.start) / Math.max(1, rampDelay);
+          state.opacity += opcStep;
+          if (state.opacity < 0) state.opacity = 0;
+          else if (state.opacity > 255) state.opacity = 255;
+        }
       }
 
       state.timerMs += dtMs;
