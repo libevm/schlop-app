@@ -5506,8 +5506,12 @@ function updatePlayer(dt) {
       const rope = player.climbRope;
       const climbSpeed = playerClimbforce() * PHYS_TPS;
 
-      const movingUp = runtime.input.up && !runtime.input.down;
-      const movingDown = runtime.input.down && !runtime.input.up;
+      const ropeTopY = Math.min(rope.y1, rope.y2);
+      const ropeBottomY = Math.max(rope.y1, rope.y2);
+      const atTop = player.y <= ropeTopY;
+      const atBottom = player.y >= ropeBottomY;
+      const movingUp = runtime.input.up && !runtime.input.down && !atTop;
+      const movingDown = runtime.input.down && !runtime.input.up && !atBottom;
 
       player.x = climbSnapX(rope);
       player.y += (movingDown ? 1 : movingUp ? -1 : 0) * climbSpeed * dt;
