@@ -5517,33 +5517,42 @@ function updatePlayer(dt) {
 
       if (ladderFellOff(rope, player.y, movingDown)) {
         const ropeTopY = Math.min(rope.y1, rope.y2);
+        const ropeBottomY = Math.max(rope.y1, rope.y2);
         const exitedFromTop = !movingDown && player.y + 5 < ropeTopY;
+        const exitedFromBottom = movingDown && player.y > ropeBottomY;
         const topExitFoothold = exitedFromTop
           ? findFootholdAtXNearY(map, player.x, ropeTopY, 24)
           : null;
         const canSnapToTopFoothold = !!topExitFoothold && !fhIsWall(topExitFoothold.line);
 
-        player.climbing = false;
-        player.climbRope = null;
-        player.downJumpIgnoreFootholdId = null;
-        player.downJumpIgnoreUntil = 0;
-        player.downJumpControlLock = false;
-        player.downJumpTargetFootholdId = null;
-        player.reattachLockRopeKey = rope.key ?? null;
-        player.reattachLockUntil = nowMs + 200;
-        player.climbCooldownUntil = nowMs + 1000;
-
         if (canSnapToTopFoothold) {
+          // Exit to platform at top of rope
+          player.climbing = false;
+          player.climbRope = null;
+          player.downJumpIgnoreFootholdId = null;
+          player.downJumpIgnoreUntil = 0;
+          player.downJumpControlLock = false;
+          player.downJumpTargetFootholdId = null;
+          player.reattachLockRopeKey = rope.key ?? null;
+          player.reattachLockUntil = nowMs + 200;
+          player.climbCooldownUntil = nowMs + 1000;
           player.y = topExitFoothold.y;
           player.vx = 0;
           player.vy = 0;
           player.onGround = true;
           player.footholdId = topExitFoothold.line.id;
           player.footholdLayer = topExitFoothold.line.layer;
-        } else {
-          if (exitedFromTop) {
-            player.y = Math.max(player.y, ropeTopY - 5);
-          }
+        } else if (exitedFromTop) {
+          // No platform at top — clamp at rope top, stay climbing
+          player.y = ropeTopY;
+          player.vy = 0;
+        } else if (exitedFromBottom) {
+          // Fell off bottom — detach and drop
+          player.climbing = false;
+          player.climbRope = null;
+          player.reattachLockRopeKey = rope.key ?? null;
+          player.reattachLockUntil = nowMs + 200;
+          player.climbCooldownUntil = nowMs + 1000;
           player.onGround = false;
           player.footholdId = null;
         }
