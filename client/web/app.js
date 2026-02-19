@@ -8951,14 +8951,17 @@ function drawLoadingScreen() {
         m.frameIndex = (m.frameIndex + 1) % stanceFrames.length;
       }
 
-      // Move mushroom across screen
+      // Move mushroom within progress bar region
+      const barLeft = x;
+      const barRight = x + barWidth;
       const speed = 1.8;
+      if (!m.x) m.x = barLeft;
       if (m.flipped) {
         m.x -= speed;
-        if (m.x < -80) { m.x = -80; m.flipped = false; }
+        if (m.x < barLeft) { m.x = barLeft; m.flipped = false; }
       } else {
         m.x += speed;
-        if (m.x > cw + 80) { m.x = cw + 80; m.flipped = true; }
+        if (m.x > barRight) { m.x = barRight; m.flipped = true; }
       }
 
       // Bounce
