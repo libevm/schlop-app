@@ -3237,6 +3237,7 @@ function initLifeRuntimeStates() {
       dying: false,
       dead: false,
       respawnAt: 0,
+      nameVisible: false,  // only show name after player attacks this mob
     });
   }
 }
@@ -3458,7 +3459,7 @@ function drawLifeSprites(filterLayer, lifeEntriesForLayer = null) {
     }
 
     // Draw name label below
-    if (anim.name && !state.dying) {
+    if (anim.name && !state.dying && state.nameVisible) {
       const nameColor = life.type === "n" ? "#fbbf24" : "#fb7185";
       ctx.save();
       ctx.font = "bold 11px Inter, system-ui, sans-serif";
@@ -3791,6 +3792,8 @@ function applyAttackToMob(target) {
   // Spawn damage number (even for miss)
   const worldX = state.phobj ? state.phobj.x : life.x;
   const worldY = state.phobj ? state.phobj.y : life.cy;
+
+  state.nameVisible = true;
 
   if (result.miss) {
     spawnDamageNumber(worldX, worldY, 0, false);
