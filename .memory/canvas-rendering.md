@@ -258,7 +258,11 @@ Life sprite frames extract basedata into separate objects, so deleting `frame.ba
   (`objectAnimationFrameEntries`) following C++ `Animation` bitmap-frame behavior.
   Numeric `$uol` alias entries are ignored for frame sequencing to preserve correct cycle timing/cooldowns.
 - Object animation may use explicit frame token sequence (`obj.frameKeys`) rather than assuming contiguous `0..N-1` frame IDs
-- Per-frame opacity interpolation supports WZ `a0`/`a1` metadata (`opacityStart`/`opacityEnd`) so effects authored as alpha pulses (e.g. subway lasers/lightning) animate correctly even when frame bitmaps are reused.
+- Per-frame opacity uses accumulated `state.opacity` (0–255) tracked in `objectAnimStates`.
+  Each tick: `opcStep = dtMs * (a1 - a0) / frameDelay` drives opacity toward the frame's end value.
+  On frame advance, opacity carries over (no snap) for smooth transitions between cycles.
+  Per-frame `a0`/`a1` stored in `obj.frameOpacities` array alongside `obj.frameDelays`.
+  For laser objects this produces: fade-in → hold at full → fade-out → cooldown at low opacity → repeat.
 - Falls back to base frame if animated frame missing
 - Object motion metadata (`moveType`, `moveW`, `moveH`, `moveP`) is applied in draw path
   with sinusoidal offsets (`objectMoveOffset`) for moving trap/map objects (e.g., spike balls)
