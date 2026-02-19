@@ -733,8 +733,9 @@ function dropItemOnMap() {
   const startX = player.x;
   const startY = player.y - 4;
   const destX = player.x + dir * (30 + Math.random() * 30);
-  // Find the foothold at the destination X to get proper landing Y
-  const destFh = findFootholdBelow(runtime.map, destX, startY - 50);
+  // Find the foothold at the destination X near player Y for landing
+  const destFh = findFootholdAtXNearY(runtime.map, destX, player.y, 60)
+              || findFootholdBelow(runtime.map, destX, player.y - 100);
   const destY = destFh ? destFh.y - 4 : player.y - 4;
 
   groundDrops.push({
@@ -868,20 +869,6 @@ function drawGroundDrops() {
     if (drop.angle !== 0) ctx.rotate(drop.angle);
     ctx.drawImage(img, -img.width / 2, -img.height / 2);
     ctx.restore();
-
-    // Draw item name below
-    if (drop.onGround && !drop.pickingUp) {
-      ctx.save();
-      ctx.globalAlpha = drop.opacity * 0.9;
-      ctx.font = '10px "Dotum", Arial, sans-serif';
-      ctx.textAlign = "center";
-      ctx.textBaseline = "top";
-      ctx.fillStyle = "#000";
-      ctx.fillText(drop.name, sx + 1, sy + bobY + 1);
-      ctx.fillStyle = "#fff";
-      ctx.fillText(drop.name, sx, sy + bobY);
-      ctx.restore();
-    }
   }
 }
 
