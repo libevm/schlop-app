@@ -4057,9 +4057,10 @@ function advanceNpcDialogue() {
  */
 // Store option hit boxes for click detection (rebuilt each frame)
 let _npcDialogueOptionHitBoxes = [];
+let _npcDialogueBoxBounds = null; // { x, y, w, h } of the dialogue box
 
 function drawNpcDialogue() {
-  if (!runtime.npcDialogue.active) return;
+  if (!runtime.npcDialogue.active) { _npcDialogueBoxBounds = null; return; }
   _npcDialogueOptionHitBoxes = [];
 
   const d = runtime.npcDialogue;
@@ -4113,6 +4114,7 @@ function drawNpcDialogue() {
 
   const boxX = Math.round((canvasEl.width - boxW) / 2);
   const boxY = Math.round((canvasEl.height - boxH) / 2);
+  _npcDialogueBoxBounds = { x: boxX, y: boxY, w: boxW, h: boxH };
 
   // ── HUD-themed background ──
   const bgGrad = ctx.createLinearGradient(boxX, boxY, boxX, boxY + boxH);
@@ -9744,18 +9746,15 @@ function bindInput() {
     const cx = (e.clientX - rect.left) * (canvasEl.width / rect.width);
     const cy = (e.clientY - rect.top) * (canvasEl.height / rect.height);
 
-    // If NPC dialogue is open, check for option clicks or advance
+    // If NPC dialogue is open — only buttons/options are clickable
     if (runtime.npcDialogue.active) {
-      // Check if an option or the End Chat button was clicked
       for (const hb of _npcDialogueOptionHitBoxes) {
         if (cx >= hb.x && cx <= hb.x + hb.w && cy >= hb.y && cy <= hb.y + hb.h) {
           if (hb.index === -99) {
-            // Cancel button
             closeNpcDialogue();
             return;
           }
           if (hb.index === -98) {
-            // Next button
             advanceNpcDialogue();
             return;
           }
@@ -9767,11 +9766,7 @@ function bindInput() {
           return;
         }
       }
-      // No option clicked — if this is a text-only line, advance
-      const currentLine = runtime.npcDialogue.lines[runtime.npcDialogue.lineIndex];
-      if (typeof currentLine !== "object" || !currentLine.options) {
-        advanceNpcDialogue();
-      }
+      // Click outside any button — do nothing, block other interactions
       return;
     }
 
