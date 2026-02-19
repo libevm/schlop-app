@@ -1257,6 +1257,7 @@ function toggleUIWindow(key) {
   const isHidden = el.classList.contains("hidden");
   el.classList.toggle("hidden");
   if (isHidden) {
+    bringWindowToFront(el);
     playUISound("MenuUp");
     refreshUIWindows();
     if (key === "keybinds") buildKeybindsUI();
@@ -1441,18 +1442,31 @@ function playUISound(name) {
 }
 
 /** Load WZ UI backgrounds and close button sprites */
-// ── Dragging ──
+// ── Dragging & window focus ──
 let _dragWin = null;
 let _dragOffX = 0;
 let _dragOffY = 0;
+let _winZCounter = 25; // base z-index for game windows
+
+function bringWindowToFront(winEl) {
+  if (!winEl) return;
+  _winZCounter += 1;
+  winEl.style.zIndex = _winZCounter;
+}
 
 function initUIWindowDrag() {
+  // Click anywhere on a game window → bring it to front
+  for (const winEl of document.querySelectorAll(".game-window")) {
+    winEl.addEventListener("pointerdown", () => bringWindowToFront(winEl));
+  }
+
   for (const titlebar of document.querySelectorAll(".game-window-titlebar")) {
     titlebar.addEventListener("pointerdown", (e) => {
       const winId = titlebar.dataset.window;
       const winEl = getUIWindowEl(winId);
       if (!winEl) return;
       e.preventDefault();
+      bringWindowToFront(winEl);
       _dragWin = winEl;
       const wr = canvasEl.parentElement.getBoundingClientRect();
       _dragOffX = e.clientX - winEl.offsetLeft - wr.left;
