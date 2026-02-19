@@ -122,7 +122,9 @@ Per-step collision model:
 
 - Player sweep bounds use previous and current player positions:
   - `prevX/prevY` captured at start of `updatePlayer(dt)`
-  - touch rect: `x ± PLAYER_TOUCH_HITBOX_HALF_WIDTH`, `y - PLAYER_TOUCH_HITBOX_HEIGHT .. y`
+  - touch rect is stance-aware via `playerTouchBoxMetrics(player)`:
+    - standing/default: `x ± 12`, `y - 50 .. y`
+    - prone/sit on-ground: `x ± 18`, `y - 28 .. y`
 - Trap bounds use object-space hitbox vectors and current motion offset:
   - world rect from `obj.x/obj.y + lt/rb + objectMoveOffset(...)`
   - applies horizontal mirroring when map object `f` (flip) is set (uses mirrored `lt/rb` offsets)
@@ -141,6 +143,13 @@ C++ parity references used for behavior shape:
 - `MapMobs.cpp::find_colliding` player sweep-rect concept
 - `Player.cpp::damage` knockback values (`hspeed ±1.5`, `vforce -= 3.5`)
 - `Char.cpp::show_damage` invincible timing (`2000ms`)
+
+Prone-hitbox investigation snapshot (2026-02-19):
+- C++ `MapMobs.cpp::find_colliding` uses a fixed player sweep height (`vertical.smaller() - 50 .. vertical.greater()`).
+- Half-web TS reference (`MapleCharacter.ts`) derives collision rectangles from rendered body parts (`bodyRects`),
+  which naturally changes with stance (including prone).
+- Web debug client now follows a lightweight stance-aware touch box model for prone parity while keeping
+  fixed-step sweep behavior (`prev`/`current` interpolation).
 
 ### Mob touch damage (player collision with mobs)
 
@@ -196,18 +205,15 @@ Matches C++ `FootholdTree::get_wall()`:
   - side clamp now prefers C++-style inset map walls (`map.walls.left/right`) and only falls back
     to foothold extrema (`map.footholdBounds.minX/maxX`) when needed.
   - this prevents airborne/jump-through escapes that can happen if raw foothold extrema are used first.
-- `resolveWallCollision(...)` now:
+- `resolveWallCollision(...)` now follows C++ `FootholdTree::get_wall` style directly:
   - keeps foothold-chain wall crossing logic (`getWallX`) when foothold context exists
-  - uses side-wall fallback when foothold context is missing
-  - applies vertical wall-line crossing fallback (`resolveWallLineCollisionX`) with swept Y range (`oldY..nextY`)
-    to catch high-velocity airborne wall passes
-  - places player slightly inside collision side (`±0.001`) on wall hit to avoid touch-start tunneling
-  - always applies final hard side clamp via `clampXInsideSideWalls`.
-- Side clamp helpers:
-  - `clampXToSideWalls(...)` hard clamp
-  - `clampXInsideSideWalls(...)` epsilon-inside clamp (`left+eps`, `right-eps`) for robust repeated collisions.
+  - uses side-wall fallback only when foothold context is missing
+  - no global wall-line intersection fallback (to avoid over-blocking on local short vertical walls)
+  - final clamp uses `clampXToSideWalls` (C++-style map wall bounds).
+- Side clamp helper:
+  - `clampXToSideWalls(...)` hard clamp to map side walls (`map.walls`, fallback `footholdBounds`).
 - Post-physics and hit-time safety:
-  - after movement integration, player X is clamped with `clampXInsideSideWalls` and outward velocity is reset
+  - after movement integration, player X is clamped with `clampXToSideWalls` and outward velocity is reset
   - `applyPlayerTouchHit(...)` also clamps X immediately after knockback application.
 
 ### Down-Jump

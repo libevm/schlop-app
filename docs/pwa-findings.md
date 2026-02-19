@@ -28,6 +28,98 @@ The docs UI includes sidebar navigation for markdown files under `docs/`.
 
 ---
 
+## 2026-02-19 16:53 (GMT+11)
+### Summary
+- Fixed intermittent one-frame face disappearance during facial animation transitions.
+
+### Files changed
+- `client/web/app.js`
+
+### What changed
+- Character placement cache now includes face expression/frame in template lookups and fallback state.
+- If a face part is expected but its image is still decoding, template build now returns `null` (no cache write) so renderer falls back to last complete frame.
+- Prevents caching transient no-face templates that caused disappear/reappear flicker.
+
+### Validation
+- `bun run ci` ✅
+
+---
+
+## 2026-02-19 16:45 (GMT+11)
+### Summary
+- Fixed hit-face override caching and reduced wall collision aggressiveness to match C++ foothold logic.
+
+### Files changed
+- `client/web/app.js`
+
+### What changed
+- Character composition cache now keys by face expression/frame (`faceExpression`, `faceFrameIndex`) so hit expressions (`pain`/`hit` etc.) apply immediately and are not masked by stale cached templates.
+- Wall collision parity pass:
+  - removed generic `wallLines` intersection fallback from `resolveWallCollision(...)`
+  - restored C++-style behavior: foothold-chain wall checks (`getWallX`) + map side-wall fallback only
+- This prevents over-aggressive blocking on short vertical walls (e.g. small platform walls in `103000900`) while keeping side-wall boundaries intact.
+
+### Validation
+- `bun run ci` ✅
+
+---
+
+## 2026-02-19 16:31 (GMT+11)
+### Summary
+- Corrected face-to-head mapping regression from previous hit-visual parity pass.
+
+### Files changed
+- `client/web/app.js`
+
+### What changed
+- Face composition now anchors to `brow` and uses face-frame brow offsets (from `map.brow`) again.
+- This matches C++ `Face::Frame` (`texture.shift(-brow)`) + `CharLook::draw` face placement flow.
+- Fixes facial expression misalignment relative to head.
+
+### Validation
+- `bun run ci` ✅
+
+---
+
+## 2026-02-19 16:24 (GMT+11)
+### Summary
+- Improved player-hit visual parity with C++: blink effect and face placement.
+
+### Files changed
+- `client/web/app.js`
+
+### What changed
+- Invincibility blink in `drawCharacter()` now uses color darkening (`brightness(...)`) rather than alpha fade.
+- Pulse curve remains C++-style: `rgb = 0.9 - 0.5 * abs(sin(progress * 30))`.
+- Character composition now special-cases face anchoring:
+  - uses resolved world `brow` anchor
+  - applies face origin only (ignores expression-local brow offsets)
+- Fixes hit-face drifting slightly above head and keeps expression placement stable.
+
+### Validation
+- `bun run ci` ✅
+
+---
+
+## 2026-02-19 16:14 (GMT+11)
+### Summary
+- Made player touch hitbox stance-aware so prone/sit uses a lower profile hitbox.
+
+### Files changed
+- `client/web/app.js`
+
+### What changed
+- Added prone hitbox metrics:
+  - standing/default: `x ±12`, `y-50..y`
+  - prone/sit on-ground: `x ±18`, `y-28..y`
+- Added `playerTouchBoxMetrics(player)` and wired `playerTouchBounds(...)` to use it.
+- Keeps previous swept collision behavior (`prevX/prevY` to current position) but now reflects prone posture.
+
+### Validation
+- `bun run ci` ✅
+
+---
+
 ## 2026-02-19 16:01 (GMT+11)
 ### Summary
 - Fixed remaining jump-through-wall tunneling in `103000900` (including from stopped-at-wall jump states).

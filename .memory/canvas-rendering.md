@@ -163,8 +163,12 @@ composition using `composeCharacterPlacements()`:
 3. Remaining parts iterate using `pickAnchorName()` — finds matching anchor in already-placed anchors
 4. Each part positioned by `topLeftFromAnchor()` using its own origin + map vectors
 5. Z-ordered by `zOrderForPart()` using `zmap.img.json` layer index
-6. Cached per `(action, frameIndex, flipped)` in `characterPlacementTemplateCache`
-   and reused each frame with player-position offsets
+6. Cached in `characterPlacementTemplateCache` per
+   `(action, frameIndex, flipped, faceExpression, faceFrameIndex)`
+   and reused each frame with player-position offsets.
+   (Face-expression keys are required so hit/pain face overrides recompose immediately.)
+   If a face part is expected but its image is not decoded yet, template creation returns `null`
+   (no cache write) so draw falls back to last complete frame instead of caching a no-face template.
 
 **Climbing Parity** (C++ `CharLook::draw` climbing branch):
 - Weapon: hidden during climbing (`getEquipFrameParts` returns `[]` when `CLIMBING_STANCES` has action and equip has no stance)
@@ -182,8 +186,12 @@ parts (body, head, face, hair, equipment). Keys: `char:{action}:{frame}:{partNam
 - Expression selection priority: `pain` → `hit` → `troubled` → `stunned` → `bewildered` (first available in face data).
 - Override timing: `PLAYER_HIT_FACE_DURATION_MS = 500` via `runtime.faceAnimation.overrideExpression/overrideUntilMs`.
 - `updateFaceAnimation(dt)` now supports temporary override playback and then returns to normal default/blink cycle.
-- `drawCharacter()` applies whole-sprite invincibility blink opacity while trap i-frames are active, using a C++-style pulse curve:
-  `rgb = 0.9 - 0.5 * abs(sin(progress * 30))` (applied as canvas alpha modulation).
+- `drawCharacter()` applies invincibility blink as color darkening (not alpha fade) while trap i-frames are active,
+  matching C++ `Char::draw` behavior:
+  `rgb = 0.9 - 0.5 * abs(sin(progress * 30))` (rendered via canvas `brightness(...)` filter).
+- Face placement parity fix: when composing parts, face is forced to anchor via `brow` (when available), and uses
+  face-frame `map.brow` offset during anchor solve. This matches C++ `Face::Frame` behavior
+  (`texture.shift(-brow)`) + `CharLook::draw` face-position flow, preserving correct per-expression alignment.
 
 ### canvasMetaFromNode(canvasNode)
 

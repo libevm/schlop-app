@@ -116,6 +116,8 @@ const PHYS_DEFAULT_SPEED_STAT = 115;
 const PHYS_DEFAULT_JUMP_STAT = 110;
 const PLAYER_TOUCH_HITBOX_HEIGHT = 50;
 const PLAYER_TOUCH_HITBOX_HALF_WIDTH = 12;
+const PLAYER_TOUCH_HITBOX_PRONE_HEIGHT = 28;
+const PLAYER_TOUCH_HITBOX_PRONE_HALF_WIDTH = 18;
 const TRAP_HIT_INVINCIBILITY_MS = 2000;
 const TRAP_KNOCKBACK_HSPEED = 1.5 * PHYS_TPS;
 const TRAP_KNOCKBACK_VSPEED = 3.5 * PHYS_TPS;
@@ -4700,7 +4702,12 @@ function extractHairPartsFromContainer(containerNode, keyPrefix) {
   return parts;
 }
 
-function getCharacterFrameData(action, frameIndex) {
+function getCharacterFrameData(
+  action,
+  frameIndex,
+  faceExpression = runtime.faceAnimation.expression,
+  faceFrameIndex = runtime.faceAnimation.frameIndex,
+) {
   const frames = getCharacterActionFrames(action);
   if (frames.length === 0) return null;
 
@@ -4747,11 +4754,11 @@ function getCharacterFrameData(action, frameIndex) {
   if (!CLIMBING_STANCES.has(action)) {
     const faceMeta = getFaceFrameMeta(
       frameLeaf,
-      runtime.faceAnimation.expression,
-      runtime.faceAnimation.frameIndex,
+      faceExpression,
+      faceFrameIndex,
     );
     if (faceMeta) {
-      frameParts.push({ name: "face", meta: faceMeta });
+      frameParts.push({ name: `face:${faceExpression}:${faceFrameIndex}`, meta: faceMeta });
     }
   }
 
@@ -5168,79 +5175,26 @@ function clampXToSideWalls(x, map) {
   return Math.max(walls.left, Math.min(walls.right, x));
 }
 
-function clampXInsideSideWalls(x, map) {
-  const walls = sideWallBounds(map);
-  const eps = 0.001;
-  const minX = walls.left + eps;
-  const maxX = walls.right - eps;
-  if (minX <= maxX) {
-    return Math.max(minX, Math.min(maxX, x));
-  }
-  return clampXToSideWalls(x, map);
-}
-
-function resolveWallLineCollisionX(oldX, newX, oldY, nextY, map) {
-  if (!map?.wallLines?.length || oldX === newX) return null;
-
-  const left = newX < oldX;
-  const sweepMinY = Math.min(oldY, nextY);
-  const sweepMaxY = Math.max(oldY, nextY);
-  const minY = Math.floor(sweepMinY) - 50;
-  const maxY = Math.floor(sweepMaxY) - 1;
-  const eps = 0.001;
-
-  let best = left ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY;
-
-  for (const wall of map.wallLines) {
-    if (!rangesOverlap(wall.y1, wall.y2, minY, maxY)) continue;
-
-    // Epsilon-sided crossing catches high-speed passes while staying non-sticky when moving away.
-    const crossed = left
-      ? oldX >= wall.x + eps && newX <= wall.x + eps
-      : oldX <= wall.x - eps && newX >= wall.x - eps;
-    if (!crossed) continue;
-
-    if (left) {
-      if (wall.x > best) best = wall.x;
-    } else if (wall.x < best) {
-      best = wall.x;
-    }
-  }
-
-  if (left) {
-    return Number.isFinite(best) && best !== Number.NEGATIVE_INFINITY ? best : null;
-  }
-
-  return Number.isFinite(best) && best !== Number.POSITIVE_INFINITY ? best : null;
-}
-
-function resolveWallCollision(oldX, newX, oldY, nextY, map, footholdId) {
-  if (newX === oldX) return clampXInsideSideWalls(newX, map);
+function resolveWallCollision(oldX, newX, nextY, map, footholdId) {
+  if (newX === oldX) return clampXToSideWalls(newX, map);
 
   const left = newX < oldX;
   const current = findFootholdById(map, footholdId);
-  const eps = 0.001;
 
   let resolvedX = newX;
 
   if (current) {
     const wallX = getWallX(map, current, left, nextY);
     const collision = left ? oldX >= wallX && resolvedX <= wallX : oldX <= wallX && resolvedX >= wallX;
-    if (collision) resolvedX = left ? wallX + eps : wallX - eps;
+    if (collision) resolvedX = wallX;
   } else {
     const walls = sideWallBounds(map);
     const wallX = left ? walls.left : walls.right;
     const collision = left ? oldX >= wallX && resolvedX <= wallX : oldX <= wallX && resolvedX >= wallX;
-    if (collision) resolvedX = left ? wallX + eps : wallX - eps;
+    if (collision) resolvedX = wallX;
   }
 
-  const wallLineX = resolveWallLineCollisionX(oldX, resolvedX, oldY, nextY, map);
-  if (wallLineX != null) {
-    const collision = left ? oldX >= wallLineX && resolvedX <= wallLineX : oldX <= wallLineX && resolvedX >= wallLineX;
-    if (collision) resolvedX = left ? wallLineX + eps : wallLineX - eps;
-  }
-
-  return clampXInsideSideWalls(resolvedX, map);
+  return clampXToSideWalls(resolvedX, map);
 }
 
 // (footholdSlope alias removed — use fhSlope)
@@ -5647,7 +5601,7 @@ function updatePlayer(dt) {
     if (player.onGround && currentFoothold && !fhIsWall(currentFoothold)) {
       const oldX = player.x;
       let nextX = oldX + player.vx * dt;
-      nextX = resolveWallCollision(oldX, nextX, player.y, player.y, map, currentFoothold.id);
+      nextX = resolveWallCollision(oldX, nextX, player.y, map, currentFoothold.id);
       horizontalApplied = true;
 
       const footholdResolution = resolveFootholdForX(map, currentFoothold, nextX);
@@ -5681,7 +5635,7 @@ function updatePlayer(dt) {
           findFootholdBelow(map, oldX, oldY)?.line;
 
         player.x += player.vx * dt;
-        player.x = resolveWallCollision(oldX, player.x, oldY, nextY, map, wallFoothold?.id ?? null);
+        player.x = resolveWallCollision(oldX, player.x, nextY, map, wallFoothold?.id ?? null);
       }
 
       player.y = nextY;
@@ -5723,7 +5677,7 @@ function updatePlayer(dt) {
   }
 
   const unclampedX = player.x;
-  player.x = clampXInsideSideWalls(player.x, map);
+  player.x = clampXToSideWalls(player.x, map);
   if (player.x !== unclampedX) {
     if (player.x < unclampedX && player.vx > 0) player.vx = 0;
     if (player.x > unclampedX && player.vx < 0) player.vx = 0;
@@ -6115,13 +6069,24 @@ function rectsOverlap(a, b) {
   return a.left <= b.right && a.right >= b.left && a.top <= b.bottom && a.bottom >= b.top;
 }
 
+function playerTouchBoxMetrics(player) {
+  const action = String(player?.action ?? "");
+  const prone = !player.climbing && player.onGround && (action === "prone" || action === "proneStab" || action === "sit");
+
+  return prone
+    ? { halfWidth: PLAYER_TOUCH_HITBOX_PRONE_HALF_WIDTH, height: PLAYER_TOUCH_HITBOX_PRONE_HEIGHT }
+    : { halfWidth: PLAYER_TOUCH_HITBOX_HALF_WIDTH, height: PLAYER_TOUCH_HITBOX_HEIGHT };
+}
+
 function playerTouchBounds(player) {
   const lastX = Number.isFinite(player.prevX) ? player.prevX : player.x;
   const lastY = Number.isFinite(player.prevY) ? player.prevY : player.y;
+  const metrics = playerTouchBoxMetrics(player);
+
   return normalizedRect(
-    Math.min(lastX, player.x) - PLAYER_TOUCH_HITBOX_HALF_WIDTH,
-    Math.max(lastX, player.x) + PLAYER_TOUCH_HITBOX_HALF_WIDTH,
-    Math.min(lastY, player.y) - PLAYER_TOUCH_HITBOX_HEIGHT,
+    Math.min(lastX, player.x) - metrics.halfWidth,
+    Math.max(lastX, player.x) + metrics.halfWidth,
+    Math.min(lastY, player.y) - metrics.height,
     Math.max(lastY, player.y),
   );
 }
@@ -6184,7 +6149,7 @@ function applyPlayerTouchHit(damage, sourceCenterX, nowMs) {
   }
 
   if (runtime.map) {
-    player.x = clampXInsideSideWalls(player.x, runtime.map);
+    player.x = clampXToSideWalls(player.x, runtime.map);
   }
 }
 
@@ -6611,17 +6576,17 @@ function pickAnchorName(meta, anchors) {
   return names.find((name) => anchors[name]) ?? null;
 }
 
-function characterTemplateCacheKey(action, frameIndex, flipped) {
-  return `${action}:${frameIndex}:${flipped ? 1 : 0}`;
+function characterTemplateCacheKey(action, frameIndex, flipped, faceExpression, faceFrameIndex) {
+  return `${action}:${frameIndex}:${flipped ? 1 : 0}:${faceExpression}:${faceFrameIndex}`;
 }
 
-function getCharacterPlacementTemplate(action, frameIndex, flipped) {
-  const cacheKey = characterTemplateCacheKey(action, frameIndex, flipped);
+function getCharacterPlacementTemplate(action, frameIndex, flipped, faceExpression, faceFrameIndex) {
+  const cacheKey = characterTemplateCacheKey(action, frameIndex, flipped, faceExpression, faceFrameIndex);
   if (characterPlacementTemplateCache.has(cacheKey)) {
     return characterPlacementTemplateCache.get(cacheKey);
   }
 
-  const frame = getCharacterFrameData(action, frameIndex);
+  const frame = getCharacterFrameData(action, frameIndex, faceExpression, faceFrameIndex);
   if (!frame || !frame.parts?.length) return null;
 
   const partAssets = frame.parts
@@ -6636,6 +6601,13 @@ function getCharacterPlacementTemplate(action, frameIndex, flipped) {
       };
     })
     .filter((part) => !!part.image && !!part.meta);
+
+  // Avoid caching transient no-face templates when a face frame is expected but
+  // its image is still decoding. Let draw fallback reuse the last complete frame.
+  const expectedFacePart = frame.parts.find((part) => typeof part.name === "string" && part.name.startsWith("face:"));
+  if (expectedFacePart && !partAssets.some((part) => part.name === expectedFacePart.name)) {
+    return null;
+  }
 
   const body = partAssets.find((part) => part.name === "body");
   if (!body) return null;
@@ -6660,10 +6632,18 @@ function getCharacterPlacementTemplate(action, frameIndex, flipped) {
 
     for (let index = pending.length - 1; index >= 0; index -= 1) {
       const part = pending[index];
-      const anchorName = pickAnchorName(part.meta, anchors);
+
+      // C++ parity: face should anchor to brow when available.
+      // Face frames carry expression-specific `map.brow` offsets and must use them
+      // (equivalent to C++ Face::Frame texture.shift(-brow) behavior).
+      const isFacePart = typeof part.name === "string" && part.name.startsWith("face:");
+      const anchorName = isFacePart
+        ? (anchors.brow ? "brow" : pickAnchorName(part.meta, anchors))
+        : pickAnchorName(part.meta, anchors);
       if (!anchorName) continue;
 
-      const topLeft = topLeftFromAnchor(part.meta, part.image, anchors[anchorName], anchorName, flipped);
+      const anchorVectorName = anchorName;
+      const topLeft = topLeftFromAnchor(part.meta, part.image, anchors[anchorName], anchorVectorName, flipped);
       placements.push({
         ...part,
         topLeft,
@@ -6688,8 +6668,21 @@ function getCharacterPlacementTemplate(action, frameIndex, flipped) {
   return template;
 }
 
-function composeCharacterPlacements(action, frameIndex, player, flipped) {
-  const template = getCharacterPlacementTemplate(action, frameIndex, flipped);
+function composeCharacterPlacements(
+  action,
+  frameIndex,
+  player,
+  flipped,
+  faceExpression = runtime.faceAnimation.expression,
+  faceFrameIndex = runtime.faceAnimation.frameIndex,
+) {
+  const template = getCharacterPlacementTemplate(
+    action,
+    frameIndex,
+    flipped,
+    faceExpression,
+    faceFrameIndex,
+  );
   if (!template || template.length === 0) return null;
 
   return template.map((part) => ({
@@ -6789,7 +6782,7 @@ function wrapBubbleTextToWidth(text, maxWidth) {
   return lines;
 }
 
-function playerHitBlinkOpacity(nowMs) {
+function playerHitBlinkColorScale(nowMs) {
   const player = runtime.player;
   if (nowMs >= player.trapInvincibleUntil) {
     return 1;
@@ -6799,18 +6792,39 @@ function playerHitBlinkOpacity(nowMs) {
   const progress = Math.max(0, Math.min(1, elapsed / TRAP_HIT_INVINCIBILITY_MS));
   const phi = progress * 30;
   const rgb = 0.9 - 0.5 * Math.abs(Math.sin(phi)); // C++ Char::draw invincible pulse
-  return Math.max(0.35, Math.min(1, rgb));
+  return Math.max(0.4, Math.min(0.9, rgb));
 }
 
 function drawCharacter() {
   const player = runtime.player;
   const flipped = player.facing > 0;
 
-  const currentPlacements = composeCharacterPlacements(player.action, player.frameIndex, player, flipped);
+  const faceExpression = runtime.faceAnimation.expression;
+  const faceFrameIndex = runtime.faceAnimation.frameIndex;
+
+  const currentPlacements = composeCharacterPlacements(
+    player.action,
+    player.frameIndex,
+    player,
+    flipped,
+    faceExpression,
+    faceFrameIndex,
+  );
   const fallback = runtime.lastRenderableCharacterFrame;
+  const fallbackFaceExpression = fallback?.faceExpression ?? faceExpression;
+  const fallbackFaceFrameIndex = fallback?.faceFrameIndex ?? faceFrameIndex;
   const placements =
     currentPlacements ??
-    (fallback ? composeCharacterPlacements(fallback.action, fallback.frameIndex, player, flipped) : null);
+    (fallback
+      ? composeCharacterPlacements(
+          fallback.action,
+          fallback.frameIndex,
+          player,
+          flipped,
+          fallbackFaceExpression,
+          fallbackFaceFrameIndex,
+        )
+      : null);
 
   if (!placements || placements.length === 0) {
     return;
@@ -6820,6 +6834,8 @@ function drawCharacter() {
     runtime.lastRenderableCharacterFrame = {
       action: player.action,
       frameIndex: player.frameIndex,
+      faceExpression,
+      faceFrameIndex,
     };
   }
 
@@ -6831,17 +6847,17 @@ function drawCharacter() {
     }
   }
 
-  const blinkOpacity = playerHitBlinkOpacity(performance.now());
-  if (blinkOpacity < 0.999) {
+  const blinkColorScale = playerHitBlinkColorScale(performance.now());
+  if (blinkColorScale < 0.999) {
     ctx.save();
-    ctx.globalAlpha *= blinkOpacity;
+    ctx.filter = `brightness(${Math.round(blinkColorScale * 100)}%)`;
   }
 
   for (const part of placements) {
     drawWorldImage(part.image, part.topLeft.x, part.topLeft.y, { flipped });
   }
 
-  if (blinkOpacity < 0.999) {
+  if (blinkColorScale < 0.999) {
     ctx.restore();
   }
 }

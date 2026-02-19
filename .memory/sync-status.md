@@ -1,6 +1,6 @@
 # .memory Sync Status
 
-Last synced: 2026-02-19T16:01:00+11:00
+Last synced: 2026-02-19T16:53:00+11:00
 Status: ✅ Synced
 
 ## Current authoritative memory files
@@ -16,7 +16,7 @@ Status: ✅ Synced
 - `.memory/physics-units.md`
 
 ## Codebase Metrics Snapshot
-- `client/web/app.js`: **8437 lines** (single-file debug web client)
+- `client/web/app.js`: **8442 lines** (single-file debug web client)
 - `client/src/` files: 13 (Phase 6 scaffolding — world-stage, combat-orchestrator, entity-pool)
 - `server/src/` files: 6 (data-provider, server, build/dev/test harness)
 - `packages/shared-schemas/src/` files: 4 (Zod schemas, constants)
@@ -27,6 +27,68 @@ Status: ✅ Synced
 - CI: **135 tests pass** across all workspaces (`bun run ci`)
 
 ## What was synced in this pass
+
+### Wall collision parity rollback + hit-face cache fix (2026-02-19)
+- User report: wall collision too aggressive; short vertical walls should not all block (e.g. `103000900`).
+- C++ parity alignment applied in `client/web/app.js`:
+  - removed `resolveWallLineCollisionX` global wall-segment fallback
+  - `resolveWallCollision(...)` now follows foothold-chain `getWallX` + side wall fallback only
+  - retained side-wall safety clamp via `clampXToSideWalls(...)`.
+- Effect: wall blocking now matches C++ `FootholdTree::get_wall` behavior more closely and avoids
+  over-blocking on local vertical walls.
+
+- Follow-up fix for hit facial-expression behavior:
+  - character placement template cache now keys by face expression/frame
+  - `composeCharacterPlacements(...)` passes current face expression/frame into template selection
+  - prevents stale default-face templates from masking hit expression overrides.
+
+Validation:
+- `bun run ci` ✅
+
+### Face/head mapping correction after hit-visual pass (2026-02-19)
+- Follow-up for report: facial expression mapping was still incorrect relative to head.
+- Root cause: interim face placement logic ignored face frame brow offsets.
+- Updated `client/web/app.js` character composition:
+  - face now prefers `brow` anchor (when available)
+  - face anchor solve now uses `brow` vector offsets from face frames (`map.brow`)
+- C++ parity reference:
+  - `Face::Frame` applies `texture.shift(-brow)`
+  - `CharLook::draw` places face by drawinfo face position
+- Effect: expression frames map correctly to head again.
+
+Validation:
+- `bun run ci` ✅
+
+### Player-hit visual parity fix (blink + face alignment) (2026-02-19)
+- User report: hit blink looked unlike original client; hit face appeared slightly above head.
+- Reference check:
+  - C++ `Char::draw` applies invincibility pulse as RGB color modulation (`Color(rgb, rgb, rgb, 1)`), not alpha fade.
+  - C++ `CharLook::draw` places face via body draw-info face position (`drawinfo.getfacepos(...)`) with face texture origin.
+- Updated `client/web/app.js`:
+  - replaced alpha-based blink modulation with color-brightness modulation in `drawCharacter()`
+  - `playerHitBlinkColorScale(...)` keeps the C++ pulse curve and range
+  - composition now special-cases face placement to use world `brow` anchor + origin-only offset
+    (ignores expression-local brow offset vectors)
+- Effect:
+  - hit blink now matches original darker pulse feel
+  - hit expressions stay aligned with head (no upward drift).
+
+Validation:
+- `bun run ci` ✅
+
+### Prone hitbox posture-parity update (2026-02-19)
+- Follow-up for report: prone posture should use a prone-like collision profile.
+- Reference scan snapshot captured before change:
+  - C++ `MapMobs.cpp::find_colliding` uses a fixed vertical sweep rect concept
+  - half-web TS (`MapleCharacter.ts`) computes body rectangles from rendered parts (stance-dependent)
+- Updated `client/web/app.js`:
+  - added `PLAYER_TOUCH_HITBOX_PRONE_HEIGHT` and `PLAYER_TOUCH_HITBOX_PRONE_HALF_WIDTH`
+  - added `playerTouchBoxMetrics(player)`
+  - updated `playerTouchBounds(...)` to switch metrics for prone/sit on-ground states
+- Effect: touch-damage collision shape now better mirrors prone posture while preserving swept movement checks.
+
+Validation:
+- `bun run ci` ✅
 
 ### 103000900 jump-through wall tunneling fix (stopped jump + fast airborne) (2026-02-19)
 - Follow-up for report: in map `103000900`, player could still jump through walls when launching from wall contact

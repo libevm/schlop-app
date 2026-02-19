@@ -194,10 +194,17 @@ Make browser rendering feel fast/snappy by reducing frame time variance, input-t
   - falls back to foothold extrema (`footholdBounds.minX/maxX`) only when wall bounds are unavailable.
 - `resolveWallCollision(...)`, post-physics integration, and knockback hit application now all share
   this clamp path to keep behavior consistent and easier to reason about.
-- Reintroduced a minimal strict wall-line crossing fallback (`resolveWallLineCollisionX`) inside
-  `resolveWallCollision(...)` to block high-velocity airborne jump-through side-wall cases while
-  preserving non-sticky normal movement.
-- Improved wall fallback robustness for 103000900/103000903 jump-through cases:
-  - wall-line crossing now uses swept Y range (`oldY..nextY`) instead of nextY-only sampling
-  - wall collisions resolve to slightly inside the legal side (`±0.001`) to prevent touch-start tunneling
-  - final and safety clamps use epsilon-inside side-wall bounds for consistent repeated collision behavior.
+- Finalized wall-collision parity pass against C++ `FootholdTree::get_wall`:
+  - removed generic wall-line intersection fallback (it over-blocked on short/local vertical walls)
+  - `resolveWallCollision(...)` now uses foothold-chain blocking checks + map side-wall fallback only
+  - keeps C++-style map wall bounds (`map.walls.left/right`) as primary side limits.
+- Added stance-aware player touch hitbox sizing (prone/sit vs standing) so collision profile
+  better matches rendered posture while preserving swept collision checks.
+- Refined player-hit visual parity:
+  - invincibility blink now darkens sprite color (C++-style RGB pulse) instead of alpha fading
+  - face composition now always anchors via body/head brow (when present) and keeps frame brow offsets,
+    matching C++ face frame mapping and preventing misalignment.
+  - character placement template cache now keys by face expression/frame as well, so hit-face overrides
+    (pain/hit/etc.) update immediately instead of reusing stale default-face templates.
+  - template build skips cache writes when face is expected but still decoding, using last complete frame
+    fallback to avoid one-frame face disappear/reappear flicker.
