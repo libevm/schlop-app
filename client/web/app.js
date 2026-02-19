@@ -5500,7 +5500,7 @@ function updatePlayer(dt) {
       player.downJumpTargetFootholdId = null;
       player.reattachLockRopeKey = detachedRopeKey;
       player.reattachLockUntil = nowMs + 200;
-      player.climbCooldownUntil = nowMs + 1000;
+      player.climbCooldownUntil = nowMs + 400;
       playSfx("Game", "Jump");
     } else {
       const rope = player.climbRope;
@@ -5535,7 +5535,7 @@ function updatePlayer(dt) {
           player.downJumpTargetFootholdId = null;
           player.reattachLockRopeKey = rope.key ?? null;
           player.reattachLockUntil = nowMs + 200;
-          player.climbCooldownUntil = nowMs + 1000;
+          player.climbCooldownUntil = nowMs + 400;
           player.y = topExitFoothold.y;
           player.vx = 0;
           player.vy = 0;
@@ -5552,7 +5552,7 @@ function updatePlayer(dt) {
           player.climbRope = null;
           player.reattachLockRopeKey = rope.key ?? null;
           player.reattachLockUntil = nowMs + 200;
-          player.climbCooldownUntil = nowMs + 1000;
+          player.climbCooldownUntil = nowMs + 400;
           player.onGround = false;
           player.footholdId = null;
         }
