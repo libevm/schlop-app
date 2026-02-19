@@ -546,7 +546,7 @@ function initPlayerInventory() {
   }
 }
 
-function buildSlotEl(icon, label, qty, tooltipText) {
+function buildSlotEl(icon, label, qty, tooltipData) {
   const slot = document.createElement("div");
   slot.className = icon ? "item-slot" : "item-slot empty";
   if (icon) {
@@ -566,8 +566,8 @@ function buildSlotEl(icon, label, qty, tooltipText) {
     qtyEl.textContent = String(qty);
     slot.appendChild(qtyEl);
   }
-  if (tooltipText) {
-    slot.addEventListener("mouseenter", (e) => showTooltip(e, tooltipText));
+  if (tooltipData) {
+    slot.addEventListener("mouseenter", (e) => showTooltip(e, tooltipData));
     slot.addEventListener("mousemove", (e) => moveTooltip(e));
     slot.addEventListener("mouseleave", hideTooltip);
   }
@@ -585,7 +585,7 @@ function refreshEquipGrid() {
   for (const slot of EQUIP_SLOT_LIST) {
     const equipped = playerEquipped.get(slot.type);
     const iconUri = equipped ? getIconDataUri(equipped.iconKey) : null;
-    const tooltip = equipped?.name || null;
+    const tooltip = equipped ? { name: equipped.name, slot: slot.label, id: equipped.id } : null;
     equipGridEl.appendChild(buildSlotEl(iconUri, slot.label, 0, tooltip));
   }
 }
@@ -597,14 +597,40 @@ function refreshInvGrid() {
   for (let i = 0; i < totalSlots; i++) {
     const item = playerInventory[i] ?? null;
     const iconUri = item ? getIconDataUri(item.iconKey) : null;
-    const tooltip = item ? `${item.name}\nQty: ${item.qty}` : null;
+    const tooltip = item ? { name: item.name, qty: item.qty, id: item.id } : null;
     invGridEl.appendChild(buildSlotEl(iconUri, null, item?.qty ?? 0, tooltip));
   }
 }
 
-function showTooltip(e, text) {
+function showTooltip(e, data) {
   if (!uiTooltipEl) return;
-  uiTooltipEl.textContent = text;
+  if (typeof data === "string") {
+    uiTooltipEl.textContent = data;
+  } else if (data && typeof data === "object") {
+    uiTooltipEl.innerHTML = "";
+    const nameEl = document.createElement("div");
+    nameEl.style.cssText = "font-weight:700;font-size:12px;color:#2a3650;margin-bottom:3px;";
+    nameEl.textContent = data.name || "Unknown";
+    uiTooltipEl.appendChild(nameEl);
+    if (data.slot) {
+      const slotEl = document.createElement("div");
+      slotEl.style.cssText = "font-size:10px;color:#6b82a8;";
+      slotEl.textContent = `Slot: ${data.slot}`;
+      uiTooltipEl.appendChild(slotEl);
+    }
+    if (data.qty && data.qty > 1) {
+      const qtyEl = document.createElement("div");
+      qtyEl.style.cssText = "font-size:10px;color:#6b82a8;";
+      qtyEl.textContent = `Quantity: ${data.qty}`;
+      uiTooltipEl.appendChild(qtyEl);
+    }
+    if (data.id) {
+      const idEl = document.createElement("div");
+      idEl.style.cssText = "font-size:9px;color:#9aa8bc;margin-top:2px;";
+      idEl.textContent = `ID: ${data.id}`;
+      uiTooltipEl.appendChild(idEl);
+    }
+  }
   uiTooltipEl.classList.remove("hidden");
   moveTooltip(e);
 }
@@ -639,8 +665,11 @@ function toggleUIWindow(key) {
   const isHidden = el.classList.contains("hidden");
   el.classList.toggle("hidden");
   if (isHidden) {
+    playUISound("MenuUp");
     refreshUIWindows();
     if (key === "keybinds") buildKeybindsUI();
+  } else {
+    playUISound("MenuDown");
   }
 }
 
@@ -649,42 +678,128 @@ function isUIWindowVisible(key) {
   return el && !el.classList.contains("hidden");
 }
 
-/** Load WZ cursor sprites and apply to canvas */
+/** WZ Cursor system — canvas-drawn animated cursor with states */
+const wzCursor = {
+  states: {},        // stateId -> { frames: [HTMLImageElement], delays: [number] }
+  state: 0,          // Current state (0=IDLE, 1=CANCLICK, 12=CLICKING)
+  frameIndex: 0,
+  frameTimer: 0,
+  x: 0,
+  y: 0,
+  visible: true,
+  loaded: false,
+  clickState: false, // True while mouse is held down
+};
+
+// C++ cursor state IDs
+const CURSOR_IDLE = 0;
+const CURSOR_CANCLICK = 1;
+const CURSOR_CLICKING = 12;
+const CURSOR_DEFAULT_DELAY = 100; // ms per frame
+
 async function loadCursorAssets() {
   try {
     const basicJson = await fetchJson("/resources/UI.wz/Basic.img.json");
     const cursorNode = basicJson?.$$?.find(c => c.$imgdir === "Cursor");
     if (!cursorNode) return;
 
-    function getCursorFrame(id, frameIdx = "0") {
-      const group = cursorNode.$$?.find(c => c.$imgdir === String(id));
-      if (!group?.$$) return null;
-      const frame = group.$$.find(c => (c.$imgdir ?? c.$canvas) === String(frameIdx) && c.basedata);
-      if (!frame) return null;
-      let ox = 0, oy = 0;
-      for (const sub of frame.$$?? []) {
-        if (sub.$vector) { ox = parseInt(sub.x) || 0; oy = parseInt(sub.y) || 0; }
+    for (const group of cursorNode.$$ ?? []) {
+      const stateId = parseInt(group.$imgdir);
+      if (isNaN(stateId)) continue;
+      const frames = [];
+      const delays = [];
+      // Sort children numerically
+      const children = (group.$$ ?? [])
+        .filter(c => c.basedata)
+        .sort((a, b) => parseInt(a.$imgdir ?? a.$canvas ?? "0") - parseInt(b.$imgdir ?? b.$canvas ?? "0"));
+      for (const fr of children) {
+        const img = new Image();
+        img.src = `data:image/png;base64,${fr.basedata}`;
+        frames.push(img);
+        delays.push(fr.delay || CURSOR_DEFAULT_DELAY);
       }
-      return { src: `data:image/png;base64,${frame.basedata}`, ox, oy };
+      if (frames.length > 0) {
+        wzCursor.states[stateId] = { frames, delays };
+      }
     }
 
-    // Cursor 0 = default, 1 = pressed, 12 = grab
-    const defaultCursor = getCursorFrame(0);
-    const pressedCursor = getCursorFrame(1);
+    wzCursor.loaded = Object.keys(wzCursor.states).length > 0;
 
-    if (defaultCursor) {
-      const css = `url(${defaultCursor.src}) ${defaultCursor.ox} ${defaultCursor.oy}, auto`;
-      canvasEl.style.cursor = css;
-      document.documentElement.style.setProperty("--cursor-default", css);
+    // Hide the system cursor everywhere inside the canvas wrapper
+    if (wzCursor.loaded) {
+      document.documentElement.style.setProperty("--cursor-default", "none");
+      document.documentElement.style.setProperty("--cursor-pointer", "none");
+      const wrapper = canvasEl.parentElement;
+      if (wrapper) wrapper.style.cursor = "none";
+      canvasEl.style.cursor = "none";
     }
-    if (pressedCursor) {
-      document.documentElement.style.setProperty(
-        "--cursor-pointer",
-        `url(${pressedCursor.src}) ${pressedCursor.ox} ${pressedCursor.oy}, pointer`
-      );
-    }
+
+    // Also preload UI sounds for click / open / close
+    void preloadUISounds();
   } catch (e) {
     console.warn("[ui] Failed to load cursor assets", e);
+  }
+}
+
+function setCursorState(state) {
+  if (!wzCursor.loaded) return;
+  if (wzCursor.state === state) return;
+  // Fall back to IDLE if state not available
+  if (!wzCursor.states[state]) state = CURSOR_IDLE;
+  wzCursor.state = state;
+  wzCursor.frameIndex = 0;
+  wzCursor.frameTimer = 0;
+}
+
+function updateCursorAnimation(dtMs) {
+  if (!wzCursor.loaded) return;
+  const st = wzCursor.states[wzCursor.state];
+  if (!st || st.frames.length <= 1) return;
+  wzCursor.frameTimer += dtMs;
+  const delay = st.delays[wzCursor.frameIndex] || CURSOR_DEFAULT_DELAY;
+  while (wzCursor.frameTimer >= delay) {
+    wzCursor.frameTimer -= delay;
+    wzCursor.frameIndex = (wzCursor.frameIndex + 1) % st.frames.length;
+  }
+}
+
+function drawWZCursor() {
+  if (!wzCursor.loaded || !wzCursor.visible) return;
+  const st = wzCursor.states[wzCursor.state] || wzCursor.states[CURSOR_IDLE];
+  if (!st) return;
+  const frame = st.frames[wzCursor.frameIndex % st.frames.length];
+  if (!frame || !frame.complete) return;
+  ctx.drawImage(frame, wzCursor.x, wzCursor.y);
+}
+
+// ── UI Sounds ──
+let _uiSoundsPreloaded = false;
+const _uiSoundCache = {};
+
+async function preloadUISounds() {
+  if (_uiSoundsPreloaded) return;
+  _uiSoundsPreloaded = true;
+  try {
+    const uiSoundJson = await fetchJson("/resources/Sound.wz/UI.img.json");
+    for (const name of ["BtMouseClick", "BtMouseOver", "MenuUp", "MenuDown"]) {
+      const node = uiSoundJson?.$$?.find(c => (c.$imgdir ?? c.$canvas ?? c.$sound) === name);
+      if (node?.basedata) {
+        _uiSoundCache[name] = `data:audio/mp3;base64,${node.basedata}`;
+      }
+    }
+  } catch (e) {
+    console.warn("[ui] Failed to preload UI sounds", e);
+  }
+}
+
+function playUISound(name) {
+  if (!runtime.settings.sfxEnabled) return;
+  const uri = _uiSoundCache[name];
+  if (!uri) return;
+  const audio = getSfxFromPool(uri);
+  if (audio) {
+    audio.volume = 0.5;
+    audio.play().catch(() => {});
   }
 }
 
@@ -3419,15 +3534,59 @@ function drawNpcDialogue() {
     }
   }
 
-  // Footer hint
+  // ── Footer: hint text + End Chat button ──
+  const footerY = boxY + boxH - footerH;
+
+  // "End Chat" button (right side of footer)
+  const endBtnW = 60;
+  const endBtnH = 18;
+  const endBtnX = boxX + boxW - padding - endBtnW;
+  const endBtnY = footerY + Math.round((footerH - endBtnH) / 2);
+  const endBtnHovered = d.hoveredOption === -99;
+
+  // Button background
+  const btnGrad = ctx.createLinearGradient(endBtnX, endBtnY, endBtnX, endBtnY + endBtnH);
+  if (endBtnHovered) {
+    btnGrad.addColorStop(0, "#f4f6fa");
+    btnGrad.addColorStop(1, "#e0e6f0");
+  } else {
+    btnGrad.addColorStop(0, "#eef1f6");
+    btnGrad.addColorStop(1, "#d8dee8");
+  }
+  ctx.fillStyle = btnGrad;
+  roundRect(ctx, endBtnX, endBtnY, endBtnW, endBtnH, 2);
+  ctx.fill();
+  ctx.strokeStyle = endBtnHovered ? "#6080b0" : "#8a9bb5";
+  ctx.lineWidth = 1;
+  roundRect(ctx, endBtnX, endBtnY, endBtnW, endBtnH, 2);
+  ctx.stroke();
+
+  ctx.fillStyle = endBtnHovered ? "#2a3650" : "#4a6490";
+  ctx.font = 'bold 10px "Dotum", Arial, sans-serif';
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("End Chat", endBtnX + endBtnW / 2, endBtnY + endBtnH / 2);
+
+  // Register end button hit box (use special index -99)
+  _npcDialogueOptionHitBoxes.push({
+    x: endBtnX,
+    y: endBtnY,
+    w: endBtnW,
+    h: endBtnH,
+    index: -99,
+  });
+
+  // Hint text (left of button)
   ctx.fillStyle = "#6b82a8";
   ctx.font = '11px "Dotum", Arial, sans-serif';
-  ctx.textAlign = "center";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  const hintY = endBtnY + endBtnH / 2;
   if (isOptionLine) {
-    ctx.fillText("Click an option or press Escape to close", boxX + boxW / 2, boxY + boxH - 10);
+    ctx.fillText("Click an option", boxX + padding, hintY);
   } else {
     const pageInfo = d.lines.length > 1 ? ` (${d.lineIndex + 1}/${d.lines.length})` : "";
-    ctx.fillText(`Click or press Enter to continue${pageInfo}`, boxX + boxW / 2, boxY + boxH - 14);
+    ctx.fillText(`Enter to continue${pageInfo}`, boxX + padding, hintY);
   }
 
   ctx.restore();
@@ -8073,6 +8232,7 @@ function render() {
   drawNpcDialogue();
   drawFpsCounter();
   drawTransitionOverlay();
+  drawWZCursor();
 }
 
 function isDebugPanelVisible() {
@@ -8267,6 +8427,8 @@ function tick(timestampMs) {
     if (steps >= MAX_STEPS_PER_FRAME && runtime.tickAccumulatorMs > FIXED_STEP_MS * 2) {
       runtime.tickAccumulatorMs = FIXED_STEP_MS;
     }
+
+    updateCursorAnimation(elapsed);
 
     const afterUpdate = performance.now();
     render();
@@ -8718,9 +8880,13 @@ function bindInput() {
     const screenX = (e.clientX - rect.left) * scaleX;
     const screenY = (e.clientY - rect.top) * scaleY;
 
+    // Track WZ cursor position
+    wzCursor.x = Math.round(screenX);
+    wzCursor.y = Math.round(screenY);
+
     runtime.mouseWorld.x = screenX - gameViewWidth() / 2 + runtime.camera.x;
 
-    // Handle hover for NPC dialogue options or NPC sprites
+    // Handle hover for NPC dialogue options or NPC sprites — set cursor state
     if (runtime.npcDialogue.active) {
       let foundOption = -1;
       for (const hb of _npcDialogueOptionHitBoxes) {
@@ -8730,23 +8896,26 @@ function bindInput() {
         }
       }
       runtime.npcDialogue.hoveredOption = foundOption;
-      canvasEl.style.cursor = foundOption >= 0 ? "var(--cursor-pointer, pointer)" : "var(--cursor-default, auto)";
+      if (!wzCursor.clickState) setCursorState(foundOption !== -1 ? CURSOR_CANCLICK : CURSOR_IDLE);
     } else if (!runtime.loading.active && !runtime.portalWarpInProgress && runtime.map) {
       const npc = findNpcAtScreen(screenX, screenY);
-      canvasEl.style.cursor = npc ? "var(--cursor-pointer, pointer)" : "var(--cursor-default, auto)";
+      if (!wzCursor.clickState) setCursorState(npc ? CURSOR_CANCLICK : CURSOR_IDLE);
     } else {
-      canvasEl.style.cursor = "var(--cursor-default, auto)";
+      if (!wzCursor.clickState) setCursorState(CURSOR_IDLE);
     }
     runtime.mouseWorld.y = screenY - gameViewHeight() / 2 + runtime.camera.y;
   });
 
-  canvasEl.addEventListener("mouseenter", () => setInputEnabled(true));
-  canvasEl.addEventListener("mouseleave", () => setInputEnabled(false));
+  canvasEl.addEventListener("mouseenter", () => { setInputEnabled(true); wzCursor.visible = true; });
+  canvasEl.addEventListener("mouseleave", () => { setInputEnabled(false); wzCursor.visible = false; });
   canvasEl.addEventListener("focus", () => setInputEnabled(true));
   canvasEl.addEventListener("blur", () => setInputEnabled(false));
   canvasEl.addEventListener("pointerdown", (e) => {
     canvasEl.focus();
     setInputEnabled(true);
+    wzCursor.clickState = true;
+    setCursorState(CURSOR_CLICKING);
+    playUISound("BtMouseClick");
 
     const rect = canvasEl.getBoundingClientRect();
     const cx = (e.clientX - rect.left) * (canvasEl.width / rect.width);
@@ -8754,9 +8923,14 @@ function bindInput() {
 
     // If NPC dialogue is open, check for option clicks or advance
     if (runtime.npcDialogue.active) {
-      // Check if an option was clicked
+      // Check if an option or the End Chat button was clicked
       for (const hb of _npcDialogueOptionHitBoxes) {
         if (cx >= hb.x && cx <= hb.x + hb.w && cy >= hb.y && cy <= hb.y + hb.h) {
+          if (hb.index === -99) {
+            // End Chat button
+            closeNpcDialogue();
+            return;
+          }
           const currentLine = runtime.npcDialogue.lines[runtime.npcDialogue.lineIndex];
           if (typeof currentLine === "object" && currentLine.options && currentLine.options[hb.index]) {
             rlog(`NPC option selected: ${currentLine.options[hb.index].label}`);
@@ -8791,6 +8965,11 @@ function bindInput() {
         rlog(`click at screen(${Math.round(cx)},${Math.round(cy)}) world(${Math.round(runtime.mouseWorld.x)},${Math.round(runtime.mouseWorld.y)}) — no hit`);
       }
     }
+  });
+
+  canvasEl.addEventListener("pointerup", () => {
+    wzCursor.clickState = false;
+    setCursorState(CURSOR_IDLE);
   });
 
   window.addEventListener("keydown", (event) => {
