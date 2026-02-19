@@ -6116,25 +6116,15 @@ function updateObjectAnimations(dtMs) {
       }
 
       // Accumulate opacity per tick using current frame's rate of change.
-      // opcstep = dtMs * (a1 - a0) / rampDelay — drives opacity toward end value.
-      // For "start invisible" frames (a0=0): hold at 0 for 75% of the delay
-      // then ramp quickly. This gives a clear cooldown gap while keeping the
-      // visible-but-harmless warning window short (~0.75s for 3s laser frames).
+      // opcstep = dtMs * (a1 - a0) / delay — drives opacity toward end value.
       const fi = state.frameIndex % obj.frameDelays.length;
       const frameDelay = obj.frameDelays[fi];
       const opc = obj.frameOpacities?.[fi];
       if (opc && frameDelay > 0) {
-        const isCooldownFrame = opc.start === 0;
-        const holdMs = isCooldownFrame ? Math.max(0, frameDelay - 250) : 0;
-        if (isCooldownFrame && state.timerMs < holdMs) {
-          state.opacity = 0; // hold fully off during cooldown
-        } else {
-          const rampDelay = isCooldownFrame ? (frameDelay - holdMs) : frameDelay;
-          const opcStep = dtMs * (opc.end - opc.start) / Math.max(1, rampDelay);
-          state.opacity += opcStep;
-          if (state.opacity < 0) state.opacity = 0;
-          else if (state.opacity > 255) state.opacity = 255;
-        }
+        const opcStep = dtMs * (opc.end - opc.start) / frameDelay;
+        state.opacity += opcStep;
+        if (state.opacity < 0) state.opacity = 0;
+        else if (state.opacity > 255) state.opacity = 255;
       }
 
       state.timerMs += dtMs;
