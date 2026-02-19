@@ -82,10 +82,10 @@ const soundDataUriCache = new Map();
 const soundDataPromiseCache = new Map();
 
 // ─── Canvas / Display ─────────────────────────────────────────────────────────
-const DEFAULT_CANVAS_WIDTH = 1280;
-const DEFAULT_CANVAS_HEIGHT = 960;
-const FIXED_RES_WIDTH = 1280;
-const FIXED_RES_HEIGHT = 960;
+const DEFAULT_CANVAS_WIDTH = 1024;
+const DEFAULT_CANVAS_HEIGHT = 768;
+const FIXED_RES_WIDTH = 1024;
+const FIXED_RES_HEIGHT = 768;
 const MIN_CANVAS_WIDTH = 640;
 const MIN_CANVAS_HEIGHT = 320;
 const BG_REFERENCE_HEIGHT = 600;
@@ -977,7 +977,7 @@ function applyFixedRes() {
     const vw = window.innerWidth || DEFAULT_CANVAS_WIDTH;
     const vh = window.innerHeight || DEFAULT_CANVAS_HEIGHT;
 
-    // Fit 4:3 (1280×960) display within viewport (CSS display size)
+    // Fit 4:3 (1024×768) display within viewport (CSS display size)
     let displayW, displayH;
     if (vw / vh > 4 / 3) {
       displayH = vh;
@@ -1008,7 +1008,7 @@ function syncCanvasResolution() {
     const vw = window.innerWidth || DEFAULT_CANVAS_WIDTH;
     const vh = window.innerHeight || DEFAULT_CANVAS_HEIGHT;
 
-    // If viewport >= fixed resolution, lock canvas buffer to 1280×960
+    // If viewport >= fixed resolution, lock canvas buffer to 1024×768
     // and let CSS scale the display. If smaller, use viewport size.
     if (vw >= FIXED_RES_WIDTH && vh >= FIXED_RES_HEIGHT) {
       nextWidth = FIXED_RES_WIDTH;
