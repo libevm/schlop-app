@@ -629,30 +629,39 @@ button {
   z-index: 25;
   top: 80px;
   left: 50px;
-  border-radius: 6px;
-  border: 1px solid rgba(180, 160, 120, 0.35);
-  background: linear-gradient(180deg, rgba(20, 28, 48, 0.94) 0%, rgba(12, 16, 32, 0.96) 100%);
-  box-shadow:
-    0 2px 12px rgba(0, 0, 0, 0.6),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  min-width: 160px;
   user-select: none;
   -webkit-user-select: none;
+  image-rendering: pixelated;
+  cursor: var(--cursor-default, auto);
 }
 
 .game-window.hidden {
   display: none;
 }
 
+/* Use actual WZ background as window chrome */
+.game-window-bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  image-rendering: pixelated;
+}
+
+.game-window-bg img {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  display: block;
+}
+
 .game-window-titlebar {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  height: 26px;
-  padding: 0 6px 0 10px;
-  background: linear-gradient(180deg, rgba(60, 52, 38, 0.85) 0%, rgba(40, 34, 24, 0.9) 100%);
-  border-bottom: 1px solid rgba(180, 160, 120, 0.25);
-  border-radius: 6px 6px 0 0;
+  justify-content: flex-end;
+  height: 20px;
+  padding: 0 2px;
   cursor: grab;
 }
 
@@ -660,118 +669,141 @@ button {
   cursor: grabbing;
 }
 
-.game-window-title {
-  font-size: 11px;
-  font-weight: 600;
-  color: #c4b998;
-  letter-spacing: 0.03em;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-}
-
 .game-window-close {
-  width: 18px;
-  height: 18px;
+  width: 13px;
+  height: 13px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(200, 120, 100, 0.4);
-  border-radius: 3px;
-  background: rgba(120, 40, 30, 0.5);
-  color: rgba(255, 200, 180, 0.8);
-  font-size: 13px;
-  line-height: 1;
+  border: none;
+  border-radius: 0;
+  background: none;
   cursor: pointer;
   padding: 0;
-  transition: background 0.1s, color 0.1s;
+  image-rendering: pixelated;
+  opacity: 0.7;
+  transition: opacity 0.1s;
 }
 
 .game-window-close:hover {
-  background: rgba(180, 50, 30, 0.7);
-  color: #fff;
+  opacity: 1;
+  background: none;
+}
+
+.game-window-close img {
+  width: 12px;
+  height: 12px;
+  image-rendering: pixelated;
 }
 
 .game-window-body {
-  padding: 8px;
+  position: relative;
+  z-index: 1;
 }
 
-/* ── Equip grid: 3 cols × 4 rows ── */
+/* ── Equip window: sized to match WZ background 175×304 ── */
+#equip-window {
+  width: 175px;
+  height: 304px;
+}
+
+#equip-window .game-window-body {
+  padding: 24px 10px 10px 10px;
+}
+
 .equip-grid {
   display: grid;
-  grid-template-columns: repeat(3, 36px);
-  grid-template-rows: repeat(4, 36px);
-  gap: 3px;
+  grid-template-columns: repeat(5, 30px);
+  grid-template-rows: repeat(5, 30px);
+  gap: 2px;
   justify-content: center;
+  padding-top: 2px;
 }
 
-/* ── Inventory grid: 4 cols × 6 rows ── */
+/* ── Inventory window: sized to match WZ background 175×289 ── */
+#inventory-window {
+  width: 175px;
+  height: 289px;
+}
+
+#inventory-window .game-window-titlebar {
+  height: 18px;
+}
+
+#inventory-window .game-window-body {
+  padding: 16px 8px 8px 8px;
+}
+
 .inv-grid {
   display: grid;
-  grid-template-columns: repeat(4, 36px);
-  grid-template-rows: repeat(6, 36px);
-  gap: 3px;
+  grid-template-columns: repeat(4, 33px);
+  grid-template-rows: repeat(6, 33px);
+  gap: 1px;
+  justify-content: center;
+  padding-top: 4px;
 }
 
 /* ── Item slot ── */
 .item-slot {
-  width: 36px;
-  height: 36px;
-  border-radius: 3px;
-  border: 1px solid rgba(80, 90, 120, 0.4);
-  background: rgba(18, 22, 38, 0.7);
+  width: 100%;
+  height: 100%;
+  border: none;
+  border-radius: 0;
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
-  transition: border-color 0.1s, background 0.1s;
+  cursor: default;
 }
 
 .item-slot:hover {
-  border-color: rgba(180, 160, 120, 0.5);
-  background: rgba(30, 36, 54, 0.9);
+  background: rgba(100, 160, 255, 0.15);
 }
 
 .item-slot.empty {
-  border-color: rgba(50, 58, 80, 0.35);
-  background: rgba(12, 16, 28, 0.5);
+  background: transparent;
 }
 
 .item-slot img {
-  max-width: 32px;
-  max-height: 32px;
+  max-width: 30px;
+  max-height: 30px;
   image-rendering: pixelated;
   pointer-events: none;
 }
 
 .item-slot .slot-label {
-  font-size: 8px;
-  color: rgba(120, 130, 160, 0.5);
+  font-size: 7px;
+  color: rgba(80, 100, 130, 0.6);
   text-align: center;
-  line-height: 1.1;
+  line-height: 1;
   pointer-events: none;
+  font-family: "Dotum", "Arial", sans-serif;
 }
 
 .item-slot .slot-qty {
   position: absolute;
-  bottom: 1px;
-  right: 3px;
+  bottom: 0;
+  right: 2px;
   font-size: 9px;
   font-weight: 700;
-  color: #fff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9), 0 0 4px rgba(0, 0, 0, 0.7);
+  color: #333;
+  text-shadow: none;
   pointer-events: none;
+  font-family: "Dotum", "Arial", sans-serif;
 }
 
-/* ── Tooltip ── */
+/* ── Tooltip (MapleStory style) ── */
 .ui-tooltip {
   position: absolute;
   z-index: 30;
-  padding: 5px 10px;
-  border-radius: 4px;
-  border: 1px solid rgba(180, 160, 120, 0.35);
-  background: rgba(10, 14, 26, 0.95);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
-  color: #e8e0d0;
+  padding: 4px 8px;
+  border: 1px solid #463a2b;
+  background: #efe8d5;
+  box-shadow: 1px 1px 0 #000;
+  color: #000;
   font-size: 11px;
+  font-family: "Dotum", "Arial", sans-serif;
   line-height: 1.4;
   white-space: pre-line;
   pointer-events: none;

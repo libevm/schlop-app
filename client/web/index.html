@@ -198,19 +198,19 @@
         </div>
       </aside>
 
-      <!-- In-game UI windows -->
+      <!-- In-game UI windows (MapleStory WZ-themed) -->
       <div id="equip-window" class="game-window hidden">
+        <div class="game-window-bg" id="equip-bg"></div>
         <div class="game-window-titlebar" data-window="equip">
-          <span class="game-window-title">Equipment</span>
-          <button class="game-window-close" data-close="equip">&times;</button>
+          <button class="game-window-close" data-close="equip" id="equip-close-btn"></button>
         </div>
         <div class="game-window-body equip-grid" id="equip-grid"></div>
       </div>
 
-      <div id="inventory-window" class="game-window hidden" style="left: 200px">
+      <div id="inventory-window" class="game-window hidden" style="left: 230px">
+        <div class="game-window-bg" id="inv-bg"></div>
         <div class="game-window-titlebar" data-window="inventory">
-          <span class="game-window-title">Inventory</span>
-          <button class="game-window-close" data-close="inventory">&times;</button>
+          <button class="game-window-close" data-close="inventory" id="inv-close-btn"></button>
         </div>
         <div class="game-window-body inv-grid" id="inv-grid"></div>
       </div>

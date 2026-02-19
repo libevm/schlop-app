@@ -406,17 +406,23 @@ const equipGridEl = document.getElementById("equip-grid");
 const invGridEl = document.getElementById("inv-grid");
 const uiTooltipEl = document.getElementById("ui-tooltip");
 
+// Layout matching WZ Equip background (5 cols × 5 rows grid)
 const EQUIP_SLOT_LAYOUT = [
-  { type: "Cap",       label: "Hat",     col: 1, row: 0 },
-  { type: "Accessory", label: "Face",    col: 0, row: 1 },
-  { type: "Accessory2",label: "Eye",     col: 2, row: 1 },
-  { type: "Coat",      label: "Top",     col: 1, row: 1 },
-  { type: "Pants",     label: "Bottom",  col: 1, row: 2 },
-  { type: "Shoes",     label: "Shoes",   col: 1, row: 3 },
-  { type: "Glove",     label: "Gloves",  col: 2, row: 2 },
-  { type: "Cape",      label: "Cape",    col: 0, row: 2 },
-  { type: "Shield",    label: "Shield",  col: 0, row: 3 },
-  { type: "Weapon",    label: "Weapon",  col: 2, row: 3 },
+  { type: "Cap",       label: "Cap",       col: 2, row: 0 },
+  { type: "Forehead",  label: "Fore",      col: 3, row: 0 },
+  { type: "Ring",      label: "Ring",      col: 4, row: 0 },
+  { type: "Medal",     label: "Medal",     col: 0, row: 0 },
+  { type: "Accessory", label: "Eye\nAcc",  col: 1, row: 1 },
+  { type: "Coat",      label: "Clothes",   col: 2, row: 2 },
+  { type: "Pendant",   label: "Pendant",   col: 3, row: 1 },
+  { type: "Shield",    label: "Shield",    col: 4, row: 1 },
+  { type: "Cape",      label: "Mantle",    col: 0, row: 1 },
+  { type: "Weapon",    label: "Weapon",    col: 4, row: 2 },
+  { type: "Glove",     label: "Gloves",    col: 0, row: 2 },
+  { type: "Belt",      label: "Belt",      col: 2, row: 3 },
+  { type: "Ring2",     label: "Ring",      col: 3, row: 3 },
+  { type: "Pants",     label: "Pants",     col: 1, row: 3 },
+  { type: "Shoes",     label: "Shoes",     col: 2, row: 4 },
 ];
 
 const INV_COLS = 4;
@@ -579,16 +585,17 @@ function refreshUIWindows() {
 function refreshEquipGrid() {
   if (!equipGridEl) return;
   equipGridEl.innerHTML = "";
-  // Build 3×4 grid with slots placed by col/row
-  const cells = new Array(12).fill(null);
+  // Build 5×5 grid with slots placed by col/row
+  const cols = 5, rows = 5;
+  const cells = new Array(cols * rows).fill(null);
   for (const slot of EQUIP_SLOT_LAYOUT) {
-    const idx = slot.row * 3 + slot.col;
+    const idx = slot.row * cols + slot.col;
     const equipped = playerEquipped.get(slot.type);
     const iconUri = equipped ? getIconDataUri(equipped.iconKey) : null;
     const tooltip = equipped?.name || null;
     cells[idx] = buildSlotEl(iconUri, slot.label, 0, tooltip);
   }
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < cols * rows; i++) {
     equipGridEl.appendChild(cells[i] || buildSlotEl(null, null, 0, null));
   }
 }
@@ -639,6 +646,92 @@ function toggleUIWindow(key) {
 function isUIWindowVisible(key) {
   const el = key === "equip" ? equipWindowEl : inventoryWindowEl;
   return el && !el.classList.contains("hidden");
+}
+
+/** Load WZ cursor sprites and apply to canvas */
+async function loadCursorAssets() {
+  try {
+    const basicJson = await fetchJson("/resources/UI.wz/Basic.img.json");
+    const cursorNode = basicJson?.$$?.find(c => c.$imgdir === "Cursor");
+    if (!cursorNode) return;
+
+    function getCursorFrame(id, frameIdx = "0") {
+      const group = cursorNode.$$?.find(c => c.$imgdir === String(id));
+      if (!group?.$$) return null;
+      const frame = group.$$.find(c => (c.$imgdir ?? c.$canvas) === String(frameIdx) && c.basedata);
+      if (!frame) return null;
+      let ox = 0, oy = 0;
+      for (const sub of frame.$$?? []) {
+        if (sub.$vector) { ox = parseInt(sub.x) || 0; oy = parseInt(sub.y) || 0; }
+      }
+      return { src: `data:image/png;base64,${frame.basedata}`, ox, oy };
+    }
+
+    // Cursor 0 = default, 1 = pressed, 12 = grab
+    const defaultCursor = getCursorFrame(0);
+    const pressedCursor = getCursorFrame(1);
+
+    if (defaultCursor) {
+      const css = `url(${defaultCursor.src}) ${defaultCursor.ox} ${defaultCursor.oy}, auto`;
+      canvasEl.style.cursor = css;
+      document.documentElement.style.setProperty("--cursor-default", css);
+    }
+    if (pressedCursor) {
+      document.documentElement.style.setProperty(
+        "--cursor-pointer",
+        `url(${pressedCursor.src}) ${pressedCursor.ox} ${pressedCursor.oy}, pointer`
+      );
+    }
+  } catch (e) {
+    console.warn("[ui] Failed to load cursor assets", e);
+  }
+}
+
+/** Load WZ UI backgrounds and close button sprites */
+async function loadUIWindowAssets() {
+  try {
+    const uiJson = await fetchJson("/resources/UI.wz/UIWindow.img.json");
+    const basicJson = await fetchJson("/resources/UI.wz/Basic.img.json");
+
+    // Equip background
+    const equipNode = uiJson?.$$?.find(c => c.$imgdir === "Equip");
+    const equipBg = equipNode?.$$?.find(c => (c.$imgdir ?? c.$canvas) === "backgrnd");
+    if (equipBg?.basedata) {
+      const img = document.createElement("img");
+      img.src = `data:image/png;base64,${equipBg.basedata}`;
+      img.draggable = false;
+      document.getElementById("equip-bg")?.appendChild(img);
+    }
+
+    // Item/Inventory background
+    const itemNode = uiJson?.$$?.find(c => c.$imgdir === "Item");
+    const itemBg = itemNode?.$$?.find(c => (c.$imgdir ?? c.$canvas) === "backgrnd");
+    if (itemBg?.basedata) {
+      const img = document.createElement("img");
+      img.src = `data:image/png;base64,${itemBg.basedata}`;
+      img.draggable = false;
+      document.getElementById("inv-bg")?.appendChild(img);
+    }
+
+    // Close button from Basic.img BtClose
+    const btClose = basicJson?.$$?.find(c => c.$imgdir === "BtClose");
+    const normalState = btClose?.$$?.find(c => c.$imgdir === "normal");
+    const closeFrame = normalState?.$$?.find(c => c.basedata);
+    if (closeFrame?.basedata) {
+      const src = `data:image/png;base64,${closeFrame.basedata}`;
+      for (const id of ["equip-close-btn", "inv-close-btn"]) {
+        const btn = document.getElementById(id);
+        if (btn) {
+          const img = document.createElement("img");
+          img.src = src;
+          img.draggable = false;
+          btn.appendChild(img);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("[ui] Failed to load UI window assets", e);
+  }
 }
 
 // ── Dragging ──
@@ -8591,12 +8684,12 @@ function bindInput() {
         }
       }
       runtime.npcDialogue.hoveredOption = foundOption;
-      canvasEl.style.cursor = foundOption >= 0 ? "pointer" : "";
+      canvasEl.style.cursor = foundOption >= 0 ? "var(--cursor-pointer, pointer)" : "var(--cursor-default, auto)";
     } else if (!runtime.loading.active && !runtime.portalWarpInProgress && runtime.map) {
       const npc = findNpcAtScreen(screenX, screenY);
-      canvasEl.style.cursor = npc ? "pointer" : "";
+      canvasEl.style.cursor = npc ? "var(--cursor-pointer, pointer)" : "var(--cursor-default, auto)";
     } else {
-      canvasEl.style.cursor = "";
+      canvasEl.style.cursor = "var(--cursor-default, auto)";
     }
     runtime.mouseWorld.y = screenY - gameViewHeight() / 2 + runtime.camera.y;
   });
@@ -8875,6 +8968,8 @@ initPlayerEquipment();
 initPlayerInventory();
 initUIWindowDrag();
 refreshUIWindows();
+void loadUIWindowAssets();
+void loadCursorAssets();
 initializeTeleportPresetInputs();
 initializeStatInputs();
 initChatLogResize();
