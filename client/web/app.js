@@ -5755,13 +5755,22 @@ function updatePlayer(dt) {
         player.downJumpControlLock = false;
         player.downJumpTargetFootholdId = null;
 
-        // Fall damage: if fell more than threshold, apply % HP damage
+        // Fall damage: if fell more than threshold, apply % HP damage + knockback
         const fallDist = player.y - player.fallStartY;
         if (fallDist > FALL_DAMAGE_THRESHOLD) {
           const ticks = Math.floor((fallDist - FALL_DAMAGE_THRESHOLD) / FALL_DAMAGE_THRESHOLD) + 1;
           const damage = Math.max(1, Math.round(player.maxHp * FALL_DAMAGE_PERCENT * ticks));
+          const nowMs = performance.now();
+          // Bounce-up knockback in facing direction (like landing stagger)
+          const kbDir = player.facing;
           player.hp = Math.max(1, player.hp - damage);
-          triggerPlayerHitVisuals(performance.now());
+          player.vx = kbDir * TRAP_KNOCKBACK_HSPEED * 0.5;
+          player.vy = -TRAP_KNOCKBACK_VSPEED * 0.6;
+          player.onGround = false;
+          player.footholdId = null;
+          player.knockbackClimbLockUntil = nowMs + 600;
+          player.trapInvincibleUntil = nowMs + TRAP_HIT_INVINCIBILITY_MS;
+          triggerPlayerHitVisuals(nowMs);
           spawnDamageNumber(player.x - 10, player.y, damage, false);
         }
       } else {
