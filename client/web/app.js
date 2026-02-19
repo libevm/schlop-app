@@ -6233,7 +6233,13 @@ function applyPlayerTouchHit(damage, sourceCenterX, nowMs) {
   triggerPlayerHitVisuals(nowMs);
   spawnDamageNumber(player.x - 10, player.y, resolvedDamage, false);
 
-  if (!player.climbing) {
+  {
+    // Detach from rope/ladder on hit
+    if (player.climbing) {
+      player.climbing = false;
+      player.climbRope = null;
+    }
+
     const hitFromLeft = sourceCenterX > player.x;
 
     player.vx = hitFromLeft ? -TRAP_KNOCKBACK_HSPEED : TRAP_KNOCKBACK_HSPEED;
