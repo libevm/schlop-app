@@ -3474,6 +3474,7 @@ function parseMapData(raw) {
           frameDelays: null, // null = not animated, [ms, ms, ...] = animated
           frameOpacities: null, // null = not animated, [{start, end}, ...] per frame
           frameKeys: null, // null = [0..frameCount-1], otherwise explicit frame token sequence
+          motion: null, // object-level motion from first frame {moveType, moveW, moveH, moveP, moveR}
           _metaRequested: false,
         };
       })
@@ -3895,7 +3896,18 @@ async function loadAnimatedObjectFrames(obj) {
     await requestImageByKey(key);
   }
 
-  return delays.length > 1 ? { frameCount: delays.length, delays, opacities, frameKeys } : null;
+  // Extract object-level motion from first frame (C++ Animation uses object-level movement)
+  const firstKey = `${obj.baseKey}:${frameKeys[0]}`;
+  const firstMeta = metaCache.get(firstKey);
+  const motion = firstMeta ? {
+    moveType: safeNumber(firstMeta.moveType, 0),
+    moveW: safeNumber(firstMeta.moveW, 0),
+    moveH: safeNumber(firstMeta.moveH, 0),
+    moveP: safeNumber(firstMeta.moveP, Math.PI * 2 * 1000),
+    moveR: safeNumber(firstMeta.moveR, 0),
+  } : null;
+
+  return delays.length > 1 ? { frameCount: delays.length, delays, opacities, frameKeys, motion } : null;
 }
 
 function requestObjectMeta(obj) {
@@ -4900,6 +4912,7 @@ function buildMapAssetPreloadTasks(map) {
             o.frameDelays = cachedAnim.delays;
             o.frameOpacities = cachedAnim.opacities ?? null;
             o.frameKeys = cachedAnim.frameKeys ?? null;
+            o.motion = cachedAnim.motion ?? null;
           }
         }
         addPreloadTask(taskMap, animKey, async () => {
@@ -4910,6 +4923,7 @@ function buildMapAssetPreloadTasks(map) {
               o.frameDelays = result.delays;
               o.frameOpacities = result.opacities ?? null;
               o.frameKeys = result.frameKeys ?? null;
+              o.motion = result.motion ?? null;
             }
           }
           return result;
@@ -6170,11 +6184,11 @@ function updateObjectAnimations(dtMs) {
   }
 }
 
-function objectMoveOffset(meta, nowMs) {
-  const moveType = safeNumber(meta?.moveType, 0);
-  const moveW = safeNumber(meta?.moveW, 0);
-  const moveH = safeNumber(meta?.moveH, 0);
-  const moveP = Math.max(1, safeNumber(meta?.moveP, Math.PI * 2 * 1000));
+function objectMoveOffset(motion, nowMs) {
+  const moveType = safeNumber(motion?.moveType, 0);
+  const moveW = safeNumber(motion?.moveW, 0);
+  const moveH = safeNumber(motion?.moveH, 0);
+  const moveP = Math.max(1, safeNumber(motion?.moveP, Math.PI * 2 * 1000));
   if (moveType === 0) return { x: 0, y: 0 };
 
   const phase = (Math.PI * 2 * nowMs) / moveP;
@@ -6249,7 +6263,7 @@ function playerTouchBounds(player) {
 function trapWorldBounds(obj, meta, nowMs) {
   if (!obj || !meta) return null;
 
-  const moveOffset = objectMoveOffset(meta, nowMs);
+  const moveOffset = objectMoveOffset(obj.motion ?? meta, nowMs);
   const vectors = meta.vectors ?? {};
   const lt = vectors.lt;
   const rb = vectors.rb;
@@ -6439,7 +6453,7 @@ function drawMapLayer(layer) {
     if (!image) continue;
 
     const origin = meta.vectors.origin ?? { x: 0, y: 0 };
-    const moveOffset = objectMoveOffset(meta, nowMs);
+    const moveOffset = objectMoveOffset(obj.motion ?? meta, nowMs);
     const width = Math.max(1, image.width || meta.width || 1);
     const height = Math.max(1, image.height || meta.height || 1);
     const drawOriginX = obj.flipped ? width - origin.x : origin.x;
