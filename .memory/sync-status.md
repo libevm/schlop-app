@@ -1,6 +1,6 @@
 # .memory Sync Status
 
-Last synced: 2026-02-19T20:00:00+11:00
+Last synced: 2026-02-19T20:55:00+11:00
 Status: ✅ Synced
 
 ## Current authoritative memory files
@@ -27,6 +27,17 @@ Status: ✅ Synced
 - CI: **135 tests pass** across all workspaces (`bun run ci`)
 
 ## What was synced in this pass
+
+### Fall damage, attack sound, animation fix, trap collision hardening (2026-02-19)
+- **Fall damage** (`FALL_DAMAGE_THRESHOLD=500`, `FALL_DAMAGE_PERCENT=0.1`): tracks highest airborne
+  point, applies % HP damage on landing with knockback bounce + climb lock + invincibility.
+- **Attack swing sound**: `playSfx("Weapon", "swordS/Attack")` on attack start.
+- **Map transition animation fix**: cached animation meta now populates new map objects immediately
+  in `buildMapAssetPreloadTasks`, preventing static laser/background on portal transitions.
+- **Trap hitbox**: `trapWorldBounds` uses `lt`/`rb` when present, falls back to sprite dimensions,
+  returns null for tiny frames (≤4px). Animated traps below 10% opacity skip collision.
+- **Laser cooldown hold**: fade-in frames hold invisible for 2s before ramping.
+- **Knockback climb lock**: 600ms `knockbackClimbLockUntil` after any knockback prevents rope/ladder attach.
 
 ### Wall collision parity rollback + hit-face cache fix (2026-02-19)
 - User report: wall collision too aggressive; short vertical walls should not all block (e.g. `103000900`).

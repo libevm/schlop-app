@@ -28,6 +28,42 @@ The docs UI includes sidebar navigation for markdown files under `docs/`.
 
 ---
 
+## 2026-02-19 20:55 (GMT+11)
+### Summary
+- Added fall damage with knockback on high falls.
+- Added attack swing sound (swordS/Attack).
+- Fixed animated objects not playing after map transitions (laser/backgrounds).
+- Trap hitbox now uses lt/rb bounds with sprite fallback; tiny blank frames (≤4px) skipped.
+- Traps below 10% opacity skip collision.
+- Cooldown hold (2s) before laser fade-in for clear off-period between cycles.
+- Fall damage applies knockback bounce, climb lock, and invincibility frames.
+- Knockback prevents climbing for 600ms after being hit.
+
+### Files changed
+- `client/web/app.js`
+
+### What changed
+- **Fall damage**: Tracks highest point during airborne period (`fallStartY`). On landing, if
+  distance exceeds `FALL_DAMAGE_THRESHOLD` (500px), deals 10% maxHP per threshold. Applies
+  half-strength horizontal knockback + 60% vertical bounce + 600ms climb lock + invincibility.
+- **Attack sound**: `playSfx("Weapon", "swordS/Attack")` when starting attack, matching C++
+  `CharLook::attack → weapon.get_usesound().play()`.
+- **Map transition animation fix**: `requestMeta` cache returning without running loader side-effect.
+  Animation preload now populates new map objects from cached meta immediately before queuing task.
+  Applies to both object and background animations.
+- **Trap hitbox parity**: `trapWorldBounds` uses `lt`/`rb` when present, falls back to sprite
+  dimensions for frames without explicit hitbox (e.g. laser fade-in). Tiny frames (≤4px) return
+  null (electric 1×1 cooldown blanks). Animated traps below 10% opacity (26/255) skip collision.
+- **Laser cooldown hold**: Fade-in frames (a0=0) hold fully invisible for 2s before ramping,
+  creating clear cooldown gap between laser cycles.
+- **Knockback climb lock**: New `knockbackClimbLockUntil` field prevents rope/ladder attach
+  for 600ms after any knockback (trap, mob, or fall damage).
+
+### Validation
+- `bun run ci` ✅
+
+---
+
 ## 2026-02-19 17:40 (GMT+11)
 ### Summary
 - Reverted wall column index approach — back to exact C++ 2-link chain check.

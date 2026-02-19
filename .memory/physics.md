@@ -137,6 +137,9 @@ Per-step collision model:
     - `vy = -(3.5 * PHYS_TPS)`
   - player leaves ground (`onGround=false`, foothold cleared)
   - invulnerability window: `TRAP_HIT_INVINCIBILITY_MS = 2000`
+  - climb lock: `knockbackClimbLockUntil = nowMs + 600` (prevents rope/ladder grab for 600ms)
+  - animated traps below 10% opacity (`< 26/255`) skip collision entirely
+  - frames without `lt`/`rb` fall back to sprite dimensions (≤4px frames return null)
 
 C++ parity references used for behavior shape:
 - `Stage.cpp` touch-damage flow (`player.damage(...)`)
@@ -222,6 +225,30 @@ Matches C++ `FootholdTree::get_wall()`:
 - Post-physics and hit-time safety:
   - after movement integration, player X is clamped with `clampXToSideWalls` and outward velocity is reset
   - `applyPlayerTouchHit(...)` also clamps X immediately after knockback application.
+
+### Fall Damage
+
+Implemented client-side (server-side in original MapleStory):
+
+```js
+FALL_DAMAGE_THRESHOLD = 500   // pixels before damage kicks in
+FALL_DAMAGE_PERCENT = 0.1     // 10% maxHP per threshold exceeded
+```
+
+- Tracks `player.fallStartY` — set to `min(fallStartY, player.y)` each tick while airborne
+  (captures highest point, i.e. lowest Y value, during the fall)
+- Reset on: spawn, teleport, map load, landing
+- On landing: `fallDist = player.y - player.fallStartY`
+  - If `fallDist > FALL_DAMAGE_THRESHOLD`:
+    - `ticks = floor((fallDist - 500) / 500) + 1`
+    - `damage = max(1, round(maxHp * 0.1 * ticks))`
+    - HP floored at 1 (can't kill)
+  - Applies knockback bounce:
+    - `vx = facing * TRAP_KNOCKBACK_HSPEED * 0.5` (half horizontal)
+    - `vy = -TRAP_KNOCKBACK_VSPEED * 0.6` (60% vertical bounce)
+  - Sets `onGround = false`, clears foothold
+  - Applies 600ms climb lock + full invincibility window
+  - Triggers hit visuals (blink + damage number)
 
 ### Down-Jump
 

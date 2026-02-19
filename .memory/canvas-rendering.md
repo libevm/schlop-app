@@ -259,10 +259,16 @@ Life sprite frames extract basedata into separate objects, so deleting `frame.ba
   Numeric `$uol` alias entries are ignored for frame sequencing to preserve correct cycle timing/cooldowns.
 - Object animation may use explicit frame token sequence (`obj.frameKeys`) rather than assuming contiguous `0..N-1` frame IDs
 - Per-frame opacity uses accumulated `state.opacity` (0–255) tracked in `objectAnimStates`.
-  Each tick: `opcStep = dtMs * (a1 - a0) / frameDelay` drives opacity toward the frame's end value.
+  Each tick: `opcStep = dtMs * (a1 - a0) / rampDelay` drives opacity toward the frame's end value.
   On frame advance, opacity carries over (no snap) for smooth transitions between cycles.
   Per-frame `a0`/`a1` stored in `obj.frameOpacities` array alongside `obj.frameDelays`.
-  For laser objects this produces: fade-in → hold at full → fade-out → cooldown at low opacity → repeat.
+  For fade-in frames (a0=0): hold fully invisible for 2s before ramping, creating a visible
+  cooldown gap between laser cycles. `holdMs = isFadeIn ? 2000 : 0`.
+  For laser objects this produces: 2s off → 1s ramp-in → 2s hold at full → 2s fade-out → repeat.
+- Map transition animation fix: when `metaCache` already has the animation key from the previous
+  map, the loader side-effect (populating `obj.frameDelays`/`frameOpacities`/`frameKeys`) is skipped.
+  `buildMapAssetPreloadTasks` now checks cached meta and populates new map objects immediately
+  before queuing the preload task. Applies to both object and background animations.
 - Falls back to base frame if animated frame missing
 - Object motion metadata (`moveType`, `moveW`, `moveH`, `moveP`) is applied in draw path
   with sinusoidal offsets (`objectMoveOffset`) for moving trap/map objects (e.g., spike balls)
