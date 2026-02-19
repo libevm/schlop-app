@@ -5535,18 +5535,11 @@ function updatePlayer(dt) {
       player.vy = movingDown ? climbSpeed : movingUp ? -climbSpeed : 0;
       player.onGround = false;
 
-      if (ladderFellOff(rope, player.y, movingDown)) {
-        const ropeTopY = Math.min(rope.y1, rope.y2);
-        const ropeBottomY = Math.max(rope.y1, rope.y2);
-        const exitedFromTop = !movingDown && player.y + 5 < ropeTopY;
-        const exitedFromBottom = movingDown && player.y > ropeBottomY;
-        const topExitFoothold = exitedFromTop
-          ? findFootholdAtXNearY(map, player.x, ropeTopY, 24)
-          : null;
-        const canSnapToTopFoothold = !!topExitFoothold && !fhIsWall(topExitFoothold.line);
-
-        if (canSnapToTopFoothold) {
-          // Exit to platform at top of rope
+      // Check for exit at top: when at top and pressing up, snap to platform
+      const wantsUp = runtime.input.up && !runtime.input.down;
+      if (atTop && wantsUp) {
+        const topFh = findFootholdAtXNearY(map, player.x, ropeTopY, 24);
+        if (topFh && !fhIsWall(topFh.line)) {
           player.climbing = false;
           player.climbRope = null;
           player.downJumpIgnoreFootholdId = null;
@@ -5556,15 +5549,24 @@ function updatePlayer(dt) {
           player.reattachLockRopeKey = rope.key ?? null;
           player.reattachLockUntil = nowMs + 200;
           player.climbCooldownUntil = nowMs + 400;
-          player.y = topExitFoothold.y;
+          player.y = topFh.y;
           player.vx = 0;
           player.vy = 0;
           player.onGround = true;
-          player.footholdId = topExitFoothold.line.id;
-          player.footholdLayer = topExitFoothold.line.layer;
-        } else if (exitedFromTop) {
-          // No platform at top — clamp at rope top, stay climbing
-          player.y = ropeTopY;
+          player.footholdId = topFh.line.id;
+          player.footholdLayer = topFh.line.layer;
+        }
+      }
+
+      if (ladderFellOff(rope, player.y, movingDown)) {
+        const ropeTopY2 = Math.min(rope.y1, rope.y2);
+        const ropeBottomY2 = Math.max(rope.y1, rope.y2);
+        const exitedFromTop = !movingDown && player.y + 5 < ropeTopY2;
+        const exitedFromBottom = movingDown && player.y > ropeBottomY2;
+
+        if (exitedFromTop) {
+          // Past top — clamp at rope top, stay climbing
+          player.y = ropeTopY2;
           player.vy = 0;
         } else if (exitedFromBottom) {
           // Fell off bottom — detach and drop
