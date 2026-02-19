@@ -241,7 +241,7 @@ Life sprite frames extract basedata into separate objects, so deleting `frame.ba
   so scene Y is decoupled from live character/camera Y movement (no jump-linked scene shift)
 - Fixed-resolution vertical scene bias is added to background Y:
   `max(0, (canvasHeight - BG_REFERENCE_HEIGHT) / 2)`
-  so backdrop composition remains lower on tall fixed-res viewports (e.g. 1280×960)
+  so backdrop composition remains lower on tall dynamic viewports
 - Bias is uniform (not player-jump reactive), preventing jump-time scene popping
 - Tiling: count-based (`htile × vtile`) matching C++ `MapBackgrounds.cpp`
 - Tile wrap alignment is applied before origin offset (C++ parity) to reduce visible seams/patches
@@ -443,8 +443,12 @@ tryUsePortal()
 - `runtime.settings`: `bgmEnabled`, `sfxEnabled`, `fixedRes`, `minimapVisible`
 - Settings modal accessed via ⚙️ button
 - `loadSettings()` / `saveSettings()` via localStorage (`SETTINGS_CACHE_KEY`)
-- `fixedRes`: locks canvas to 1280×960 internal resolution
+- `fixedRes`: locks canvas to 1024×768 internal resolution; all game rendering
+  (camera, parallax, world-to-screen, culling) uses `gameViewWidth()`/`gameViewHeight()`
+  which return fixed 1024×768 in fixedRes mode, actual canvas size otherwise.
+  `cameraHeightBias()` returns 0 in fixedRes mode (no dynamic viewport compensation).
 - `applyFixedRes()` + `syncCanvasResolution()` handle canvas size management
+  (canvas buffer always 1024×768 in fixedRes; CSS scales to fit viewport)
 
 ## Mouse-Fly Debug Mode
 

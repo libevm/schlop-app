@@ -4044,31 +4044,35 @@ function mapVisibleBounds(map) {
 function clampCameraXToMapBounds(map, desiredCenterX) {
   const { left: mapLeft, right: mapRight } = mapVisibleBounds(map);
   const halfWidth = gameViewWidth() / 2;
+  const mapWidth = mapRight - mapLeft;
 
-  const minCenterX = mapLeft + halfWidth;
-  const maxCenterX = mapRight - halfWidth;
-
-  if (minCenterX <= maxCenterX) {
+  if (mapWidth >= gameViewWidth()) {
+    // Normal: clamp so camera doesn't see past VR edges
+    const minCenterX = mapLeft + halfWidth;
+    const maxCenterX = mapRight - halfWidth;
     return Math.max(minCenterX, Math.min(maxCenterX, desiredCenterX));
   }
 
-  // Map narrower than viewport — center on map
-  return (mapLeft + mapRight) / 2;
+  // C++ parity: map narrower than viewport — lock left-aligned
+  // (camera.x such that left screen edge = VRLeft, overflow goes right)
+  return mapLeft + halfWidth;
 }
 
 function clampCameraYToMapBounds(map, desiredCenterY) {
   const { top: mapTop, bottom: mapBottom } = mapVisibleBounds(map);
   const halfHeight = gameViewHeight() / 2;
+  const mapHeight = mapBottom - mapTop;
 
-  const minCenterY = mapTop + halfHeight;
-  const maxCenterY = mapBottom - halfHeight;
-
-  if (minCenterY <= maxCenterY) {
+  if (mapHeight >= gameViewHeight()) {
+    // Normal: clamp so camera doesn't see past VR edges
+    const minCenterY = mapTop + halfHeight;
+    const maxCenterY = mapBottom - halfHeight;
     return Math.max(minCenterY, Math.min(maxCenterY, desiredCenterY));
   }
 
-  // Map shorter than viewport — follow player within bounds
-  return Math.max(maxCenterY, Math.min(minCenterY, desiredCenterY));
+  // C++ parity: map shorter than viewport — lock top-aligned
+  // (camera.y such that top screen edge = VRTop, overflow goes to bottom)
+  return mapTop + halfHeight;
 }
 
 function portalMomentumEase(t) {
@@ -5952,6 +5956,54 @@ function drawScreenImage(image, x, y, flipped) {
   ctx.restore();
 }
 
+/**
+ * Black-fill areas outside VR bounds when the map is smaller than the viewport.
+ * C++ parity: camera locks to top/left edge when map is shorter/narrower,
+ * and the overflow area (bottom/right) is beyond the designed scene.
+ */
+function drawVRBoundsOverflowMask() {
+  if (!runtime.map) return;
+
+  const vw = gameViewWidth();
+  const vh = gameViewHeight();
+  const { left: vrL, right: vrR, top: vrT, bottom: vrB } = mapVisibleBounds(runtime.map);
+  const cam = runtime.camera;
+
+  // Convert VR edges to screen coordinates
+  const vrScreenLeft = Math.round(vrL - cam.x + vw / 2);
+  const vrScreenRight = Math.round(vrR - cam.x + vw / 2);
+  const vrScreenTop = Math.round(vrT - cam.y + vh / 2);
+  const vrScreenBottom = Math.round(vrB - cam.y + vh / 2);
+
+  const needsMask =
+    vrScreenLeft > 0 || vrScreenRight < vw ||
+    vrScreenTop > 0 || vrScreenBottom < vh;
+
+  if (!needsMask) return;
+
+  ctx.save();
+  ctx.fillStyle = "#000";
+
+  // Left overflow
+  if (vrScreenLeft > 0) ctx.fillRect(0, 0, vrScreenLeft, vh);
+  // Right overflow
+  if (vrScreenRight < vw) ctx.fillRect(vrScreenRight, 0, vw - vrScreenRight, vh);
+  // Top overflow (between left/right masks)
+  if (vrScreenTop > 0) {
+    const x0 = Math.max(0, vrScreenLeft);
+    const x1 = Math.min(vw, vrScreenRight);
+    ctx.fillRect(x0, 0, x1 - x0, vrScreenTop);
+  }
+  // Bottom overflow (between left/right masks)
+  if (vrScreenBottom < vh) {
+    const x0 = Math.max(0, vrScreenLeft);
+    const x1 = Math.min(vw, vrScreenRight);
+    ctx.fillRect(x0, vrScreenBottom, x1 - x0, vh - vrScreenBottom);
+  }
+
+  ctx.restore();
+}
+
 function drawBackgroundLayer(frontFlag) {
   if (!runtime.map) return;
 
@@ -7565,6 +7617,7 @@ function render() {
     drawHitboxOverlay();
   }
   drawBackgroundLayer(1);
+  drawVRBoundsOverflowMask();
   drawChatBubble();
   drawPlayerNameLabel();
   drawStatusBar();
