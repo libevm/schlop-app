@@ -1441,10 +1441,15 @@ async function preloadUISounds() {
   }
 }
 
+const _lastUISoundTime = {};
 function playUISound(name) {
   if (!runtime.settings.sfxEnabled) return;
   const uri = _uiSoundCache[name];
   if (!uri) return;
+  // Debounce: skip if the same sound played less than 100ms ago
+  const now = performance.now();
+  if (now - (_lastUISoundTime[name] || 0) < 100) return;
+  _lastUISoundTime[name] = now;
   const audio = getSfxFromPool(uri);
   if (audio) {
     audio.volume = 0.5;
