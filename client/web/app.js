@@ -74,6 +74,29 @@ if (copyRuntimeLogsEl) {
   });
 }
 
+// ── Persistent browser cache for /resources/ and /resourcesv2/ ──
+const RESOURCE_CACHE_NAME = "maple-resources-v1";
+let _resourceCache = null;
+async function getResourceCache() {
+  if (!_resourceCache) {
+    try { _resourceCache = await caches.open(RESOURCE_CACHE_NAME); } catch { _resourceCache = null; }
+  }
+  return _resourceCache;
+}
+
+async function cachedFetch(url) {
+  const cache = await getResourceCache();
+  if (cache) {
+    const cached = await cache.match(url);
+    if (cached) return cached;
+  }
+  const response = await fetch(url);
+  if (response.ok && cache) {
+    try { await cache.put(url, response.clone()); } catch {}
+  }
+  return response;
+}
+
 const jsonCache = new Map();
 const metaCache = new Map();
 const metaPromiseCache = new Map();
@@ -2384,7 +2407,7 @@ async function fetchJson(path) {
     jsonCache.set(
       path,
       (async () => {
-        const response = await fetch(path);
+        const response = await cachedFetch(path);
         if (!response.ok) {
           const msg = `Failed to load JSON ${path} (${response.status})`;
           rlog(`fetchJson FAIL: ${msg}`);
@@ -8878,8 +8901,8 @@ let _loginBgmPlaying = false;
 async function preloadLoadingScreenAssets() {
   try {
     const [manifestResp, audioResp] = await Promise.all([
-      fetch("/resourcesv2/mob/orange-mushroom/manifest.json"),
-      fetch("/resourcesv2/sound/login.mp3"),
+      cachedFetch("/resourcesv2/mob/orange-mushroom/manifest.json"),
+      cachedFetch("/resourcesv2/sound/login.mp3"),
     ]);
     const manifest = await manifestResp.json();
     _loadingMushroom.manifest = manifest;
@@ -8889,12 +8912,19 @@ async function preloadLoadingScreenAssets() {
     for (const [stance, frames] of Object.entries(manifest)) {
       _loadingMushroom.frames[stance] = [];
       for (const f of frames) {
+        const imgUrl = `/resourcesv2/mob/orange-mushroom/${f.file}`;
         const img = new Image();
-        const p = new Promise((resolve) => {
-          img.onload = resolve;
-          img.onerror = resolve;
-        });
-        img.src = `/resourcesv2/mob/orange-mushroom/${f.file}`;
+        const p = (async () => {
+          try {
+            const resp = await cachedFetch(imgUrl);
+            const blob = await resp.blob();
+            img.src = URL.createObjectURL(blob);
+            await new Promise((res) => { img.onload = res; img.onerror = res; });
+          } catch {
+            img.src = imgUrl;
+            await new Promise((res) => { img.onload = res; img.onerror = res; });
+          }
+        })();
         _loadingMushroom.frames[stance].push(img);
         imgPromises.push(p);
       }
