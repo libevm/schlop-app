@@ -8,7 +8,7 @@
 ## Project References (READ ONLY)
 - Web port (TS/JS): `/home/k/Development/Libevm/MapleWeb`  
 - C++ reference client: `/home/k/Development/Libevm/MapleStory-Client`
-- Project assets are located in: `./resources/`
+- Project assets are located in: `./resources/` and `./resourcesv2/`
 - These two referenced codebases are **READ ONLY**.
 - Do not modify files in either reference path.
 
@@ -40,6 +40,20 @@
   mob AI behavior, or force/velocity calculations MUST update `physics.md`.**
 - This includes: new physics modes, constant tuning, foothold chain logic, jump mechanics,
   rope/ladder changes, mob patrol behavior, and swim physics.
+
+## Client-Server State Documentation
+- `.memory/client-server.md` documents all character state for server persistence:
+  identity, stats, location, equipment, inventory, keybinds, settings, and achievements.
+- **Any change to player state fields, new runtime.player properties, inventory data model,
+  equipment slots, keybind actions, settings fields, or persistence logic MUST update `client-server.md`.**
+- This includes: new stat fields, save/load functions, localStorage keys, default values,
+  schema version changes, and achievement tracking additions.
+
+## Inventory & Equipment Documentation
+- `.memory/inventory-system.md` documents inventory tabs, slots, drag-drop, ground drops, loot.
+- `.memory/equipment-system.md` documents equipment window, equip/unequip flow, sprite rendering.
+- **Any change to inventory data model, tab logic, slot layout, item icons, drop mechanics,
+  loot pickup, equip/unequip flow, or equipment UI MUST update the relevant file.**
 
 ## Agent Guidance
 - Keep `.memory/` as the full progress snapshot for handoff/resume.
