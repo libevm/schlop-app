@@ -690,7 +690,7 @@ function refreshEquipGrid() {
   for (const slot of EQUIP_SLOT_LIST) {
     const equipped = playerEquipped.get(slot.type);
     const iconUri = equipped ? getIconDataUri(equipped.iconKey) : null;
-    const tooltip = equipped ? { name: equipped.name, slot: slot.label, id: equipped.id } : null;
+    const tooltip = equipped ? { name: equipped.name, equipSlot: slot.label, id: equipped.id, invType: "EQUIP" } : null;
     const clickData = equipped ? {
       source: "equip", index: slot.type,
       item: { id: equipped.id, name: equipped.name, qty: 1, iconKey: equipped.iconKey, category: slot.type },
@@ -728,7 +728,10 @@ function refreshInvGrid() {
     const item = entry?.item ?? null;
     const realIdx = entry?.realIndex ?? -1;
     const iconUri = item ? getIconDataUri(item.iconKey) : null;
-    const tooltip = item ? { name: item.name, qty: item.qty, id: item.id } : null;
+    const tooltip = item ? {
+      name: item.name, qty: item.qty, id: item.id, invType: item.invType,
+      equipSlot: item.invType === "EQUIP" ? (item.category || equipSlotFromId(item.id)) : null,
+    } : null;
 
     // Build slot WITHOUT clickData — we handle all click logic ourselves below
     const slotEl = buildSlotEl(iconUri, null, item?.qty ?? 0, tooltip, null);
@@ -783,28 +786,215 @@ function refreshInvGrid() {
   }
 }
 
+/** Extract equip stats from a WZ equip JSON node's info child */
+function getEquipInfoStats(equipId) {
+  const wzData = runtime.characterEquipData[equipId];
+  if (!wzData) return null;
+  const info = wzData.$$?.find(c => c.$imgdir === "info");
+  if (!info) return null;
+  const stats = {};
+  for (const child of info.$$ || []) {
+    const key = child.$int || child.$string || child.$float || "";
+    if (!key) continue;
+    stats[key] = child.value ?? 0;
+  }
+  return stats;
+}
+
+/** Cache for consumable/etc item WZ spec data: itemId → { spec, info } */
+const _itemWzInfoCache = {};
+
+async function loadItemWzInfo(itemId) {
+  if (_itemWzInfoCache[itemId]) return _itemWzInfoCache[itemId];
+  const invType = inventoryTypeById(itemId);
+  let folder = null;
+  if (invType === "USE") folder = "Consume";
+  else if (invType === "ETC") folder = "Etc";
+  else if (invType === "SETUP") folder = "Install";
+  if (!folder) return null;
+  const prefix = String(itemId).padStart(8, "0").slice(0, 4);
+  const path = `/resources/Item.wz/${folder}/${prefix}.img.json`;
+  try {
+    const json = await fetchJson(path);
+    const padded = String(itemId).padStart(8, "0");
+    const itemNode = json?.$$?.find(c => c.$imgdir === padded);
+    if (!itemNode) return null;
+    const info = itemNode.$$?.find(c => c.$imgdir === "info");
+    const spec = itemNode.$$?.find(c => c.$imgdir === "spec");
+    const result = { info: {}, spec: {} };
+    for (const child of info?.$$ || []) {
+      const key = child.$int || child.$string || child.$float || "";
+      if (key) result.info[key] = child.value ?? 0;
+    }
+    for (const child of spec?.$$ || []) {
+      const key = child.$int || child.$string || child.$float || "";
+      if (key) result.spec[key] = child.value ?? 0;
+    }
+    _itemWzInfoCache[itemId] = result;
+    return result;
+  } catch { return null; }
+}
+
+/** Cache for item descriptions from String.wz */
+const _itemDescCache = {};
+
+async function loadItemDesc(itemId) {
+  if (_itemDescCache[itemId] !== undefined) return _itemDescCache[itemId];
+  const invType = inventoryTypeById(itemId);
+  let file = null;
+  if (invType === "USE") file = "Consume.img.json";
+  else if (invType === "ETC") file = "Etc.img.json";
+  else if (invType === "SETUP") file = "Ins.img.json";
+  if (!file) { _itemDescCache[itemId] = null; return null; }
+  try {
+    const json = await fetchJson(`/resources/String.wz/${file}`);
+    const node = json?.$$?.find(c => c.$imgdir === String(itemId));
+    const descChild = node?.$$?.find(c => (c.$string || "") === "desc");
+    const desc = descChild?.value || null;
+    _itemDescCache[itemId] = desc;
+    return desc;
+  } catch { _itemDescCache[itemId] = null; return null; }
+}
+
 function showTooltip(e, data) {
   if (!uiTooltipEl) return;
   if (typeof data === "string") {
     uiTooltipEl.textContent = data;
   } else if (data && typeof data === "object") {
     uiTooltipEl.innerHTML = "";
+
+    // ── Item name (colored by type) ──
     const nameEl = document.createElement("div");
-    nameEl.style.cssText = "font-weight:700;font-size:12px;color:#2a3650;margin-bottom:3px;";
+    const isEquip = data.invType === "EQUIP" || data.equipSlot;
+    nameEl.style.cssText = `font-weight:700;font-size:12px;margin-bottom:2px;color:${isEquip ? "#1a5276" : "#2a3650"};`;
     nameEl.textContent = data.name || "Unknown";
     uiTooltipEl.appendChild(nameEl);
-    if (data.slot) {
+
+    // ── Equip slot label ──
+    if (data.equipSlot) {
       const slotEl = document.createElement("div");
-      slotEl.style.cssText = "font-size:10px;color:#6b82a8;";
-      slotEl.textContent = `Slot: ${data.slot}`;
+      slotEl.style.cssText = "font-size:10px;color:#6b82a8;margin-bottom:1px;";
+      slotEl.textContent = `Slot: ${data.equipSlot}`;
       uiTooltipEl.appendChild(slotEl);
     }
+
+    // ── Equip stats from WZ data ──
+    if (data.id && isEquip) {
+      let stats = getEquipInfoStats(data.id);
+      // If WZ data not loaded yet (item in inventory, not equipped), load it
+      if (!stats && !runtime.characterEquipData[data.id]) {
+        loadEquipWzData(data.id).then(() => {
+          // Re-show tooltip if still visible for this item
+          if (!uiTooltipEl.classList.contains("hidden")) {
+            const updatedStats = getEquipInfoStats(data.id);
+            if (updatedStats) showTooltip(e, data);
+          }
+        });
+      }
+      if (stats) {
+        const sep = document.createElement("div");
+        sep.style.cssText = "border-top:1px solid #ccc;margin:3px 0;";
+        uiTooltipEl.appendChild(sep);
+
+        // Requirements
+        const reqs = [];
+        if (stats.reqLevel > 0) reqs.push(`REQ LEV: ${stats.reqLevel}`);
+        if (stats.reqSTR > 0) reqs.push(`REQ STR: ${stats.reqSTR}`);
+        if (stats.reqDEX > 0) reqs.push(`REQ DEX: ${stats.reqDEX}`);
+        if (stats.reqINT > 0) reqs.push(`REQ INT: ${stats.reqINT}`);
+        if (stats.reqLUK > 0) reqs.push(`REQ LUK: ${stats.reqLUK}`);
+        for (const req of reqs) {
+          const el = document.createElement("div");
+          el.style.cssText = "font-size:10px;color:#8a6800;";
+          el.textContent = req;
+          uiTooltipEl.appendChild(el);
+        }
+
+        // Stats
+        const statLines = [];
+        if (stats.incPAD > 0) statLines.push(`ATK: +${stats.incPAD}`);
+        if (stats.incMAD > 0) statLines.push(`MAGIC ATK: +${stats.incMAD}`);
+        if (stats.incPDD > 0) statLines.push(`DEF: +${stats.incPDD}`);
+        if (stats.incMDD > 0) statLines.push(`MAGIC DEF: +${stats.incMDD}`);
+        if (stats.incSTR > 0) statLines.push(`STR: +${stats.incSTR}`);
+        if (stats.incDEX > 0) statLines.push(`DEX: +${stats.incDEX}`);
+        if (stats.incINT > 0) statLines.push(`INT: +${stats.incINT}`);
+        if (stats.incLUK > 0) statLines.push(`LUK: +${stats.incLUK}`);
+        if (stats.incMHP > 0) statLines.push(`MaxHP: +${stats.incMHP}`);
+        if (stats.incMMP > 0) statLines.push(`MaxMP: +${stats.incMMP}`);
+        if (stats.incACC > 0) statLines.push(`Accuracy: +${stats.incACC}`);
+        if (stats.incEVA > 0) statLines.push(`Avoidability: +${stats.incEVA}`);
+        if (stats.incSpeed > 0) statLines.push(`Speed: +${stats.incSpeed}`);
+        if (stats.incJump > 0) statLines.push(`Jump: +${stats.incJump}`);
+        if (stats.attackSpeed) statLines.push(`Attack Speed: ${stats.attackSpeed}`);
+        if (stats.tuc > 0) statLines.push(`Upgrades available: ${stats.tuc}`);
+        for (const line of statLines) {
+          const el = document.createElement("div");
+          el.style.cssText = "font-size:10px;color:#2a5080;";
+          el.textContent = line;
+          uiTooltipEl.appendChild(el);
+        }
+
+        // Price
+        if (stats.price > 0) {
+          const el = document.createElement("div");
+          el.style.cssText = "font-size:9px;color:#6b82a8;margin-top:2px;";
+          el.textContent = `Price: ${stats.price} meso`;
+          uiTooltipEl.appendChild(el);
+        }
+      }
+    }
+
+    // ── Consumable/Use spec (loaded async, updates tooltip if still visible) ──
+    if (data.id && !isEquip) {
+      const specPlaceholder = document.createElement("div");
+      specPlaceholder.style.cssText = "font-size:10px;color:#2a5080;";
+      uiTooltipEl.appendChild(specPlaceholder);
+
+      // Load description
+      loadItemDesc(data.id).then(desc => {
+        if (desc && !uiTooltipEl.classList.contains("hidden")) {
+          const descEl = document.createElement("div");
+          descEl.style.cssText = "font-size:10px;color:#555;margin-top:2px;max-width:180px;white-space:normal;line-height:1.3;";
+          descEl.textContent = desc.replace(/\\n/g, "\n");
+          specPlaceholder.before(descEl);
+        }
+      });
+
+      // Load spec data
+      loadItemWzInfo(data.id).then(wzInfo => {
+        if (!wzInfo || uiTooltipEl.classList.contains("hidden")) return;
+        const specLines = [];
+        const sp = wzInfo.spec;
+        if (sp.hp > 0) specLines.push(`HP Recovery: +${sp.hp}`);
+        if (sp.mp > 0) specLines.push(`MP Recovery: +${sp.mp}`);
+        if (sp.hpR > 0) specLines.push(`HP Recovery: ${sp.hpR}%`);
+        if (sp.mpR > 0) specLines.push(`MP Recovery: ${sp.mpR}%`);
+        if (sp.pad > 0) specLines.push(`ATK: +${sp.pad}`);
+        if (sp.pdd > 0) specLines.push(`DEF: +${sp.pdd}`);
+        if (sp.speed > 0) specLines.push(`Speed: +${sp.speed}`);
+        if (sp.jump > 0) specLines.push(`Jump: +${sp.jump}`);
+        if (sp.time > 0) specLines.push(`Duration: ${sp.time}s`);
+        specPlaceholder.textContent = specLines.join("\n");
+        // Price from info
+        if (wzInfo.info.price > 0) {
+          const el = document.createElement("div");
+          el.style.cssText = "font-size:9px;color:#6b82a8;margin-top:2px;";
+          el.textContent = `Price: ${wzInfo.info.price} meso`;
+          uiTooltipEl.appendChild(el);
+        }
+      });
+    }
+
+    // ── Quantity ──
     if (data.qty && data.qty > 1) {
       const qtyEl = document.createElement("div");
       qtyEl.style.cssText = "font-size:10px;color:#6b82a8;";
       qtyEl.textContent = `Quantity: ${data.qty}`;
       uiTooltipEl.appendChild(qtyEl);
     }
+
+    // ── Item ID (small, at bottom) ──
     if (data.id) {
       const idEl = document.createElement("div");
       idEl.style.cssText = "font-size:9px;color:#9aa8bc;margin-top:2px;";
@@ -876,6 +1066,7 @@ function unequipItem(slotType) {
   const equipped = playerEquipped.get(slotType);
   if (!equipped) return;
 
+  hideTooltip();
   // Cancel any active drag first
   if (draggedItem.active) cancelItemDrag();
 
@@ -911,6 +1102,7 @@ function equipItemFromInventory(invIndex) {
   if (!item) return;
   if (item.invType !== "EQUIP") return;
 
+  hideTooltip();
   // Cancel any active drag first
   if (draggedItem.active) cancelItemDrag();
 
