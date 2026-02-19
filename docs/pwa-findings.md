@@ -28,6 +28,44 @@ The docs UI includes sidebar navigation for markdown files under `docs/`.
 
 ---
 
+## 2026-02-19 (GMT+11) — Item System & Ladder Snap
+### Summary
+- Item selection, drag-drop, ground drops, and loot system implemented.
+- Ladder/rope bottom-exit now snaps to platform below.
+- Drop physics matches C++ implementation (horizontal arc, foothold landing).
+
+### Item Selection & Drag
+- Click item in Equipment/Inventory to select it; ghost icon follows cursor at 60% opacity.
+- Source slot dims while item is dragged. Escape cancels drag.
+- DragStart/DragEnd sounds from `Sound.wz/UI.img.json`.
+
+### Drop on Map (C++ `Drop` Parity)
+- Click canvas while dragging → drop spawns at player position.
+- `hspeed = (dest.x - start.x) / 48`, `vspeed = -5.0` (C++ exact formula).
+- Per-tick gravity (0.14), spin while airborne (0.2 rad/tick), foothold crossing detection.
+- On landing: snap to destination, cosine bob animation (2.5px amplitude).
+- No text labels on ground drops. DropItem sound plays.
+
+### Loot System
+- Z key (configurable "Loot" keybind) picks up nearest drop within 50px.
+- Pickup animation: item flies toward player and fades out (400ms).
+- Item returns to inventory (stacks if same ID). PickUpItem sound plays.
+- One item per loot press (C++ `lootenabled` parity).
+
+### Ladder Bottom-Exit Snap
+- When climbing down to bottom of rope/ladder and pressing down, player snaps to foothold
+  within 24px of rope bottom. Mirrors existing top-exit logic.
+
+### Sounds Preloaded
+- UI: DragStart, DragEnd (added to UI sound preload).
+- Game: PickUpItem, DropItem (from `Sound.wz/Game.img.json`).
+
+### Files changed
+- `client/web/app.js` (~9710 lines)
+- `.memory/sync-status.md`, `.memory/canvas-rendering.md`, `.memory/physics.md`
+
+---
+
 ## 2026-02-19 20:55 (GMT+11)
 ### Summary
 - Added fall damage with knockback on high falls.

@@ -428,6 +428,54 @@ map.footholdById = Map<id → foothold>
 map.footholdLines = foothold[]
 ```
 
+## Web Client: Ground Drop Physics
+
+### Constants
+```js
+DROP_PHYS_GRAVITY = 0.14        // per-tick gravity (matches player/mob)
+DROP_PHYS_TERMINAL_VY = 8       // max fall speed
+DROP_SPAWN_VSPEED = -5.0        // C++ Drop::vspeed initial
+DROP_BOB_SPEED = 0.025          // floating bob phase increment
+DROP_BOB_AMP = 2.5              // floating bob amplitude (px)
+DROP_PICKUP_RANGE = 50          // loot pickup distance
+LOOT_ANIM_DURATION = 400        // pickup fly animation (ms)
+```
+
+### Drop Physics (C++ `Drop` + `physics.move_object` parity)
+
+Spawn: `hspeed = (destX - startX) / 48`, `vspeed = -5.0`
+(C++ `Drop.cpp` line: `phobj.hspeed = (dest.x() - start.x()) / 48`)
+
+Per-tick update (`updateGroundDrops`):
+```
+DROPPED state (!onGround):
+  vy += DROP_PHYS_GRAVITY
+  vy = min(vy, DROP_PHYS_TERMINAL_VY)
+  x += vx
+  y += vy
+  angle += 0.2  (C++ SPINSTEP)
+  
+  if vy > 0:  // only check footholds when falling
+    fh = findFootholdBelow(map, x, prevY - 2)
+    if fh && prevY <= fh.y && y >= fh.y:
+      snap to (destX, destY)
+      onGround = true, angle = 0
+
+FLOATING state (onGround):
+  bobPhase += 0.025
+  renderY += (cos(bobPhase) - 1) * 2.5
+
+PICKEDUP state:
+  chase player position with lerp (0.12)
+  fade opacity over 400ms
+  remove when fully faded
+```
+
+### Foothold Landing
+- Uses same `findFootholdBelow` as player physics
+- Destination foothold found at spawn via `findFootholdAtXNearY(map, destX, playerY, 60)`
+- On landing, position snaps to pre-calculated destination (C++ `set_position(dest)`)
+
 ## Key Differences: Web vs C++
 
 | Aspect | C++ | Web |

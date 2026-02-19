@@ -41,7 +41,8 @@ tick(timestampMs)                ← requestAnimationFrame
     drawReactorMarkers()        ← debug overlay (magenta, if life markers enabled)
 12. drawHitboxOverlay()         ← debug overlay (if enabled)
 13. drawBackgroundLayer(1)      ← front backgrounds (front=1)
-13b. drawVRBoundsOverflowMask() ← black fill for areas outside VR bounds (when map < viewport)
+13b. drawGroundDrops()          ← items dropped on the map floor
+13c. drawVRBoundsOverflowMask() ← black fill for areas outside VR bounds (when map < viewport)
 14. drawChatBubble()
 15. drawPlayerNameLabel()       ← player name tag below character
 16. drawStatusBar()             ← HP/MP/EXP bars at bottom
@@ -491,6 +492,49 @@ tryUsePortal()
 - Option handling: hover highlight (gold), click executes action (map warp, close, etc.)
 - Fallback: NPCs without scripts show flavor text + travel options to major towns
 - Blocks player movement/jumping/portal use while active
+
+## Ground Drop System
+
+Items can be dropped on the map and looted by the player.
+
+### Drop Spawning
+- Player clicks canvas while dragging an inventory/equip item
+- Drop spawns at `(player.x, player.y - 4)` with destination 30-60px in facing direction
+- C++ parity: `hspeed = (destX - startX) / 48`, `vspeed = -5.0`
+
+### Drop Physics (per-tick in `updateGroundDrops`)
+- Gravity: `DROP_PHYS_GRAVITY = 0.14` per tick (matches game engine)
+- Terminal velocity: `DROP_PHYS_TERMINAL_VY = 8`
+- Spin while airborne: `angle += 0.2` per tick (C++ SPINSTEP)
+- Foothold crossing detection: `prevY <= fh.y && newY >= fh.y`
+- On landing: snap to `(destX, destY)`, switch to FLOATING state
+- Fixed-tick sub-stepping (1 tick per update call at 60fps)
+
+### Drop States (C++ parity)
+- **DROPPED** (`onGround=false`): physics-driven arc with spin
+- **FLOATING** (`onGround=true`): bob animation `cos(phase) * 2.5px`, phase += 0.025/tick
+- **PICKEDUP** (`pickingUp=true`): fly toward player, fade out over 400ms
+
+### Drop Rendering (`drawGroundDrops`)
+- Icon drawn at world position with camera transform
+- Bob offset applied when floating
+- Rotation applied when airborne
+- Opacity modulated during pickup animation
+- No text labels on ground drops
+
+### Loot Pickup
+- Z key (configurable) triggers `tryLootDrop()`
+- 50px range, player must be on ground
+- One item per press (C++ `lootenabled` parity)
+- Item returns to inventory (stacks if same ID)
+- PickUpItem sound plays
+
+### Item Drag System
+- `draggedItem` state: active, source, sourceIndex, id, name, qty, iconKey, category
+- Ghost item (`<img id="ghost-item">`) follows cursor at 60% opacity, z-index 99998
+- Source slot dims to 40% while dragged
+- DragStart/DragEnd/DropItem/PickUpItem sounds from WZ
+- Escape or map change cancels drag
 
 ## Known Issues / Investigation
 
