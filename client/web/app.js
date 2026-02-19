@@ -730,41 +730,49 @@ function refreshInvGrid() {
     const iconUri = item ? getIconDataUri(item.iconKey) : null;
     const tooltip = item ? { name: item.name, qty: item.qty, id: item.id } : null;
 
-    // Click data only when the slot has an item and we're NOT already dragging
-    const clickData = item ? {
-      source: "inventory", index: realIdx,
-      item: { id: item.id, name: item.name, qty: item.qty, iconKey: item.iconKey, category: item.category },
-    } : null;
-    const slotEl = buildSlotEl(iconUri, null, item?.qty ?? 0, tooltip, clickData);
+    // Build slot WITHOUT clickData — we handle all click logic ourselves below
+    const slotEl = buildSlotEl(iconUri, null, item?.qty ?? 0, tooltip, null);
+    if (item) slotEl.style.cursor = "none";
 
-    // Handle drag interaction: clicking any slot while dragging
+    // Dim the source slot if this item is being dragged
+    if (item && draggedItem.active && draggedItem.source === "inventory" && draggedItem.sourceIndex === realIdx) {
+      const img = slotEl.querySelector("img");
+      if (img) img.style.opacity = "0.4";
+    }
+
+    // Single unified click handler for all inventory slot interactions
     const slotIndex = s;
     slotEl.addEventListener("click", () => {
-      if (!draggedItem.active) return;
-      if (draggedItem.source !== "inventory") return;
-      const dragSrcIdx = draggedItem.sourceIndex;
-      const dragSrcItem = playerInventory[dragSrcIdx];
-      if (!dragSrcItem) { cancelItemDrag(); return; }
-      // Don't drop onto itself
-      if (dragSrcItem.invType === currentInvTab && dragSrcItem.slot === slotIndex) {
-        cancelItemDrag();
-        return;
-      }
-      // Only allow dropping within the same tab
-      if (dragSrcItem.invType !== currentInvTab) { cancelItemDrag(); return; }
+      if (draggedItem.active) {
+        // ── Dragging: drop into this slot ──
+        if (draggedItem.source !== "inventory") { cancelItemDrag(); return; }
+        const dragSrcIdx = draggedItem.sourceIndex;
+        const dragSrcItem = playerInventory[dragSrcIdx];
+        if (!dragSrcItem) { cancelItemDrag(); return; }
+        // Same tab check
+        if (dragSrcItem.invType !== currentInvTab) { cancelItemDrag(); return; }
+        // Clicking own slot → cancel
+        if (dragSrcItem.slot === slotIndex) { cancelItemDrag(); return; }
 
-      if (item) {
-        // Swap: exchange slot indices
-        const targetSlot = item.slot;
-        item.slot = dragSrcItem.slot;
-        dragSrcItem.slot = targetSlot;
-      } else {
-        // Move to empty slot
-        dragSrcItem.slot = slotIndex;
+        if (item) {
+          // Swap: exchange slot indices
+          const targetSlot = item.slot;
+          item.slot = dragSrcItem.slot;
+          dragSrcItem.slot = targetSlot;
+        } else {
+          // Move to empty slot
+          dragSrcItem.slot = slotIndex;
+        }
+        draggedItem.active = false;
+        playUISound("DragEnd");
+        refreshUIWindows();
+      } else if (item) {
+        // ── Not dragging: pick up this item ──
+        startItemDrag("inventory", realIdx, {
+          id: item.id, name: item.name, qty: item.qty,
+          iconKey: item.iconKey, category: item.category,
+        });
       }
-      draggedItem.active = false;
-      playUISound("DragEnd");
-      refreshUIWindows();
     });
 
     // Double-click on EQUIP tab item → equip it
@@ -9587,6 +9595,15 @@ function bindInput() {
       wzCursor.clientY = e.clientY;
       wzCursor.visible = true;
       updateCursorElement();
+    });
+    // Drop item on map when clicking anywhere outside inventory/equip UI slots
+    _wrapperEl.addEventListener("pointerdown", (e) => {
+      if (!draggedItem.active) return;
+      // If the click target is inside an inventory/equip grid slot, let it handle swap/move
+      const target = e.target;
+      if (target.closest?.("#inv-grid") || target.closest?.("#equip-grid")) return;
+      // Clicked outside inventory slots — drop to ground
+      dropItemOnMap();
     });
   }
   canvasEl.addEventListener("focus", () => setInputEnabled(true));
