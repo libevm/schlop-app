@@ -6367,17 +6367,8 @@ function updateTrapHazardCollisions() {
     const meta = currentObjectFrameMeta(hazard.layerIndex, hazard.obj);
     if (!isDamagingTrapMeta(meta)) continue;
 
-    // Skip collision when trap is mostly invisible (< 15% opacity).
-    // C++ uses lt/rb hitbox presence per frame (handled by trapWorldBounds
-    // returning null for frames without lt/rb). This opacity check is an
-    // additional safety for the fade-in/out transition of active frames.
-    const obj = hazard.obj;
-    if (obj.frameDelays && obj.frameCount > 1) {
-      const stateKey = `${hazard.layerIndex}:${obj.id}`;
-      const animState = objectAnimStates.get(stateKey);
-      if (animState && animState.opacity < 38) continue; // 38/255 ≈ 15%
-    }
-
+    // C++ parity: only frames with lt/rb vectors have a hitbox.
+    // trapWorldBounds returns null for frames without lt/rb.
     const bounds = trapWorldBounds(hazard.obj, meta, nowMs);
     if (!bounds) continue;
     if (!rectsOverlap(touchBounds, bounds)) continue;
