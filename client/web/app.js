@@ -5768,6 +5768,7 @@ function updatePlayer(dt) {
           player.vy = -TRAP_KNOCKBACK_VSPEED * 0.6;
           player.onGround = false;
           player.footholdId = null;
+          player.fallStartY = player.y; // reset so bounce landing doesn't re-trigger
           player.knockbackClimbLockUntil = nowMs + 600;
           player.trapInvincibleUntil = nowMs + TRAP_HIT_INVINCIBILITY_MS;
           triggerPlayerHitVisuals(nowMs);
