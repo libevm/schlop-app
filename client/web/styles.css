@@ -81,6 +81,26 @@ body:has(.canvas-wrapper.fixed-res) {
   color: #fbbf24;
 }
 
+.hud-button.hud-hidden {
+  display: none;
+}
+
+.hud-tooltip {
+  position: absolute;
+  z-index: 99990;
+  pointer-events: none;
+  display: none;
+  padding: 5px 10px;
+  border-radius: 4px;
+  background: rgba(10, 14, 28, 0.85);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.85);
+  font: 400 12px -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  white-space: nowrap;
+}
+
 /* ══════════════════════════════════════════════════════════════════════════════
    SETTINGS WINDOW
    ══════════════════════════════════════════════════════════════════════════════ */

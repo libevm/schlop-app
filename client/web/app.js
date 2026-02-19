@@ -9745,6 +9745,7 @@ async function loadMap(mapId, spawnPortalName = null, spawnFromPortalTransfer = 
     runtime.loading.label = "Assets loaded";
     runtime.loading.active = false;
     stopLoginBgm();
+    showHudButtons();
     rlog(`loading.active = false (success)`);
 
     // Initialize animation states
@@ -10192,6 +10193,30 @@ initializeTeleportPresetInputs();
 initializeStatInputs();
 initChatLogResize();
 bindCanvasResizeHandling();
+
+// ── HUD button tooltips ──
+const hudTooltipEl = document.getElementById("hud-tooltip");
+for (const btn of document.querySelectorAll(".hud-button[data-tooltip]")) {
+  btn.addEventListener("mouseenter", () => {
+    if (!hudTooltipEl) return;
+    hudTooltipEl.textContent = btn.dataset.tooltip;
+    hudTooltipEl.style.display = "block";
+    const br = btn.getBoundingClientRect();
+    const wr = btn.closest(".canvas-wrapper")?.getBoundingClientRect() || { left: 0, top: 0 };
+    const tt = hudTooltipEl.getBoundingClientRect();
+    hudTooltipEl.style.top = `${br.bottom - wr.top + 6}px`;
+    hudTooltipEl.style.left = `${br.left - wr.left + br.width / 2 - tt.width / 2}px`;
+  });
+  btn.addEventListener("mouseleave", () => {
+    if (hudTooltipEl) hudTooltipEl.style.display = "none";
+  });
+}
+
+function showHudButtons() {
+  for (const btn of document.querySelectorAll(".hud-button.hud-hidden")) {
+    btn.classList.remove("hud-hidden");
+  }
+}
 
 debugToggleEl?.addEventListener("click", () => {
   debugPanelEl?.classList.toggle("hidden");
