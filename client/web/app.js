@@ -119,8 +119,14 @@ const PLAYER_TOUCH_HITBOX_HALF_WIDTH = 12;
 const PLAYER_TOUCH_HITBOX_PRONE_HEIGHT = 28;
 const PLAYER_TOUCH_HITBOX_PRONE_HALF_WIDTH = 18;
 const TRAP_HIT_INVINCIBILITY_MS = 2000;
-const TRAP_KNOCKBACK_HSPEED = 1.5 * PHYS_TPS;
-const TRAP_KNOCKBACK_VSPEED = 3.5 * PHYS_TPS;
+// C++ Player::damage knockback: hspeed = ±1.5, vforce -= 3.5 (per-tick values)
+const PLAYER_KB_HSPEED = 1.5;  // per-tick horizontal speed
+const PLAYER_KB_VFORCE = 3.5;  // per-tick upward impulse (applied as vforce)
+// C++ Mob::update HIT stance: hforce = ±0.2 (ground) or ±0.1 (air), counter 170→200
+const MOB_KB_FORCE_GROUND = 0.2;  // per-tick knockback force on ground
+const MOB_KB_FORCE_AIR = 0.1;     // per-tick knockback force in air
+const MOB_KB_COUNTER_START = 170;
+const MOB_KB_COUNTER_END = 200;
 const PLAYER_HIT_FACE_DURATION_MS = 500;
 const FALL_DAMAGE_THRESHOLD = 500; // pixels of fall distance before damage kicks in
 const FALL_DAMAGE_PERCENT = 0.1; // 10% of max HP per threshold exceeded
@@ -1489,9 +1495,9 @@ const MOB_HSPEED_DEADZONE = 0.1;
 // ─── Mob Behavior ─────────────────────────────────────────────────────────────
 const MOB_DEFAULT_HP = 100;       // fallback if WZ maxHP missing
 const MOB_RESPAWN_DELAY_MS = 8000;
-const MOB_HIT_DURATION_MS = 500;  // pain animation freeze
+
 const MOB_AGGRO_DURATION_MS = 4000; // chase player after stagger
-const MOB_KB_SPEED = 150;        // initial knockback speed (px/sec)
+
 
 // ─── Mob UI ───────────────────────────────────────────────────────────────────
 const MOB_HP_BAR_WIDTH = 60;
@@ -2051,30 +2057,13 @@ function updateLifeAnimations(dtMs) {
       const ph = state.phobj;
       const now = performance.now();
 
-      // ── Stagger: plays hit1, slides back with decaying velocity ──
+      // ── C++ Mob HIT stance: hforce = ±0.2 (ground) / ±0.1 (air), counter-based ──
       if (state.hitStaggerUntil > 0 && now < state.hitStaggerUntil) {
-        // Linear velocity decay: full speed at start, zero at end of stagger
-        const elapsed = now - state.kbStartTime;
-        const t = Math.max(0, 1 - elapsed / MOB_HIT_DURATION_MS); // 1→0
-        const kbSpeed = MOB_KB_SPEED * t * state.kbDir;
+        const kbForce = ph.onGround ? MOB_KB_FORCE_GROUND : MOB_KB_FORCE_AIR;
+        ph.hforce = state.kbDir * kbForce;
 
-        // Apply knockback displacement directly (bypass friction)
-        const dx = kbSpeed * dtSec;
-        const nextX = ph.x + dx;
-
-        // Respect foothold edges
-        const curFh = map.footholdById?.get(String(ph.fhId));
-        if (curFh && ph.onGround) {
-          const left = fhLeft(curFh);
-          const right = fhRight(curFh);
-          ph.x = Math.max(left, Math.min(right, nextX));
-          const gy = fhGroundAt(curFh, ph.x);
-          if (gy !== null) ph.y = gy;
-        } else {
-          ph.x = nextX;
-        }
-        ph.hspeed = 0;
-        ph.hforce = 0;
+        // Run normal physics — friction/gravity handle deceleration naturally
+        mobPhysicsStep(map, ph, false);
 
         // Keep hit1 stance
         if (state.stance !== "hit1" && anim?.stances?.["hit1"]) {
@@ -2607,18 +2596,17 @@ function applyAttackToMob(target) {
   // Play hit sound
   void playMobSfx(life.id, "Damage");
 
-  // Stagger: mob freezes in hit1 for MOB_HIT_DURATION_MS, then chases player
+  // C++ Mob::apply_damage: set HIT stance, counter = 170 (ends at 200 → 30 ticks ≈ 240ms)
   if (!result.miss && result.damage >= mobKnockback && !state.dying) {
     const attackerIsLeft = runtime.player.x < worldX;
     state.facing = attackerIsLeft ? -1 : 1;
 
-    // Enter stagger — knockback + pain animation
+    // Enter stagger — C++ sets flip, counter=170, stance=HIT
     const now = performance.now();
-    state.hitStaggerUntil = now + MOB_HIT_DURATION_MS;
-    state.kbStartTime = now;
+    const kbDurationMs = (MOB_KB_COUNTER_END - MOB_KB_COUNTER_START) * (1000 / PHYS_TPS);
+    state.hitStaggerUntil = now + kbDurationMs;
+    state.hitCounter = MOB_KB_COUNTER_START;
     state.kbDir = attackerIsLeft ? 1 : -1; // push away from attacker
-    state.phobj.hspeed = 0;
-    state.phobj.hforce = 0;
     if (anim?.stances?.["hit1"]) {
       state.stance = "hit1";
       state.frameIndex = 0;
@@ -5778,8 +5766,8 @@ function updatePlayer(dt) {
           // Bounce-up knockback in facing direction (like landing stagger)
           const kbDir = player.facing;
           player.hp = Math.max(1, player.hp - damage);
-          player.vx = kbDir * TRAP_KNOCKBACK_HSPEED * 0.5;
-          player.vy = -TRAP_KNOCKBACK_VSPEED * 0.6;
+          player.vx = kbDir * PLAYER_KB_HSPEED * PHYS_TPS * 0.5;
+          player.vy = -PLAYER_KB_VFORCE * PHYS_TPS * 0.6;
           player.onGround = false;
           player.footholdId = null;
           player.fallStartY = player.y; // reset so bounce landing doesn't re-trigger
@@ -6315,10 +6303,11 @@ function applyPlayerTouchHit(damage, sourceCenterX, nowMs) {
       player.climbRope = null;
     }
 
+    // C++ Player::damage: hspeed = ±1.5, vforce -= 3.5 (per-tick units)
+    // Convert to px/s for our physics: multiply by PHYS_TPS
     const hitFromLeft = sourceCenterX > player.x;
-
-    player.vx = hitFromLeft ? -TRAP_KNOCKBACK_HSPEED : TRAP_KNOCKBACK_HSPEED;
-    player.vy = -TRAP_KNOCKBACK_VSPEED;
+    player.vx = (hitFromLeft ? -PLAYER_KB_HSPEED : PLAYER_KB_HSPEED) * PHYS_TPS;
+    player.vy = -PLAYER_KB_VFORCE * PHYS_TPS;
     player.onGround = false;
     player.footholdId = null;
     player.downJumpIgnoreFootholdId = null;
