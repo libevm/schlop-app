@@ -3886,9 +3886,7 @@ async function loadAnimatedObjectFrames(obj) {
         }
       }
     }
-    // Cap fade-in frames (a0=0) to 1500ms for snappier cooldown
-    const isFadeInFrame = meta.opacityStart === 0;
-    delays.push(Math.max(isFadeInFrame ? Math.min(delay, 1500) : delay, 30));
+    delays.push(Math.max(delay, 30));
     // Extract per-frame opacity (a0/a1) matching C++ Frame constructor
     opacities.push({ start: meta.opacityStart, end: meta.opacityEnd });
     frameKeys.push(frameIdx);
