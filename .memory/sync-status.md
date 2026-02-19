@@ -1,6 +1,6 @@
 # .memory Sync Status
 
-Last synced: 2026-02-20T11:00:00+11:00
+Last synced: 2026-02-20T12:30:00+11:00
 Status: ✅ Synced
 
 ## Current authoritative memory files
@@ -12,62 +12,60 @@ Status: ✅ Synced
 | `physics-units.md` | Physics constant units and tick-rate conversion reference |
 | `inventory-system.md` | Inventory tabs, slot layout, drag-drop, ground drops, loot, item icons |
 | `equipment-system.md` | Equipment window, equip/unequip flow, dynamic character sprite rendering |
-| `client-server.md` | **Complete client-server architecture**: session/auth model, character state schema, WebSocket protocol, V2 map set, resource pipeline, implementation order |
+| `client-server.md` | Client-server architecture: session/auth model, character state schema, WebSocket overview, V2 map set, resource pipeline |
+| `shared-schema.md` | **Wire protocol source of truth**: all REST and WebSocket message types, fields, examples, room model, C++ parity notes |
+| `implementation-plan.md` | **5-phase implementation plan** with step-by-step instructions, code snippets, file paths, test procedures |
 | `game-design.md` | High-level game design notes and feature goals |
-| `tech-stack.md` | Technology choices, tooling, build system (note: partially stale — actual stack is vanilla JS + raw Bun.serve, not Fastify/Vite) |
-| `implementation-plan.md` | **Step-by-step implementation plan** for online multiplayer: 5 phases, ~40 steps, with exact file paths, code snippets, and test instructions |
+| `tech-stack.md` | Technology choices (partially stale — actual stack is vanilla JS + raw Bun.serve) |
 | `cpp-port-architecture-snapshot.md` | C++ reference client architecture snapshot (read-only reference) |
 
-## Codebase Metrics Snapshot
-- `client/web/app.js`: ~10,400 lines (single-file debug web client)
-- Latest git: see `git log --oneline -1` on `origin/main`
+## Codebase Metrics
+- `client/web/app.js`: ~10,400 lines (will be split into modules in Phase 4)
 - CI: `bun run ci` ✅
 
-## Client Run Commands
-- `bun run client:offline` — standalone client, no server (default port 5173)
-- `bun run client:online` — client + API proxy to game server (default `http://127.0.0.1:5200`)
-- `bun run client:web` — legacy alias for `client:offline`
+## Key Architecture Decisions
 
-## Key Architecture Decisions (this session)
+### Server-authoritative model
+- Server is source of truth for all game state
+- Clients send inputs, not state
+- Periodic snapshots at 20 Hz with client-side interpolation (100-200ms buffer)
+- Soft-predicted local movement: small error → lerp (100-300ms), large error → snap
+- Proximity culling: only relay within same map room
 
 ### Session model
-- Session ID = random UUID in localStorage (`mapleweb.session`), primary key for all server state
+- Session ID = random UUID in localStorage (`mapleweb.session`)
 - Character name first-come-first-serve, immutable once claimed
-- Auth optional (Phase 2): passphrase-based recovery, no email/OAuth
+- Character creation: name + gender picker on first login (after resources loaded)
+- Auth optional (Phase 2): passphrase recovery, no email/OAuth
 
 ### WebSocket protocol
-- 50ms position updates while moving
-- Immediate action events: attack, chat, face, sit, prone, climb, equip change, drop, loot, level up, damage, die, respawn, jump, portal
-- Map-scoped rooms: players only receive updates for their current map
-- Global broadcasts: level up celebrations, achievements, announcements, player count
-- JSON format for readability (v1)
+- Auth via `{ type: "auth", session_id: "..." }` (JSON, first message, includes type field)
+- 20 Hz position updates (move messages)
+- Immediate action events (chat, attack, face, sit, prone, climb, etc.)
+- Map enter ACK: client sends leave_map → loads map → sends enter_map → waits for map_state
+- Ping/pong heartbeat every 10s, 30s disconnect timeout
+- Default character created on first WS auth if none exists
+
+### Remote player rendering (C++ OtherChar parity)
+- Movement queue with timer-based consumption (not instant apply)
+- Position: delta per tick (target - current), not direct lerp
+- Animation fully local: client runs frame timers per remote player
+- Per-player equip WZ data storage (separate from local player)
+
+### File organization
+- Split `app.js` into modules before Phase 4: `net.js`, `save.js`, `ui-character-create.js`
+- Server and static file server remain separate (`server/` vs `tools/dev/serve-client-*.mjs`)
+- Character API is a separate middleware layer in server
 
 ### Persistence split
 - Server-persisted (6 groups): identity, stats, location, equipment, inventory, achievements
 - Client-only localStorage (2 groups): keybinds, settings
+- Spawn portal stored as portal name (not index), resolved by `findClosestSpawnPortal(x, y)`
 
 ### V2 map set
-- 21 maps: Henesys Townstreet + 3 Shumi JQs (9 maps) + 3 John JQs (6 maps) + Forest of Patience (2) + Breath of Lava (2)
-- Dependencies: 5 BGMs, 7 mobs, 11 NPCs, 6 tile sets, 10 obj sets, 6 bg sets
+- 21 maps: Henesys + Shumi JQs (9) + John JQs (6) + Forest of Patience (2) + Breath of Lava (2)
+- Sound.wz: filtered per-track extraction (not whole-file copy)
 - Default spawn: `100000001` (Henesys Townstreet)
-
-### Default map change
-- V2 default map: `100000001` (Henesys Townstreet), was `104040000`
-
-## Recent Changes
-
-### client-server.md complete rewrite (2026-02-20)
-- Session/auth model with passphrase recovery plan
-- SQLite schema for characters + name reservation
-- Full WebSocket message protocol (24 client→server types, 19 server→client types)
-- V2 map list with all dependencies enumerated
-- 10-step implementation order
-- Removed keybinds/settings from server persistence
-
-### client:offline and client:online commands (2026-02-20, 02e6c26)
-- `serve-client-offline.mjs` (standalone)
-- `serve-client-online.mjs` (API proxy + `__MAPLE_ONLINE__` injection)
-- `serve-client-web.mjs` → alias for offline
 
 ## Key Data Structures
 
@@ -76,8 +74,9 @@ _winZCounter = 25                          // increments per bringWindowToFront(
 playerInventory[i].slot                    // 0-31, position within tab grid
 lifeRuntimeState[i].nameVisible            // false until attacked
 RESOURCE_CACHE_NAME = "maple-resources-v1" // Cache API key
+SESSION_KEY = "mapleweb.session"
+CHARACTER_SAVE_KEY = "mapleweb.character.v1"
 SETTINGS_CACHE_KEY = "mapleweb.settings.v1"
 KEYBINDS_STORAGE_KEY = "mapleweb.keybinds.v1"
-// Future: SESSION_KEY = "mapleweb.session"
 // Tooltip z-index: 99990 | Cursor z-index: 99999
 ```

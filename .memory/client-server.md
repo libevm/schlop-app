@@ -96,7 +96,7 @@ CREATE TABLE names (
 | Field | Type | Default | Code Source |
 |-------|------|---------|-------------|
 | `map_id` | string | `"100000001"` | `runtime.mapId` |
-| `spawn_portal` | number | `0` | Portal index |
+| `spawn_portal` | string \| null | `null` | Closest spawn portal name (not index) |
 | `facing` | number | `-1` | `runtime.player.facing` |
 
 ### 4. `character_equipment`
@@ -172,7 +172,7 @@ interface CharacterSave {
   };
   location: {
     map_id: string;
-    spawn_portal: number;
+    spawn_portal: string | null;
     facing: number;
   };
   equipment: Array<{
@@ -204,10 +204,13 @@ interface CharacterSave {
 
 ### REST Endpoints
 ```
-POST /api/character/save    Body: CharacterSave    Header: Authorization: Bearer <session-id>
-GET  /api/character/load    Header: Authorization: Bearer <session-id>
-POST /api/character/name    Body: { name: string }  Header: Authorization: Bearer <session-id>
+POST /api/character/create  Body: { name, gender }  Header: Authorization: Bearer <session-id>  → 201/409
+POST /api/character/save    Body: CharacterSave      Header: Authorization: Bearer <session-id>  → 200
+GET  /api/character/load                             Header: Authorization: Bearer <session-id>  → 200/404
+POST /api/character/name    Body: { name }           Header: Authorization: Bearer <session-id>  → 200/409
 ```
+
+> Full request/response shapes: **see `.memory/shared-schema.md`**
 
 ### Auto-Save Triggers
 - Map transition (portal use)
@@ -229,85 +232,41 @@ if (window.__MAPLE_ONLINE__) {
 
 ## WebSocket Real-Time Protocol
 
-### Connection
-- Client connects to `ws://<server>/ws` with session ID as first message
-- Server assigns client to a map room based on their current `map_id`
+> Full message definitions, field types, and examples: **see `.memory/shared-schema.md`**
 
-### Client → Server Messages
+### Architecture Principles
+- **Server is authoritative.** Clients send inputs, server decides outcomes.
+- **Periodic snapshots + interpolation.** Server relays position updates at 20 Hz. Client interpolates between snapshots (100–200 ms buffer).
+- **Soft-predicted local movement.** Client moves immediately for feel. Server sends authoritative position periodically. Small drift → lerp correction (100–300 ms). Large drift → snap.
+- **Proximity culling.** Only relay updates within the same map room.
+- **JSON wire format (v1).** All messages include a `type` field.
 
-**Position update (sent every 50ms while moving)**
-```json
-{ "type": "move", "x": 1234, "y": 567, "action": "walk1", "facing": -1, "frame": 2 }
-```
-
-**Action events (sent immediately on occurrence)**
-```json
-{ "type": "chat", "text": "Hello!" }
-{ "type": "face", "expression": "smile" }
-{ "type": "attack", "stance": "swingO1", "frame": 0 }
-{ "type": "sit", "active": true }
-{ "type": "prone", "active": true }
-{ "type": "climb", "active": true, "action": "ladder" }
-{ "type": "equip_change", "equipment": [{ "slot_type": "Weapon", "item_id": 1302000 }, ...] }
-{ "type": "drop_item", "item_id": 2000000, "x": 100, "y": 200 }
-{ "type": "loot_item", "drop_index": 3 }
-{ "type": "enter_map", "map_id": "103000900" }
-{ "type": "leave_map" }
-{ "type": "level_up", "level": 10 }
-{ "type": "damage_taken", "damage": 25, "direction": 1 }
-{ "type": "die" }
-{ "type": "respawn" }
-{ "type": "jump" }
-{ "type": "portal_enter", "portal_name": "east00" }
-```
-
-### Server → Client Messages
-
-**Map-scoped (only to players in the same map)**
-```json
-{ "type": "player_move", "id": "abc", "x": 1234, "y": 567, "action": "walk1", "facing": -1, "frame": 2 }
-{ "type": "player_chat", "id": "abc", "name": "Player1", "text": "Hello!" }
-{ "type": "player_face", "id": "abc", "expression": "smile" }
-{ "type": "player_attack", "id": "abc", "stance": "swingO1", "frame": 0 }
-{ "type": "player_sit", "id": "abc", "active": true }
-{ "type": "player_prone", "id": "abc", "active": true }
-{ "type": "player_climb", "id": "abc", "active": true, "action": "ladder" }
-{ "type": "player_equip", "id": "abc", "equipment": [...] }
-{ "type": "player_enter", "id": "abc", "name": "Player1", "look": { "face_id": 20000, "hair_id": 30000, "skin": 0, "equipment": [...] } }
-{ "type": "player_leave", "id": "abc" }
-{ "type": "player_level_up", "id": "abc", "level": 10 }
-{ "type": "player_damage", "id": "abc", "damage": 25, "direction": 1 }
-{ "type": "player_die", "id": "abc" }
-{ "type": "player_respawn", "id": "abc" }
-{ "type": "player_jump", "id": "abc" }
-{ "type": "map_state", "players": [ { "id": "abc", "name": "Player1", "x": 100, "y": 200, "action": "stand1", "facing": -1, "frame": 0, "look": {...} }, ... ] }
-{ "type": "drop_spawn", "drop": { "index": 5, "item_id": 2000000, "x": 100, "destY": 200, "owner_id": "abc" } }
-{ "type": "drop_loot", "drop_index": 5, "looter_id": "abc" }
-```
-
-**Global (to ALL connected players regardless of map)**
-```json
-{ "type": "global_level_up", "name": "Player1", "level": 30 }
-{ "type": "global_achievement", "name": "Player1", "achievement": "First Boss Kill" }
-{ "type": "global_announcement", "text": "Server maintenance in 10 minutes" }
-{ "type": "global_player_count", "count": 42 }
-```
+### Connection Flow
+1. Client opens `ws://<server>/ws`
+2. Client sends `{ type: "auth", session_id: "<uuid>" }` as first message
+3. Server validates, loads character from DB, creates default if needed
+4. Server adds client to map room, sends `map_state`, broadcasts `player_enter`
+5. Client/server exchange `ping`/`pong` every 10s for keepalive
+6. Server disconnects clients with no activity for 30s
 
 ### Server Room Model
 ```
-Map<mapId, Set<WSClient>>   — map-scoped rooms
-Set<WSClient>               — all connected clients (for global broadcasts)
+rooms: Map<mapId, Map<sessionId, WSClient>>
+allClients: Map<sessionId, WSClient>
 ```
 
-- On `enter_map`: remove from old room, add to new room, broadcast `player_enter` to new room, send `map_state` to joiner
-- On disconnect: remove from room, broadcast `player_leave`
-- Position updates relayed only to same-room clients (excluding sender)
-- Global messages broadcast to all clients
+### Map Enter ACK
+- Client sends `leave_map` → server removes from old room
+- Client loads map locally (loading screen)
+- Client sends `enter_map` → server adds to new room, sends `map_state`
+- Client renders remote players only after receiving `map_state`
 
-### Message Format
-- **JSON** for readability (v1)
-- All messages are newline-delimited JSON over WebSocket text frames
-- Future: binary protocol for position updates (v2 optimization)
+### Remote Player Rendering (C++ OtherChar parity)
+- Movement queue with timer-based consumption (not instant apply)
+- Position interpolation: delta per tick (target - current), not lerp
+- Animation fully local: uses stance speed (walk=hspeed, climb=vspeed, else 1.0)
+- Per-player equip WZ data loaded separately from local player's data
+- Correction: <2px ignore, 2-300px smooth lerp, >300px instant snap
 
 ---
 

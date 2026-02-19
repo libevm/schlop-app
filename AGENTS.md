@@ -42,12 +42,13 @@
   rope/ladder changes, mob patrol behavior, and swim physics.
 
 ## Client-Server Architecture Documentation
-- `.memory/client-server.md` documents the complete client-server architecture:
-  session/auth model, character state schema, WebSocket real-time protocol,
-  V2 map set with dependencies, and resource pipeline.
+- `.memory/client-server.md` documents the client-server architecture:
+  session/auth model, character state schema, V2 map set, resource pipeline.
+- `.memory/shared-schema.md` is the **wire protocol source of truth**:
+  all REST and WebSocket message types, fields, examples, and room model.
 - **Any change to player state fields, session handling, WebSocket messages,
   REST endpoints, persistence logic, V2 map list, or online/offline mode
-  switching MUST update `client-server.md`.**
+  switching MUST update `client-server.md` AND/OR `shared-schema.md`.**
 - This includes: new stat fields, save/load functions, new WS message types,
   room model changes, auth flow changes, V2 resource additions, and
   default value changes.
