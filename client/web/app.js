@@ -6237,27 +6237,37 @@ function playerTouchBounds(player) {
 function trapWorldBounds(obj, meta, nowMs) {
   if (!obj || !meta) return null;
 
+  const moveOffset = objectMoveOffset(meta, nowMs);
   const vectors = meta.vectors ?? {};
   const lt = vectors.lt;
   const rb = vectors.rb;
 
-  // C++ parity: only frames with explicit lt/rb bounds have a hitbox.
-  // Frames without lt/rb (e.g. laser fade-in frame 0, electric cooldown
-  // frame 12) return a zero-size Rectangle that never overlaps.
-  if (!lt || !rb) return null;
+  if (lt && rb) {
+    const ltX = safeNumber(lt.x, 0);
+    const rbX = safeNumber(rb.x, 0);
+    const leftOffsetX = obj.flipped ? -rbX : ltX;
+    const rightOffsetX = obj.flipped ? -ltX : rbX;
 
-  const moveOffset = objectMoveOffset(meta, nowMs);
-  const ltX = safeNumber(lt.x, 0);
-  const rbX = safeNumber(rb.x, 0);
-  const leftOffsetX = obj.flipped ? -rbX : ltX;
-  const rightOffsetX = obj.flipped ? -ltX : rbX;
+    return normalizedRect(
+      obj.x + moveOffset.x + leftOffsetX,
+      obj.x + moveOffset.x + rightOffsetX,
+      obj.y + moveOffset.y + safeNumber(lt.y, 0),
+      obj.y + moveOffset.y + safeNumber(rb.y, 0),
+    );
+  }
 
-  return normalizedRect(
-    obj.x + moveOffset.x + leftOffsetX,
-    obj.x + moveOffset.x + rightOffsetX,
-    obj.y + moveOffset.y + safeNumber(lt.y, 0),
-    obj.y + moveOffset.y + safeNumber(rb.y, 0),
-  );
+  // Fallback to sprite dimensions for frames without lt/rb (e.g. laser
+  // fade-in). Skip tiny frames (≤4px) like electric 1×1 cooldown blanks.
+  const width = safeNumber(meta.width, 0);
+  const height = safeNumber(meta.height, 0);
+  if (width <= 4 || height <= 4) return null;
+
+  const origin = vectors.origin ?? { x: 0, y: 0 };
+  const drawOriginX = obj.flipped ? width - safeNumber(origin.x, 0) : safeNumber(origin.x, 0);
+  const left = obj.x - drawOriginX + moveOffset.x;
+  const top = obj.y - safeNumber(origin.y, 0) + moveOffset.y;
+
+  return normalizedRect(left, left + width, top, top + height);
 }
 
 function applyPlayerTouchHit(damage, sourceCenterX, nowMs) {
