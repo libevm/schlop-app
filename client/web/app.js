@@ -8982,7 +8982,7 @@ function drawLoadingScreen() {
         const drawY = Math.round(groundY - oy + bounceY);
 
         ctx.save();
-        if (m.flipped) {
+        if (!m.flipped) {
           ctx.translate(Math.round(m.x), 0);
           ctx.scale(-1, 1);
           ctx.translate(-Math.round(m.x), 0);
