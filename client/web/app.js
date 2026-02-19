@@ -5757,24 +5757,28 @@ function updatePlayer(dt) {
         player.downJumpControlLock = false;
         player.downJumpTargetFootholdId = null;
 
-        // Fall damage: if fell more than threshold, apply % HP damage + knockback
+        // Fall damage: if fell more than threshold, apply % HP damage + full knockback
         const fallDist = player.y - player.fallStartY;
         if (fallDist > FALL_DAMAGE_THRESHOLD) {
           const ticks = Math.floor((fallDist - FALL_DAMAGE_THRESHOLD) / FALL_DAMAGE_THRESHOLD) + 1;
           const damage = Math.max(1, Math.round(player.maxHp * FALL_DAMAGE_PERCENT * ticks));
-          const nowMs = performance.now();
-          // Bounce-up knockback in facing direction (like landing stagger)
-          const kbDir = player.facing;
           player.hp = Math.max(1, player.hp - damage);
-          player.vx = kbDir * PLAYER_KB_HSPEED * PHYS_TPS * 0.5;
-          player.vy = -PLAYER_KB_VFORCE * PHYS_TPS * 0.6;
-          player.onGround = false;
-          player.footholdId = null;
           player.fallStartY = player.y; // reset so bounce landing doesn't re-trigger
-          player.knockbackClimbLockUntil = nowMs + 600;
-          player.trapInvincibleUntil = nowMs + TRAP_HIT_INVINCIBILITY_MS;
+          // Full knockback + blink + damage number (same as mob/trap hit)
+          const nowMs = performance.now();
+          const hitFromX = player.x + player.facing * 10;
           triggerPlayerHitVisuals(nowMs);
           spawnDamageNumber(player.x - 10, player.y, damage, false);
+          player.trapInvincibleUntil = nowMs + TRAP_HIT_INVINCIBILITY_MS;
+          player.lastTrapHitAt = nowMs;
+          player.lastTrapHitDamage = damage;
+          // C++ knockback: hspeed = ±1.5, vforce -= 3.5
+          const hitFromLeft = hitFromX > player.x;
+          player.vx = (hitFromLeft ? -PLAYER_KB_HSPEED : PLAYER_KB_HSPEED) * PHYS_TPS;
+          player.vy = -PLAYER_KB_VFORCE * PHYS_TPS;
+          player.onGround = false;
+          player.footholdId = null;
+          player.knockbackClimbLockUntil = nowMs + 600;
         }
       } else {
         player.onGround = false;
