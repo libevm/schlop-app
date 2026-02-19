@@ -296,6 +296,7 @@ const runtime = {
   keybinds: {
     attack: "KeyC",
     jump: "Space",
+    loot: "KeyZ",
     equip: "KeyE",
     inventory: "KeyI",
     face1: "Digit1",
@@ -431,6 +432,29 @@ const playerEquipped = new Map();
 /** Player inventory — array of { id, name, qty, iconSrc } */
 const playerInventory = [];
 
+/** Selected/dragged item state */
+const draggedItem = {
+  active: false,
+  source: null,     // "inventory" | "equip"
+  sourceIndex: -1,  // inventory index or equip slot type
+  id: 0,
+  name: "",
+  qty: 0,
+  iconKey: null,
+  category: null,   // for equip items
+};
+
+/** Ground drops — items on the map floor */
+const groundDrops = [];
+// Each: { id, name, qty, iconKey, x, y, vx, vy, onGround, opacity, angle, bobPhase, spawnTime, category }
+
+const DROP_PICKUP_RANGE = 50;   // C++ uses drop bounds(32x32) at player pos
+const DROP_BOB_SPEED = 0.025;   // C++ moved += 0.025 per tick
+const DROP_BOB_AMP = 2.5;       // C++ cos(moved) * 2.5
+const DROP_GRAVITY = 0.35;      // approximate drop gravity
+const DROP_SPAWN_VSPEED = -5.0; // C++ phobj.vspeed = -5.0f
+const LOOT_ANIM_DURATION = 400; // ms — pickup fly animation
+
 /** Icon data URI cache */
 const iconDataUriCache = new Map();
 
@@ -546,13 +570,19 @@ function initPlayerInventory() {
   }
 }
 
-function buildSlotEl(icon, label, qty, tooltipData) {
+function buildSlotEl(icon, label, qty, tooltipData, clickData) {
   const slot = document.createElement("div");
   slot.className = icon ? "item-slot" : "item-slot empty";
   if (icon) {
     const img = document.createElement("img");
     img.src = icon;
     img.draggable = false;
+    // Dim if this item is currently being dragged
+    if (draggedItem.active && clickData &&
+        clickData.source === draggedItem.source &&
+        clickData.index === draggedItem.sourceIndex) {
+      img.style.opacity = "0.4";
+    }
     slot.appendChild(img);
   } else if (label) {
     const lbl = document.createElement("span");
@@ -571,6 +601,17 @@ function buildSlotEl(icon, label, qty, tooltipData) {
     slot.addEventListener("mousemove", (e) => moveTooltip(e));
     slot.addEventListener("mouseleave", hideTooltip);
   }
+  if (clickData) {
+    slot.style.cursor = "none";
+    slot.addEventListener("click", () => {
+      if (draggedItem.active) {
+        // Already dragging — cancel
+        cancelItemDrag();
+      } else {
+        startItemDrag(clickData.source, clickData.index, clickData.item);
+      }
+    });
+  }
   return slot;
 }
 
@@ -586,7 +627,11 @@ function refreshEquipGrid() {
     const equipped = playerEquipped.get(slot.type);
     const iconUri = equipped ? getIconDataUri(equipped.iconKey) : null;
     const tooltip = equipped ? { name: equipped.name, slot: slot.label, id: equipped.id } : null;
-    equipGridEl.appendChild(buildSlotEl(iconUri, slot.label, 0, tooltip));
+    const clickData = equipped ? {
+      source: "equip", index: slot.type,
+      item: { id: equipped.id, name: equipped.name, qty: 1, iconKey: equipped.iconKey, category: slot.type },
+    } : null;
+    equipGridEl.appendChild(buildSlotEl(iconUri, slot.label, 0, tooltip, clickData));
   }
 }
 
@@ -598,7 +643,11 @@ function refreshInvGrid() {
     const item = playerInventory[i] ?? null;
     const iconUri = item ? getIconDataUri(item.iconKey) : null;
     const tooltip = item ? { name: item.name, qty: item.qty, id: item.id } : null;
-    invGridEl.appendChild(buildSlotEl(iconUri, null, item?.qty ?? 0, tooltip));
+    const clickData = item ? {
+      source: "inventory", index: i,
+      item: { id: item.id, name: item.name, qty: item.qty, iconKey: item.iconKey },
+    } : null;
+    invGridEl.appendChild(buildSlotEl(iconUri, null, item?.qty ?? 0, tooltip, clickData));
   }
 }
 
@@ -649,6 +698,199 @@ function moveTooltip(e) {
 
 function hideTooltip() {
   if (uiTooltipEl) uiTooltipEl.classList.add("hidden");
+}
+
+// ── Item selection / drag ──
+function startItemDrag(source, index, item) {
+  draggedItem.active = true;
+  draggedItem.source = source;
+  draggedItem.sourceIndex = index;
+  draggedItem.id = item.id;
+  draggedItem.name = item.name;
+  draggedItem.qty = item.qty ?? 0;
+  draggedItem.iconKey = item.iconKey;
+  draggedItem.category = item.category ?? null;
+  playUISound("DragStart");
+  refreshUIWindows();
+}
+
+function cancelItemDrag() {
+  if (!draggedItem.active) return;
+  draggedItem.active = false;
+  playUISound("DragEnd");
+  refreshUIWindows();
+}
+
+function dropItemOnMap() {
+  if (!draggedItem.active) return;
+  const player = runtime.player;
+  const iconUri = getIconDataUri(draggedItem.iconKey);
+  if (!iconUri) { cancelItemDrag(); return; }
+
+  // Spawn a ground drop at the player's position
+  const dir = player.facingLeft ? -1 : 1;
+  groundDrops.push({
+    id: draggedItem.id,
+    name: draggedItem.name,
+    qty: draggedItem.source === "inventory" ? draggedItem.qty : 1,
+    iconKey: draggedItem.iconKey,
+    category: draggedItem.category,
+    x: player.x,
+    y: player.y - 20,
+    destX: player.x + dir * (30 + Math.random() * 20),
+    destY: player.y,
+    vx: dir * 2.0,
+    vy: DROP_SPAWN_VSPEED,
+    onGround: false,
+    opacity: 1.0,
+    angle: 0,
+    bobPhase: 0,
+    spawnTime: performance.now(),
+    pickingUp: false,
+    pickupStart: 0,
+  });
+
+  // Remove from source
+  if (draggedItem.source === "inventory") {
+    playerInventory.splice(draggedItem.sourceIndex, 1);
+  } else if (draggedItem.source === "equip") {
+    playerEquipped.delete(draggedItem.sourceIndex);
+  }
+
+  draggedItem.active = false;
+  playUISound("DropItem");
+  refreshUIWindows();
+}
+
+// ── Ground drop physics + rendering ──
+function updateGroundDrops(dt) {
+  for (let i = groundDrops.length - 1; i >= 0; i--) {
+    const drop = groundDrops[i];
+
+    if (drop.pickingUp) {
+      // Fly toward player and fade
+      const elapsed = performance.now() - drop.pickupStart;
+      const t = Math.min(1, elapsed / LOOT_ANIM_DURATION);
+      const player = runtime.player;
+      drop.x += (player.x - drop.x) * 0.15;
+      drop.y += ((player.y - 40) - drop.y) * 0.15;
+      drop.opacity = 1 - t;
+      drop.vy = -4.5;
+      if (t >= 1) {
+        groundDrops.splice(i, 1);
+      }
+      continue;
+    }
+
+    if (!drop.onGround) {
+      drop.vy += DROP_GRAVITY;
+      drop.x += drop.vx;
+      drop.y += drop.vy;
+      drop.angle += 0.2;
+
+      // Check if landed
+      const fh = findFootholdBelow(runtime.map, drop.x, drop.y - 10);
+      if (fh && drop.y >= fh.y) {
+        drop.y = fh.y;
+        drop.x = drop.destX || drop.x;
+        drop.y = drop.destY || drop.y;
+        drop.vx = 0;
+        drop.vy = 0;
+        drop.onGround = true;
+        drop.angle = 0;
+      }
+    } else {
+      // Floating bob animation (C++ cos(moved) * 2.5)
+      drop.bobPhase += DROP_BOB_SPEED;
+      if (drop.bobPhase > Math.PI * 2) drop.bobPhase -= Math.PI * 2;
+    }
+  }
+}
+
+function drawGroundDrops() {
+  const camX = runtime.camera.x;
+  const camY = runtime.camera.y;
+  const halfW = gameViewWidth() / 2;
+  const halfH = gameViewHeight() / 2;
+
+  for (const drop of groundDrops) {
+    const iconUri = getIconDataUri(drop.iconKey);
+    if (!iconUri) continue;
+    const img = _imgCacheByUri.get(iconUri);
+    if (!img) {
+      // Cache the image
+      const newImg = new Image();
+      newImg.src = iconUri;
+      _imgCacheByUri.set(iconUri, newImg);
+      continue;
+    }
+    if (!img.complete) continue;
+
+    const sx = Math.round(drop.x - camX + halfW);
+    const sy = Math.round(drop.y - camY + halfH);
+    const bobY = drop.onGround ? (Math.cos(drop.bobPhase) - 1) * DROP_BOB_AMP : 0;
+
+    ctx.save();
+    ctx.globalAlpha = drop.opacity;
+    ctx.translate(sx, sy + bobY - 16);
+    if (drop.angle !== 0) ctx.rotate(drop.angle);
+    ctx.drawImage(img, -img.width / 2, -img.height / 2);
+    ctx.restore();
+
+    // Draw item name below
+    if (drop.onGround && !drop.pickingUp) {
+      ctx.save();
+      ctx.globalAlpha = drop.opacity * 0.9;
+      ctx.font = '10px "Dotum", Arial, sans-serif';
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      ctx.fillStyle = "#000";
+      ctx.fillText(drop.name, sx + 1, sy + bobY + 1);
+      ctx.fillStyle = "#fff";
+      ctx.fillText(drop.name, sx, sy + bobY);
+      ctx.restore();
+    }
+  }
+}
+
+// Image cache for drop icons
+const _imgCacheByUri = new Map();
+
+function tryLootDrop() {
+  const player = runtime.player;
+  if (!player.onGround) return;
+
+  for (let i = 0; i < groundDrops.length; i++) {
+    const drop = groundDrops[i];
+    if (drop.pickingUp || !drop.onGround) continue;
+    const dx = Math.abs(drop.x - player.x);
+    const dy = Math.abs(drop.y - player.y);
+    if (dx <= DROP_PICKUP_RANGE && dy <= DROP_PICKUP_RANGE) {
+      // Pick it up
+      drop.pickingUp = true;
+      drop.pickupStart = performance.now();
+
+      // Add back to inventory
+      const existing = playerInventory.find(e => e.id === drop.id);
+      if (existing) {
+        existing.qty += drop.qty;
+      } else {
+        const iconKey = drop.category
+          ? loadEquipIcon(drop.id, drop.category)
+          : loadItemIcon(drop.id);
+        playerInventory.push({
+          id: drop.id,
+          name: drop.name,
+          qty: drop.qty,
+          iconKey: iconKey,
+        });
+      }
+
+      playUISound("PickUpItem");
+      refreshUIWindows();
+      return; // One item per loot press (C++ parity: lootenabled = false)
+    }
+  }
 }
 
 function getUIWindowEl(key) {
@@ -771,9 +1013,15 @@ _cursorEl.id = "wz-cursor";
 _cursorEl.style.cssText = "position:fixed;z-index:99999;pointer-events:none;image-rendering:pixelated;display:none;";
 document.body.appendChild(_cursorEl);
 
+// Ghost item element (follows cursor when dragging an item)
+const _ghostItemEl = document.createElement("img");
+_ghostItemEl.id = "ghost-item";
+_ghostItemEl.style.cssText = "position:fixed;z-index:99998;pointer-events:none;image-rendering:pixelated;display:none;opacity:0.6;";
+document.body.appendChild(_ghostItemEl);
+
 function updateCursorElement() {
   if (!wzCursor.loaded) return;
-  if (!wzCursor.visible) { _cursorEl.style.display = "none"; return; }
+  if (!wzCursor.visible) { _cursorEl.style.display = "none"; _ghostItemEl.style.display = "none"; return; }
   const st = wzCursor.states[wzCursor.state] || wzCursor.states[CURSOR_IDLE];
   if (!st) { _cursorEl.style.display = "none"; return; }
   const frame = st.frames[wzCursor.frameIndex % st.frames.length];
@@ -782,6 +1030,19 @@ function updateCursorElement() {
   _cursorEl.style.display = "block";
   _cursorEl.style.left = `${wzCursor.clientX}px`;
   _cursorEl.style.top = `${wzCursor.clientY}px`;
+
+  // Ghost item follows cursor
+  if (draggedItem.active) {
+    const iconUri = getIconDataUri(draggedItem.iconKey);
+    if (iconUri) {
+      if (_ghostItemEl.src !== iconUri) _ghostItemEl.src = iconUri;
+      _ghostItemEl.style.display = "block";
+      _ghostItemEl.style.left = `${wzCursor.clientX + 12}px`;
+      _ghostItemEl.style.top = `${wzCursor.clientY + 12}px`;
+    }
+  } else {
+    _ghostItemEl.style.display = "none";
+  }
 }
 
 function drawWZCursor() {
@@ -797,8 +1058,16 @@ async function preloadUISounds() {
   _uiSoundsPreloaded = true;
   try {
     const uiSoundJson = await fetchJson("/resources/Sound.wz/UI.img.json");
-    for (const name of ["BtMouseClick", "BtMouseOver", "MenuUp", "MenuDown"]) {
+    for (const name of ["BtMouseClick", "BtMouseOver", "MenuUp", "MenuDown", "DragStart", "DragEnd"]) {
       const node = uiSoundJson?.$$?.find(c => (c.$imgdir ?? c.$canvas ?? c.$sound) === name);
+      if (node?.basedata) {
+        _uiSoundCache[name] = `data:audio/mp3;base64,${node.basedata}`;
+      }
+    }
+    // Also preload game sounds
+    const gameSoundJson = await fetchJson("/resources/Sound.wz/Game.img.json");
+    for (const name of ["PickUpItem", "DropItem"]) {
+      const node = gameSoundJson?.$$?.find(c => (c.$imgdir ?? c.$canvas ?? c.$sound) === name);
       if (node?.basedata) {
         _uiSoundCache[name] = `data:audio/mp3;base64,${node.basedata}`;
       }
@@ -872,6 +1141,7 @@ function initUIWindowDrag() {
 const KEYBIND_LABELS = {
   attack: "Attack",
   jump: "Jump",
+  loot: "Loot",
   equip: "Equipment",
   inventory: "Inventory",
   face1: "😣 Pain",
@@ -8233,6 +8503,7 @@ function render() {
     drawHitboxOverlay();
   }
   drawBackgroundLayer(1);
+  drawGroundDrops();
   drawVRBoundsOverflowMask();
   drawChatBubble();
   drawPlayerNameLabel();
@@ -8385,6 +8656,7 @@ function update(dt) {
   updateObjectAnimations(dt * 1000);
   updateTrapHazardCollisions();
   updateBackgroundAnimations(dt * 1000);
+  updateGroundDrops(dt);
   updateCamera(dt);
 
   summaryUpdateAccumulatorMs += dt * 1000;
@@ -8712,6 +8984,8 @@ async function loadMap(mapId, spawnPortalName = null, spawnFromPortalTransfer = 
   runtime.loading.total = 0;
   runtime.loading.loaded = 0;
   runtime.loading.progress = 0;
+  groundDrops.length = 0;
+  cancelItemDrag();
   runtime.loading.label = "Preparing map data...";
 
   // Hide chat UI during loading
@@ -8942,6 +9216,12 @@ function bindInput() {
     setCursorState(CURSOR_CLICKING);
     playUISound("BtMouseClick");
 
+    // If dragging an item and clicking the game canvas, drop it on the map
+    if (draggedItem.active) {
+      dropItemOnMap();
+      return;
+    }
+
     const rect = canvasEl.getBoundingClientRect();
     const cx = (e.clientX - rect.left) * (canvasEl.width / rect.width);
     const cy = (e.clientY - rect.top) * (canvasEl.height / rect.height);
@@ -9033,6 +9313,11 @@ function bindInput() {
     }
 
     if (event.code === "Escape") {
+      if (draggedItem.active) {
+        event.preventDefault();
+        cancelItemDrag();
+        return;
+      }
       if (runtime.npcDialogue.active) {
         event.preventDefault();
         closeNpcDialogue();
@@ -9075,6 +9360,11 @@ function bindInput() {
     // UI window toggles
     if (event.code === runtime.keybinds.equip && !event.repeat) { toggleUIWindow("equip"); return; }
     if (event.code === runtime.keybinds.inventory && !event.repeat) { toggleUIWindow("inventory"); return; }
+    if (event.code === runtime.keybinds.loot && !event.repeat) {
+      event.preventDefault();
+      tryLootDrop();
+      return;
+    }
 
     if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Space",
          "PageUp", "PageDown", "Home", "End", "Tab"].includes(event.code)) {
