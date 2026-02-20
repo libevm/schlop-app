@@ -72,6 +72,14 @@ export function initDatabase(dbPath: string = "./data/maple.db"): Database {
     )
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS credentials (
+      session_id TEXT PRIMARY KEY,
+      password_hash TEXT NOT NULL,
+      claimed_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+
   return db;
 }
 
@@ -132,4 +140,47 @@ export function createDefaultCharacter(
   saveCharacterData(db, sessionId, JSON.stringify(save));
   reserveName(db, sessionId, name);
   return save;
+}
+
+// ─── Account claim / login ──────────────────────────────────────────
+
+export function isAccountClaimed(db: Database, sessionId: string): boolean {
+  const row = db.prepare("SELECT 1 FROM credentials WHERE session_id = ?").get(sessionId);
+  return !!row;
+}
+
+export async function claimAccount(
+  db: Database,
+  sessionId: string,
+  password: string,
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  if (!password || password.length < 4) {
+    return { ok: false, reason: "password_too_short" };
+  }
+  if (isAccountClaimed(db, sessionId)) {
+    return { ok: false, reason: "already_claimed" };
+  }
+  const hash = await Bun.password.hash(password, "bcrypt");
+  db.prepare("INSERT INTO credentials (session_id, password_hash) VALUES (?, ?)").run(sessionId, hash);
+  return { ok: true };
+}
+
+export async function loginAccount(
+  db: Database,
+  name: string,
+  password: string,
+): Promise<{ ok: true; session_id: string } | { ok: false; reason: string }> {
+  const nameRow = db.prepare("SELECT session_id FROM names WHERE name = ?").get(name) as { session_id: string } | null;
+  if (!nameRow) {
+    return { ok: false, reason: "invalid_credentials" };
+  }
+  const credRow = db.prepare("SELECT password_hash FROM credentials WHERE session_id = ?").get(nameRow.session_id) as { password_hash: string } | null;
+  if (!credRow) {
+    return { ok: false, reason: "not_claimed" };
+  }
+  const valid = await Bun.password.verify(password, credRow.password_hash);
+  if (!valid) {
+    return { ok: false, reason: "invalid_credentials" };
+  }
+  return { ok: true, session_id: nameRow.session_id };
 }

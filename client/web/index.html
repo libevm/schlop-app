@@ -13,6 +13,27 @@
     </script>
   </head>
   <body>
+    <!-- Claim Account Modal -->
+    <div id="claim-overlay" class="logout-confirm-overlay hidden">
+      <div class="logout-confirm-panel">
+        <div class="logout-confirm-icon">🔒</div>
+        <div class="logout-confirm-text">Claim your account to log in from any device.</div>
+        <div class="character-create-field" style="text-align:left;margin-bottom:8px">
+          <label class="character-create-label" for="claim-password-input">Password (min 4 characters)</label>
+          <input id="claim-password-input" class="character-create-input" type="password" maxlength="64" autocomplete="new-password" placeholder="Choose a password…" />
+        </div>
+        <div class="character-create-field" style="text-align:left;margin-bottom:12px">
+          <label class="character-create-label" for="claim-password-confirm">Confirm Password</label>
+          <input id="claim-password-confirm" class="character-create-input" type="password" maxlength="64" autocomplete="new-password" placeholder="Confirm password…" />
+        </div>
+        <div id="claim-error" class="character-create-error" style="margin-bottom:8px"></div>
+        <div class="logout-confirm-buttons">
+          <button id="claim-confirm-btn" class="logout-confirm-yes" style="background:rgba(50,140,80,0.6);border-color:rgba(60,170,90,0.6)">Claim Account</button>
+          <button id="claim-cancel-btn" class="logout-confirm-no">Cancel</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Logout Confirmation Modal -->
     <div id="logout-confirm-overlay" class="logout-confirm-overlay hidden">
       <div class="logout-confirm-panel">
@@ -25,23 +46,47 @@
       </div>
     </div>
 
-    <!-- Character Creation Overlay -->
+    <!-- Character Creation / Login Overlay -->
     <div id="character-create-overlay" class="character-create-overlay hidden">
       <div class="character-create-panel">
-        <div class="character-create-header">Create Your Character</div>
-        <div class="character-create-field">
-          <label class="character-create-label" for="character-name-input">Name</label>
-          <input id="character-name-input" class="character-create-input" type="text" maxlength="12" autocomplete="off" placeholder="Enter a name…" />
-          <div id="character-name-error" class="character-create-error"></div>
+        <!-- Tab bar -->
+        <div class="auth-tabs">
+          <button id="auth-tab-login" class="auth-tab active" type="button">Login</button>
+          <button id="auth-tab-create" class="auth-tab" type="button">Create Character</button>
         </div>
-        <div class="character-create-field">
-          <label class="character-create-label">Gender</label>
-          <div class="character-create-gender-row">
-            <button id="gender-male" class="character-create-gender-btn active" type="button">Male</button>
-            <button id="gender-female" class="character-create-gender-btn" type="button">Female</button>
+
+        <!-- Login tab -->
+        <div id="auth-login-view" class="auth-view">
+          <div class="character-create-field">
+            <label class="character-create-label" for="login-name-input">Username</label>
+            <input id="login-name-input" class="character-create-input" type="text" maxlength="12" autocomplete="username" placeholder="Enter your name…" />
           </div>
+          <div class="character-create-field">
+            <label class="character-create-label" for="login-password-input">Password</label>
+            <input id="login-password-input" class="character-create-input" type="password" maxlength="64" autocomplete="current-password" placeholder="Enter password…" />
+          </div>
+          <div id="login-error" class="character-create-error"></div>
+          <button id="login-submit" class="character-create-submit" type="button">Login</button>
+          <div class="auth-hint">Don't have an account? Use the <strong>Create Character</strong> tab.</div>
         </div>
-        <button id="character-create-submit" class="character-create-submit" type="button" disabled>Enter World</button>
+
+        <!-- Create tab -->
+        <div id="auth-create-view" class="auth-view hidden">
+          <div class="character-create-field">
+            <label class="character-create-label" for="character-name-input">Name</label>
+            <input id="character-name-input" class="character-create-input" type="text" maxlength="12" autocomplete="off" placeholder="Enter a name…" />
+            <div id="character-name-error" class="character-create-error"></div>
+          </div>
+          <div class="character-create-field">
+            <label class="character-create-label">Gender</label>
+            <div class="character-create-gender-row">
+              <button id="gender-male" class="character-create-gender-btn active" type="button">Male</button>
+              <button id="gender-female" class="character-create-gender-btn" type="button">Female</button>
+            </div>
+          </div>
+          <button id="character-create-submit" class="character-create-submit" type="button" disabled>Enter World</button>
+          <div class="auth-hint">You can claim your account later in Settings.</div>
+        </div>
       </div>
     </div>
 
@@ -93,6 +138,10 @@
           </div>
           <div class="settings-group">
             <div class="settings-group-label">Account</div>
+            <div id="claim-account-row" class="settings-claim-row">
+              <span id="claim-account-status" class="claim-status">Unclaimed</span>
+              <button id="claim-account-btn" class="settings-claim-btn">Claim Account</button>
+            </div>
             <button id="settings-logout-btn" class="settings-logout-btn">Log Out</button>
           </div>
 

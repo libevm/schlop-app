@@ -41,6 +41,22 @@ const settingsLogoutBtn = document.getElementById("settings-logout-btn");
 const logoutConfirmEl = document.getElementById("logout-confirm-overlay");
 const logoutConfirmYesEl = document.getElementById("logout-confirm-yes");
 const logoutConfirmNoEl = document.getElementById("logout-confirm-no");
+const claimAccountBtn = document.getElementById("claim-account-btn");
+const claimStatusEl = document.getElementById("claim-account-status");
+const claimOverlayEl = document.getElementById("claim-overlay");
+const claimPasswordInput = document.getElementById("claim-password-input");
+const claimPasswordConfirm = document.getElementById("claim-password-confirm");
+const claimErrorEl = document.getElementById("claim-error");
+const claimConfirmBtn = document.getElementById("claim-confirm-btn");
+const claimCancelBtn = document.getElementById("claim-cancel-btn");
+const authTabLogin = document.getElementById("auth-tab-login");
+const authTabCreate = document.getElementById("auth-tab-create");
+const authLoginView = document.getElementById("auth-login-view");
+const authCreateView = document.getElementById("auth-create-view");
+const loginNameInput = document.getElementById("login-name-input");
+const loginPasswordInput = document.getElementById("login-password-input");
+const loginErrorEl = document.getElementById("login-error");
+const loginSubmitBtn = document.getElementById("login-submit");
 const canvasEl = document.getElementById("map-canvas");
 const ctx = canvasEl.getContext("2d", { alpha: false, desynchronized: true }) || canvasEl.getContext("2d");
 if (!ctx) {
@@ -886,64 +902,94 @@ function showCharacterCreateOverlay() {
     const femaleBtn = document.getElementById("gender-female");
     const submitBtn = document.getElementById("character-create-submit");
     if (!overlay || !nameInput || !submitBtn) {
-      // Fallback if HTML elements missing
-      resolve({ name: "MapleWeb", gender: false });
+      resolve({ name: "MapleWeb", gender: false, loggedIn: false });
       return;
     }
 
     overlay.classList.remove("hidden");
-    nameInput.focus();
-    let selectedGender = false; // false = male
+    let selectedGender = false;
 
+    // ── Tab switching ──
+    function showLoginTab() {
+      authTabLogin?.classList.add("active");
+      authTabCreate?.classList.remove("active");
+      authLoginView?.classList.remove("hidden");
+      authCreateView?.classList.add("hidden");
+      loginNameInput?.focus();
+    }
+    function showCreateTab() {
+      authTabCreate?.classList.add("active");
+      authTabLogin?.classList.remove("active");
+      authCreateView?.classList.remove("hidden");
+      authLoginView?.classList.add("hidden");
+      nameInput?.focus();
+    }
+    authTabLogin?.addEventListener("click", showLoginTab);
+    authTabCreate?.addEventListener("click", showCreateTab);
+
+    // Default to Login tab in online mode, Create in offline
+    if (window.__MAPLE_ONLINE__) {
+      showLoginTab();
+    } else {
+      showCreateTab();
+      // Hide login tab in offline mode
+      if (authTabLogin) authTabLogin.style.display = "none";
+    }
+
+    // ── Login flow ──
+    async function handleLogin() {
+      const name = loginNameInput?.value.trim() || "";
+      const password = loginPasswordInput?.value || "";
+      if (!name || !password) {
+        if (loginErrorEl) loginErrorEl.textContent = "Enter username and password";
+        return;
+      }
+      if (loginSubmitBtn) { loginSubmitBtn.disabled = true; loginSubmitBtn.textContent = "Logging in…"; }
+      try {
+        const resp = await fetch("/api/character/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, password }),
+        });
+        const result = await resp.json();
+        if (!result.ok) {
+          if (loginErrorEl) loginErrorEl.textContent = result.error?.message || "Login failed";
+          if (loginSubmitBtn) { loginSubmitBtn.disabled = false; loginSubmitBtn.textContent = "Login"; }
+          return;
+        }
+        // Replace session with the server-provided one
+        localStorage.setItem(SESSION_KEY, result.session_id);
+        // Reload page so everything initializes with the correct session
+        window.location.reload();
+      } catch {
+        if (loginErrorEl) loginErrorEl.textContent = "Server error — try again";
+        if (loginSubmitBtn) { loginSubmitBtn.disabled = false; loginSubmitBtn.textContent = "Login"; }
+      }
+    }
+    loginSubmitBtn?.addEventListener("click", handleLogin);
+    loginPasswordInput?.addEventListener("keydown", (e) => { if (e.key === "Enter") handleLogin(); });
+    loginNameInput?.addEventListener("keydown", (e) => { if (e.key === "Enter") loginPasswordInput?.focus(); });
+
+    // ── Create flow ──
     function validateName() {
       const val = nameInput.value.trim();
-      if (val.length === 0) {
-        nameError.textContent = "";
-        submitBtn.disabled = true;
-        return;
-      }
-      if (val.length < 2) {
-        nameError.textContent = "Name must be at least 2 characters";
-        submitBtn.disabled = true;
-        return;
-      }
-      if (val.length > 12) {
-        nameError.textContent = "Name must be 12 characters or less";
-        submitBtn.disabled = true;
-        return;
-      }
-      if (!/^[a-zA-Z0-9 ]+$/.test(val)) {
-        nameError.textContent = "Only letters, numbers, and spaces allowed";
-        submitBtn.disabled = true;
-        return;
-      }
-      if (val.startsWith(" ") || val.endsWith(" ")) {
-        nameError.textContent = "No leading or trailing spaces";
-        submitBtn.disabled = true;
-        return;
-      }
+      if (val.length === 0) { nameError.textContent = ""; submitBtn.disabled = true; return; }
+      if (val.length < 2) { nameError.textContent = "Name must be at least 2 characters"; submitBtn.disabled = true; return; }
+      if (val.length > 12) { nameError.textContent = "Name must be 12 characters or less"; submitBtn.disabled = true; return; }
+      if (!/^[a-zA-Z0-9 ]+$/.test(val)) { nameError.textContent = "Only letters, numbers, and spaces allowed"; submitBtn.disabled = true; return; }
+      if (val.startsWith(" ") || val.endsWith(" ")) { nameError.textContent = "No leading or trailing spaces"; submitBtn.disabled = true; return; }
       nameError.textContent = "";
       submitBtn.disabled = false;
     }
-
     nameInput.addEventListener("input", validateName);
 
-    maleBtn.addEventListener("click", () => {
-      selectedGender = false;
-      maleBtn.classList.add("active");
-      femaleBtn.classList.remove("active");
-    });
-    femaleBtn.addEventListener("click", () => {
-      selectedGender = true;
-      femaleBtn.classList.add("active");
-      maleBtn.classList.remove("active");
-    });
+    maleBtn?.addEventListener("click", () => { selectedGender = false; maleBtn.classList.add("active"); femaleBtn?.classList.remove("active"); });
+    femaleBtn?.addEventListener("click", () => { selectedGender = true; femaleBtn.classList.add("active"); maleBtn?.classList.remove("active"); });
 
-    async function submit() {
+    async function handleCreate() {
       const val = nameInput.value.trim();
       if (submitBtn.disabled || val.length < 2) return;
 
-      // Online mode: create character on server (name reservation)
       if (window.__MAPLE_ONLINE__) {
         submitBtn.disabled = true;
         submitBtn.textContent = "Creating…";
@@ -960,7 +1006,7 @@ function showCharacterCreateOverlay() {
             submitBtn.textContent = "Enter World";
             return;
           }
-        } catch (e) {
+        } catch {
           nameError.textContent = "Server error — try again";
           submitBtn.disabled = false;
           submitBtn.textContent = "Enter World";
@@ -969,13 +1015,11 @@ function showCharacterCreateOverlay() {
       }
 
       overlay.classList.add("hidden");
-      resolve({ name: val, gender: selectedGender });
+      resolve({ name: val, gender: selectedGender, loggedIn: false });
     }
 
-    submitBtn.addEventListener("click", submit);
-    nameInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") submit();
-    });
+    submitBtn.addEventListener("click", handleCreate);
+    nameInput.addEventListener("keydown", (e) => { if (e.key === "Enter") handleCreate(); });
   });
 }
 
@@ -11178,6 +11222,61 @@ settingsFixedResEl?.addEventListener("change", () => {
 settingsMinimapToggleEl?.addEventListener("change", () => {
   runtime.settings.minimapVisible = settingsMinimapToggleEl.checked;
   saveSettings();
+});
+
+// Claim account button
+let _accountClaimed = false;
+function updateClaimUI() {
+  if (_accountClaimed) {
+    if (claimStatusEl) { claimStatusEl.textContent = "Claimed ✓"; claimStatusEl.classList.add("claimed"); }
+    if (claimAccountBtn) claimAccountBtn.disabled = true;
+  } else {
+    if (claimStatusEl) { claimStatusEl.textContent = "Unclaimed"; claimStatusEl.classList.remove("claimed"); }
+    if (claimAccountBtn) claimAccountBtn.disabled = false;
+  }
+}
+// Check claim status on load (online mode)
+if (window.__MAPLE_ONLINE__) {
+  fetch("/api/character/claimed", { headers: { "Authorization": "Bearer " + sessionId } })
+    .then(r => r.json()).then(b => { if (b.ok) { _accountClaimed = b.claimed; updateClaimUI(); } })
+    .catch(() => {});
+}
+claimAccountBtn?.addEventListener("click", () => {
+  if (claimOverlayEl) claimOverlayEl.classList.remove("hidden");
+  if (claimPasswordInput) claimPasswordInput.value = "";
+  if (claimPasswordConfirm) claimPasswordConfirm.value = "";
+  if (claimErrorEl) claimErrorEl.textContent = "";
+  claimPasswordInput?.focus();
+});
+claimCancelBtn?.addEventListener("click", () => {
+  if (claimOverlayEl) claimOverlayEl.classList.add("hidden");
+});
+claimConfirmBtn?.addEventListener("click", async () => {
+  const pw = claimPasswordInput?.value || "";
+  const confirm = claimPasswordConfirm?.value || "";
+  if (pw.length < 4) { if (claimErrorEl) claimErrorEl.textContent = "Password must be at least 4 characters"; return; }
+  if (pw !== confirm) { if (claimErrorEl) claimErrorEl.textContent = "Passwords do not match"; return; }
+  if (claimConfirmBtn) claimConfirmBtn.disabled = true;
+  try {
+    const resp = await fetch("/api/character/claim", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + sessionId },
+      body: JSON.stringify({ password: pw }),
+    });
+    const result = await resp.json();
+    if (!result.ok) {
+      if (claimErrorEl) claimErrorEl.textContent = result.error?.message || "Claim failed";
+      if (claimConfirmBtn) claimConfirmBtn.disabled = false;
+      return;
+    }
+    _accountClaimed = true;
+    updateClaimUI();
+    if (claimOverlayEl) claimOverlayEl.classList.add("hidden");
+    addSystemChatMessage("✅ Account claimed! You can now log in with your username and password.");
+  } catch {
+    if (claimErrorEl) claimErrorEl.textContent = "Server error — try again";
+    if (claimConfirmBtn) claimConfirmBtn.disabled = false;
+  }
 });
 
 // Logout button

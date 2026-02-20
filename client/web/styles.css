@@ -987,3 +987,68 @@ button {
 .character-create-submit:not(:disabled):hover {
   opacity: 0.9;
 }
+
+/* Auth tabs (Login / Create Character) */
+.auth-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 20px;
+  border-bottom: 1px solid rgba(200,170,100,0.2);
+}
+.auth-tab {
+  flex: 1;
+  padding: 8px 0;
+  font: 12px 'Dotum', Arial, sans-serif;
+  color: rgba(232,224,212,0.45);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s;
+  letter-spacing: 0.3px;
+}
+.auth-tab:hover { color: rgba(232,224,212,0.7); }
+.auth-tab.active {
+  color: #d4b96a;
+  border-bottom-color: #d4b96a;
+  font-weight: 600;
+}
+.auth-view.hidden { display: none; }
+.auth-hint {
+  margin-top: 14px;
+  font-size: 11px;
+  color: rgba(232,224,212,0.4);
+  text-align: center;
+  line-height: 1.4;
+}
+.auth-hint strong { color: rgba(232,224,212,0.6); }
+
+/* Claim account row in settings */
+.settings-claim-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.claim-status {
+  font: 11px 'Dotum', Arial, sans-serif;
+  color: rgba(200,200,200,0.5);
+}
+.claim-status.claimed {
+  color: #7dd4a0;
+}
+.settings-claim-btn {
+  padding: 4px 12px;
+  font: bold 11px 'Dotum', Arial, sans-serif;
+  background: rgba(50,140,80,0.35);
+  color: #a0e8b8;
+  border: 1px solid rgba(60,170,90,0.4);
+  border-radius: 4px;
+  cursor: none;
+  transition: background 0.15s;
+}
+.settings-claim-btn:hover { background: rgba(60,170,90,0.55); }
+.settings-claim-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}

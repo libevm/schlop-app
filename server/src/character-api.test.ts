@@ -207,6 +207,105 @@ describe("character API", () => {
     expect(body.error.code).toBe("NAME_TAKEN");
   });
 
+  // ── Claim ──
+
+  test("POST /api/character/claim sets password", async () => {
+    const res = await fetch(`${baseUrl}/api/character/claim`, {
+      method: "POST",
+      headers: authHeaders(session1),
+      body: JSON.stringify({ password: "test1234" }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+  });
+
+  test("POST /api/character/claim rejects double claim", async () => {
+    const res = await fetch(`${baseUrl}/api/character/claim`, {
+      method: "POST",
+      headers: authHeaders(session1),
+      body: JSON.stringify({ password: "other" }),
+    });
+    expect(res.status).toBe(409);
+  });
+
+  test("POST /api/character/claim rejects short password", async () => {
+    const res = await fetch(`${baseUrl}/api/character/claim`, {
+      method: "POST",
+      headers: authHeaders(session2),
+      body: JSON.stringify({ password: "ab" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  test("GET /api/character/claimed returns claimed status", async () => {
+    const res = await fetch(`${baseUrl}/api/character/claimed`, {
+      headers: authHeaders(session1),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.claimed).toBe(true);
+
+    const res2 = await fetch(`${baseUrl}/api/character/claimed`, {
+      headers: authHeaders(session2),
+    });
+    const body2 = await res2.json();
+    expect(body2.claimed).toBe(false);
+  });
+
+  // ── Login ──
+
+  test("POST /api/character/login succeeds with correct credentials", async () => {
+    const res = await fetch(`${baseUrl}/api/character/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "TestPlayer", password: "test1234" }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(body.session_id).toBe(session1);
+  });
+
+  test("POST /api/character/login rejects wrong password", async () => {
+    const res = await fetch(`${baseUrl}/api/character/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "TestPlayer", password: "wrong" }),
+    });
+    expect(res.status).toBe(401);
+    const body = await res.json();
+    expect(body.error.code).toBe("INVALID_CREDENTIALS");
+  });
+
+  test("POST /api/character/login rejects unclaimed account", async () => {
+    const res = await fetch(`${baseUrl}/api/character/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "NewName2", password: "anything" }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  test("POST /api/character/login rejects unknown name", async () => {
+    const res = await fetch(`${baseUrl}/api/character/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "NoSuchPlayer", password: "test" }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  test("POST /api/character/login requires no auth header", async () => {
+    // No Authorization header — should still work
+    const res = await fetch(`${baseUrl}/api/character/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "TestPlayer", password: "test1234" }),
+    });
+    expect(res.status).toBe(200);
+  });
+
   // ── CORS preflight ──
 
   test("OPTIONS /api/character/load returns CORS headers", async () => {

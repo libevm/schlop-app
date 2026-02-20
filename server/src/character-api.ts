@@ -13,6 +13,9 @@ import {
   loadCharacterData,
   reserveName,
   createDefaultCharacter,
+  isAccountClaimed,
+  claimAccount,
+  loginAccount,
 } from "./db.ts";
 
 // ─── Helpers ────────────────────────────────────────────────────────
@@ -59,14 +62,22 @@ export async function handleCharacterRequest(
   // Only handle /api/character/* routes
   if (!path.startsWith("/api/character/")) return null;
 
-  // Extract session ID from header or query param (sendBeacon can't set headers)
-  const sessionId = extractSessionId(request) || url.searchParams.get("session");
-  if (!sessionId) {
-    return jsonResponse(
-      { ok: false, error: { code: "UNAUTHORIZED", message: "Missing or invalid Authorization header" } },
-      401,
-    );
+  // Login endpoint doesn't require auth (it IS the auth)
+  if (method === "POST" && path === "/api/character/login") {
+    // Handled below — skip auth check
+  } else {
+    // Extract session ID from header or query param (sendBeacon can't set headers)
+    const sessionIdCheck = extractSessionId(request) || url.searchParams.get("session");
+    if (!sessionIdCheck) {
+      return jsonResponse(
+        { ok: false, error: { code: "UNAUTHORIZED", message: "Missing or invalid Authorization header" } },
+        401,
+      );
+    }
   }
+
+  // Session ID used by most endpoints (may be null for login)
+  const sessionId = extractSessionId(request) || url.searchParams.get("session") || "";
 
   // ── POST /api/character/create ──
   if (method === "POST" && path === "/api/character/create") {
@@ -183,6 +194,77 @@ export async function handleCharacterRequest(
       );
     }
     return jsonResponse({ ok: true });
+  }
+
+  // ── POST /api/character/claim ──
+  if (method === "POST" && path === "/api/character/claim") {
+    let body: { password?: string };
+    try {
+      body = await request.json();
+    } catch {
+      return jsonResponse(
+        { ok: false, error: { code: "INVALID_BODY", message: "Invalid JSON body" } },
+        400,
+      );
+    }
+
+    const password = typeof body.password === "string" ? body.password : "";
+    if (password.length < 4) {
+      return jsonResponse(
+        { ok: false, error: { code: "INVALID_PASSWORD", message: "Password must be at least 4 characters" } },
+        400,
+      );
+    }
+
+    const result = await claimAccount(db, sessionId, password);
+    if (!result.ok) {
+      const msg = result.reason === "already_claimed" ? "Account is already claimed" : "Could not claim account";
+      return jsonResponse(
+        { ok: false, error: { code: "ALREADY_CLAIMED", message: msg } },
+        409,
+      );
+    }
+    return jsonResponse({ ok: true });
+  }
+
+  // ── GET /api/character/claimed ──
+  if (method === "GET" && path === "/api/character/claimed") {
+    return jsonResponse({ ok: true, claimed: isAccountClaimed(db, sessionId) });
+  }
+
+  // ── POST /api/character/login (no auth required — this IS the auth) ──
+  if (method === "POST" && path === "/api/character/login") {
+    let body: { name?: string; password?: string };
+    try {
+      body = await request.json();
+    } catch {
+      return jsonResponse(
+        { ok: false, error: { code: "INVALID_BODY", message: "Invalid JSON body" } },
+        400,
+      );
+    }
+
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    const password = typeof body.password === "string" ? body.password : "";
+
+    if (!name || !password) {
+      return jsonResponse(
+        { ok: false, error: { code: "INVALID_BODY", message: "Name and password are required" } },
+        400,
+      );
+    }
+
+    const result = await loginAccount(db, name, password);
+    if (!result.ok) {
+      const msg = result.reason === "not_claimed"
+        ? "This account has not been claimed yet"
+        : "Invalid username or password";
+      return jsonResponse(
+        { ok: false, error: { code: "INVALID_CREDENTIALS", message: msg } },
+        401,
+      );
+    }
+    return jsonResponse({ ok: true, session_id: result.session_id });
   }
 
   // Unknown /api/character/ route
