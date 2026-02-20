@@ -668,6 +668,16 @@ export function handleClientMessage(
           meso: Number(s.meso) ?? client.stats.meso,
         };
       }
+      // Merge achievements from client (take max — server is authoritative but client may have offline data)
+      if (msg.achievements && typeof msg.achievements === "object" && !Array.isArray(msg.achievements)) {
+        const clientAch = msg.achievements as Record<string, unknown>;
+        for (const [key, val] of Object.entries(clientAch)) {
+          const n = Number(val);
+          if (typeof n === "number" && n > 0) {
+            client.achievements[key] = Math.max(client.achievements[key] || 0, n);
+          }
+        }
+      }
       // Persist to DB immediately
       persistClientState(client, _moduleDb);
       break;

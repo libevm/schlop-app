@@ -355,6 +355,7 @@ const runtime = {
     fallStartY: 0,
     knockbackClimbLockUntil: 0,
     chairId: 0,  // 0 = no chair, otherwise item ID of active chair
+    achievements: {},  // quest_name → completion count (server-authoritative, synced on jq_reward)
   },
   input: {
     enabled: false,
@@ -1037,7 +1038,7 @@ function buildCharacterSave() {
       slot: it.slot,
       category: it.category || null,
     })),
-    achievements: {},
+    achievements: { ...runtime.player.achievements },
     version: 1,
     saved_at: new Date().toISOString(),
   };
@@ -1111,6 +1112,10 @@ function applyCharacterSave(save) {
     if (isItemStackable(it.item_id)) loadItemWzInfo(it.item_id);
   }
 
+  // Achievements (server-authoritative, loaded from save)
+  const savedAch = save.achievements;
+  p.achievements = (savedAch && typeof savedAch === "object" && !Array.isArray(savedAch)) ? { ...savedAch } : {};
+
   refreshUIWindows();
   rlog(`applyCharacterSave: ${p.name} Lv${p.level} ${p.job}`);
   return {
@@ -1135,6 +1140,7 @@ function saveCharacter() {
           inventory: save.inventory,
           equipment: save.equipment,
           stats: save.stats,
+          achievements: save.achievements,
         });
       }
       // Also send via REST as backup (handles case where WS is down)
@@ -1962,6 +1968,10 @@ function handleServerMessage(msg) {
         });
       }
 
+      // Update local achievements
+      const completions = Number(msg.completions) || 1;
+      runtime.player.achievements[questName] = completions;
+
       // Grey system message in chat
       const sysMsg = {
         name: "",
@@ -1972,7 +1982,7 @@ function handleServerMessage(msg) {
       runtime.chat.history.push(sysMsg);
       if (runtime.chat.history.length > runtime.chat.maxHistory) runtime.chat.history.shift();
       appendChatLogMessage(sysMsg);
-      rlog(`[JQ] Reward: ${itemName} (${itemId}) for ${questName}`);
+      rlog(`[JQ] Reward: ${itemName} (${itemId}) for ${questName}, completions=${completions}`);
       break;
     }
 
