@@ -10333,7 +10333,17 @@ function drawMinimap() {
     ctx.fill();
   }
 
-  // Draw player marker
+  // Draw remote player markers (C++ draw_movable_markers → marker["another"])
+  for (const [, rp] of remotePlayers) {
+    const rpx = toMinimapX(rp.x);
+    const rpy = toMinimapY(rp.y);
+    ctx.fillStyle = "#60a5fa"; // blue — C++ "another" marker color
+    ctx.beginPath();
+    ctx.arc(rpx, rpy, MINIMAP_PLAYER_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Draw player marker (C++ draw_movable_markers → marker["user"])
   const px = toMinimapX(runtime.player.x);
   const py = toMinimapY(runtime.player.y);
   ctx.fillStyle = "#22c55e";

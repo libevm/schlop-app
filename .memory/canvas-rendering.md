@@ -690,6 +690,8 @@ Items can be dropped on the map and looted by the player.
   NPCs with known scripts (taxis, Spinel) show specific options. NPCs with unknown scripts
   show flavor text + travel options to all major towns. NPCs without scripts show flavor text.
   Cursor changes to pointer on NPC hover. Option highlight on hover with gold color.
-- **Minimap**: collapsible panel showing map image with player (blue dot), portal (yellow dots),
-  mob (red dots), NPC (green dots), reactor (purple dots) markers. Toggle via settings.
+- **Minimap**: collapsible panel showing map image with player (green dot + white border),
+  remote players (blue dots, C++ `marker["another"]`), portal (yellow dots),
+  NPC (light blue dots), reactor (purple dots) markers. Toggle via settings.
   Click +/− to collapse/expand. World-to-minimap coordinate transform using map center offset and scale.
+  Remote player positions interpolated from server snapshots — appear on minimap in real-time.

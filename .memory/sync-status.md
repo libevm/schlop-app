@@ -1,6 +1,6 @@
 # .memory Sync Status
 
-Last synced: 2026-02-20T07:15:00+11:00
+Last synced: 2026-02-20T08:30:00+11:00
 Status: ✅ Synced
 
 ## Current authoritative memory files
@@ -24,7 +24,7 @@ Status: ✅ Synced
 - CI: `bun run ci` ✅ (167 tests across 6 suites)
 - `runtime.player.face_id` / `runtime.player.hair_id`: stored character state (not derived from gender)
 - FPS counter includes ping display (color-coded, 10s interval)
-- Latest commit: `95063ac` on `origin/main`
+- Latest commit: `605f177` on `origin/main`
 
 ## Key Architecture Decisions
 
@@ -89,6 +89,32 @@ Status: ✅ Synced
 - Golden pulsing animation (1.5s cycle, scale 1→1.08)
 - Red "!" notification badge with bounce
 - Standard 34px icon-only button, aligned with other HUD buttons
+
+### Name reclaiming
+- Unclaimed (no password) + offline (no WS) names are reclaimable
+- `releaseUnclaimedName(db, name, roomManager)`: checks credentials + getClient
+- Claimed names permanently protected; online unclaimed names protected
+- `saveCharacterData` is UPDATE-only; `insertCharacterData` for create only
+- Integration tests verify online protection + offline reclaim
+
+### Mob authority system (server-synced mobs)
+- First player in a map becomes mob authority — runs AI locally, sends at 10Hz
+- `RoomManager.mobAuthority: Map<mapId, sessionId>` tracks per-map authority
+- `map_state` includes `mob_authority: boolean` flag
+- On authority leave: server reassigns + sends `mob_authority { active: true }`
+- Authority sends `mob_state { mobs: [...] }` — positions, stances, hp, dead/dying
+- Non-authority clients apply received positions, skip local AI/physics
+- Non-authority attacks: `applyAttackToMobVisualOnly()` → local damage numbers + sends `mob_damage` to server
+- Authority receives `mob_damage` → applies HP, knockback, hit stance, death
+- `updateMobCombatStates` guarded: non-authority skips dying/respawn logic
+- Mob touch collisions still local (player taking damage from mob contact)
+- Traps: no sync needed — static map data, collision is local
+- `_isMobAuthority` reset on `loadMap` (reassigned by `map_state`)
+- Offline mode: mobs run locally as before (no authority system)
+
+### Drop expiry
+- Server sweeps every 5s, removes drops older than 180s, broadcasts `drop_expire`
+- Client: 2s fade-out animation on expire; offline fallback timer
 
 ### File organization
 - Split `app.js` into modules before Phase 4: `net.js`, `save.js`, `ui-character-create.js`

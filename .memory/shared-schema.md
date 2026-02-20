@@ -411,6 +411,40 @@ Sent to ALL players. Looter adds item to inventory; others animate pickup.
 ```
 Sent when a drop has been on the ground for 180 seconds. Client fades it out over 2s.
 
+### `mob_authority` — Mob authority assignment
+```json
+{ "type": "mob_authority", "active": true }
+```
+Sent to the new mob authority when the previous one leaves.
+
+### `mob_state` — Mob positions/states from authority (10Hz, broadcast to non-authority)
+```json
+{
+  "type": "mob_state",
+  "mobs": [
+    {
+      "idx": 0,
+      "x": 100, "y": 200,
+      "hspeed": 1.5,
+      "facing": -1,
+      "stance": "move",
+      "behavior": "move",
+      "hp": 80,
+      "dead": false, "dying": false,
+      "nameVisible": true,
+      "respawnAt": 0
+    }
+  ]
+}
+```
+Only accepted from the mob authority client. Relayed to all others in the room.
+
+### `mob_damage` — Remote player hit a mob (broadcast to room excluding sender)
+```json
+{ "type": "mob_damage", "attacker_id": "abc", "mob_idx": 0, "damage": 45, "direction": 1 }
+```
+Server adds `attacker_id` and relays. Authority applies HP/knockback/death.
+
 ### Global (sent to ALL connected players)
 
 ### `global_level_up` — Celebration broadcast (level ≥ 10)
