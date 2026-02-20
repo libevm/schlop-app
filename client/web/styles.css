@@ -1117,16 +1117,62 @@ button {
 }
 .auth-hint strong { color: rgba(232,224,212,0.6); }
 
-/* Claim account HUD button glow */
-@keyframes claim-glow {
-  0%, 100% { box-shadow: 0 0 6px rgba(80, 200, 120, 0.4), 0 0 12px rgba(80, 200, 120, 0.15); }
-  50% { box-shadow: 0 0 10px rgba(80, 200, 120, 0.7), 0 0 20px rgba(80, 200, 120, 0.3); }
+/* Claim account HUD button — attention-grabbing pulse */
+@keyframes claim-pulse {
+  0%, 100% {
+    box-shadow: 0 0 6px rgba(251, 191, 36, 0.5), 0 0 14px rgba(251, 191, 36, 0.2);
+    border-color: rgba(251, 191, 36, 0.6);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 14px rgba(251, 191, 36, 0.8), 0 0 28px rgba(251, 191, 36, 0.35), 0 0 40px rgba(251, 191, 36, 0.12);
+    border-color: rgba(251, 191, 36, 0.9);
+    transform: scale(1.08);
+  }
+}
+@keyframes badge-bounce {
+  0%, 100% { transform: translate(30%, -30%) scale(1); }
+  50% { transform: translate(30%, -30%) scale(1.2); }
+}
+.claim-hud-wide {
+  width: auto !important;
+  padding: 0 10px !important;
+  gap: 5px;
+}
+.claim-btn-label {
+  font-size: 11px;
+  font-weight: 700;
+  font-family: "Dotum", "Arial", sans-serif;
+  letter-spacing: 0.3px;
 }
 .claim-hud-glow:not(.hud-hidden) {
-  animation: claim-glow 2s ease-in-out infinite;
-  border-color: rgba(80, 200, 120, 0.5) !important;
-  color: #7dd4a0 !important;
+  animation: claim-pulse 1.5s ease-in-out infinite;
+  border-color: rgba(251, 191, 36, 0.6) !important;
+  color: #fbbf24 !important;
+  background: rgba(40, 30, 0, 0.7) !important;
 }
 .claim-hud-glow:not(.hud-hidden):hover {
-  background: rgba(60, 170, 90, 0.25) !important;
+  background: rgba(60, 45, 0, 0.85) !important;
+  color: #fde68a !important;
+  border-color: #fbbf24 !important;
+}
+/* Notification badge */
+.claim-hud-glow:not(.hud-hidden)::after {
+  content: "!";
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 16px;
+  height: 16px;
+  background: #ef4444;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: "Dotum", "Arial", sans-serif;
+  line-height: 16px;
+  text-align: center;
+  border-radius: 50%;
+  border: 1.5px solid rgba(0,0,0,0.3);
+  animation: badge-bounce 1.5s ease-in-out infinite;
+  pointer-events: none;
 }

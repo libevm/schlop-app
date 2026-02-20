@@ -941,6 +941,47 @@ async function loadCharacter() {
  * Show the character creation overlay. Returns a promise that resolves
  * with { name, gender } when the user submits.
  */
+function showDuplicateLoginOverlay() {
+  // Full-screen blocking overlay — cannot dismiss except by action
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.style.cssText = "cursor: none; z-index: 200000;";
+  overlay.innerHTML = `
+    <div class="modal-panel" style="max-width: 340px;">
+      <div class="modal-titlebar"><span class="modal-title">Already Logged In</span></div>
+      <div class="modal-body" style="text-align: center; padding: 16px 20px;">
+        <div style="font-size: 28px; margin-bottom: 8px;">⚠️</div>
+        <p class="modal-desc" style="margin-bottom: 14px;">This character is already logged in from another session.</p>
+        <p class="modal-desc" style="margin-bottom: 16px; font-size: 10px; color: #666;">Close the other tab or wait for it to disconnect, then try again.</p>
+        <div class="modal-buttons">
+          <button class="modal-btn modal-btn-ok" id="dup-login-retry">Retry</button>
+          <button class="modal-btn modal-btn-danger" id="dup-login-logout">Log Out</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  overlay.querySelector("#dup-login-retry").addEventListener("click", async () => {
+    overlay.remove();
+    _duplicateLoginBlocked = false;
+    const ok = await connectWebSocketAsync();
+    if (ok) {
+      // Now safe to load the map
+      const mapId = runtime.mapId || "100000001";
+      await loadMap(mapId);
+      if (_wsConnected) wsSend({ type: "enter_map", map_id: runtime.mapId });
+    }
+  });
+  overlay.querySelector("#dup-login-logout").addEventListener("click", () => {
+    localStorage.removeItem("maple_session_id");
+    localStorage.removeItem("mapleweb.save.v1");
+    localStorage.removeItem("mapleweb.settings.v1");
+    localStorage.removeItem("mapleweb.keybinds.v1");
+    window.location.reload();
+  });
+}
+
 function showCharacterCreateOverlay() {
   return new Promise((resolve) => {
     const overlay = document.getElementById("character-create-overlay");
@@ -1082,6 +1123,9 @@ let _wsReconnectTimer = null;
 let _lastPosSendTime = 0;
 let _wsPingSentAt = 0;
 let _wsPingMs = -1; // -1 = no measurement yet
+let _lastChatSendTime = 0; // 1s cooldown between chat messages
+let _lastEmoteTime = 0;    // 1s cooldown between emote changes
+let _duplicateLoginBlocked = false; // true if 4006 close received
 
 /** sessionId → RemotePlayer */
 const remotePlayers = new Map();
@@ -1115,8 +1159,22 @@ function createRemotePlayer(id, name, look, x, y, action, facing) {
     chatBubble: null, chatBubbleExpires: 0,
     attacking: false, attackStance: "",
     climbing: false,
+    // Face expression (emote) state
+    faceExpression: "default",
+    faceFrameIndex: 0,
+    faceFrameTimer: 0,
+    faceExpressionExpires: 0,
   };
 }
+
+/** Connect WebSocket and wait for auth to succeed. Returns false if blocked (4006). */
+function connectWebSocketAsync() {
+  return new Promise((resolve) => {
+    _wsAuthResolve = resolve;
+    connectWebSocket();
+  });
+}
+let _wsAuthResolve = null;
 
 function connectWebSocket() {
   if (!window.__MAPLE_ONLINE__) return;
@@ -1136,6 +1194,8 @@ function connectWebSocket() {
     try {
       const msg = JSON.parse(event.data);
       handleServerMessage(msg);
+      // First message received = auth accepted
+      if (_wsAuthResolve) { const r = _wsAuthResolve; _wsAuthResolve = null; r(true); }
     } catch {}
   };
 
@@ -1147,10 +1207,12 @@ function connectWebSocket() {
     remoteEquipData.clear();
     remoteTemplateCache.clear();
 
-    // Already logged in from another tab/session — don't reconnect
+    // Already logged in from another tab/session — block the game
     if (event.code === 4006) {
       rlog("WS rejected: already logged in from another session");
-      addSystemChatMessage("⚠ This character is already logged in elsewhere. Close the other session to connect.");
+      _duplicateLoginBlocked = true;
+      if (_wsAuthResolve) { const r = _wsAuthResolve; _wsAuthResolve = null; r(false); }
+      showDuplicateLoginOverlay();
       return;
     }
 
@@ -1241,7 +1303,12 @@ function handleServerMessage(msg) {
 
     case "player_face": {
       const rp = remotePlayers.get(msg.id);
-      if (rp) rp.faceExpression = msg.expression;
+      if (rp) {
+        rp.faceExpression = msg.expression;
+        rp.faceFrameIndex = 0;
+        rp.faceFrameTimer = 0;
+        rp.faceExpressionExpires = performance.now() + 2500;
+      }
       break;
     }
 
@@ -1465,6 +1532,22 @@ function updateRemotePlayers(dt) {
         }
       }
     }
+
+    // ── 3. Face expression animation (emotes) ──
+    if (rp.faceExpression !== "default" && now < rp.faceExpressionExpires) {
+      rp.faceFrameTimer += dt * 1000;
+      if (rp.faceFrameTimer >= 200) {
+        rp.faceFrameTimer -= 200;
+        rp.faceFrameIndex++;
+        // Face expressions typically have 3-4 frames; just loop
+        const maxFaceFrames = 4;
+        if (rp.faceFrameIndex >= maxFaceFrames) rp.faceFrameIndex = 0;
+      }
+    } else if (rp.faceExpression !== "default" && now >= rp.faceExpressionExpires) {
+      rp.faceExpression = "default";
+      rp.faceFrameIndex = 0;
+      rp.faceFrameTimer = 0;
+    }
   }
 }
 
@@ -1502,8 +1585,8 @@ function getRemoteFrameCount(rp) {
 function getRemoteCharacterFrameData(rp) {
   const action = rp.action;
   const frameIndex = rp.frameIndex;
-  const faceExpression = "default";
-  const faceFrameIndex = 0;
+  const faceExpression = rp.faceExpression || "default";
+  const faceFrameIndex = rp.faceFrameIndex || 0;
 
   const frames = getCharacterActionFrames(action);
   if (frames.length === 0) return null;
@@ -2991,6 +3074,11 @@ function closeChatInput() {
 function sendChatMessage(text) {
   if (!text || !text.trim()) return;
   const trimmed = text.trim();
+
+  // Chat cooldown: 1s between messages
+  const now = performance.now();
+  if (now - _lastChatSendTime < 1000) return;
+  _lastChatSendTime = now;
 
   const msg = {
     name: runtime.player.name || "Player",
@@ -11313,11 +11401,16 @@ function bindInput() {
     };
     for (const [action, expr] of Object.entries(FACE_EXPRESSIONS)) {
       if (event.code === runtime.keybinds[action] && !event.repeat) {
+        const now = performance.now();
+        // Emote cooldown: 1s between emote changes
+        if (now - _lastEmoteTime < 1000) return;
+        _lastEmoteTime = now;
         runtime.faceAnimation.overrideExpression = expr;
-        runtime.faceAnimation.overrideUntilMs = performance.now() + 2500;
+        runtime.faceAnimation.overrideUntilMs = now + 2500;
         runtime.faceAnimation.expression = expr;
         runtime.faceAnimation.frameIndex = 0;
         runtime.faceAnimation.frameTimerMs = 0;
+        wsSend({ type: "face", expression: expr });
         return;
       }
     }
@@ -11758,13 +11851,18 @@ const params = new URLSearchParams(window.location.search);
   }
 
   mapIdInputEl.value = startMapId;
+
+  // In online mode, connect WebSocket BEFORE loading the map.
+  // If this session is already logged in elsewhere (4006), block immediately.
+  if (window.__MAPLE_ONLINE__) {
+    const wsOk = await connectWebSocketAsync();
+    if (!wsOk) return; // blocked by duplicate login overlay
+  }
+
   await loadMap(startMapId, startPortalName);
 
-  // Connect WebSocket after first map load (online mode only)
-  if (window.__MAPLE_ONLINE__) {
-    connectWebSocket();
-    // After connecting, enter the map
-    // (brief delay so auth completes before enter_map)
-    setTimeout(() => wsSend({ type: "enter_map", map_id: runtime.mapId }), 500);
+  // Enter the map room now that the map is loaded
+  if (_wsConnected) {
+    wsSend({ type: "enter_map", map_id: runtime.mapId });
   }
 })();
