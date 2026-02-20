@@ -391,6 +391,10 @@ const runtime = {
     minimapVisible: true,
   },
   keybinds: {
+    moveLeft: "ArrowLeft",
+    moveRight: "ArrowRight",
+    moveUp: "ArrowUp",
+    moveDown: "ArrowDown",
     attack: "KeyC",
     jump: "Space",
     loot: "KeyZ",
@@ -2673,6 +2677,10 @@ function initUIWindowDrag() {
 
 // ── Keybind labels ──
 const KEYBIND_LABELS = {
+  moveLeft: "Move Left",
+  moveRight: "Move Right",
+  moveUp: "Move Up / Portal",
+  moveDown: "Move Down / Crouch",
   attack: "Attack",
   jump: "Jump",
   loot: "Loot",
@@ -11039,8 +11047,18 @@ async function loadMap(mapId, spawnPortalName = null, spawnFromPortalTransfer = 
 }
 
 function bindInput() {
-  const gameplayKeys = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Space", "KeyA", "KeyD", "KeyW", "KeyS",
-    "KeyC", "Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9"]; // attack, face expressions
+  // Build gameplay keys dynamically from current keybinds
+  function getGameplayKeys() {
+    const keys = new Set();
+    for (const code of Object.values(runtime.keybinds)) {
+      if (code) keys.add(code);
+    }
+    // Always include these for preventDefault (browser scroll prevention)
+    for (const k of ["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","Space","PageUp","PageDown","Home","End","Tab"]) {
+      keys.add(k);
+    }
+    return keys;
+  }
 
   function setInputEnabled(enabled) {
     runtime.input.enabled = enabled;
@@ -11304,18 +11322,19 @@ function bindInput() {
       }
     }
 
-    if (!gameplayKeys.includes(event.code)) return;
+    if (!getGameplayKeys().has(event.code)) return;
 
-    if (event.code === "ArrowLeft" || event.code === "KeyA") runtime.input.left = true;
-    if (event.code === "ArrowRight" || event.code === "KeyD") runtime.input.right = true;
-    if (event.code === "ArrowUp" || event.code === "KeyW") {
+    // Movement keys (configurable, default arrow keys)
+    if (event.code === runtime.keybinds.moveLeft) runtime.input.left = true;
+    if (event.code === runtime.keybinds.moveRight) runtime.input.right = true;
+    if (event.code === runtime.keybinds.moveUp) {
       runtime.input.up = true;
       void tryUsePortal(true);
     }
-    if (event.code === "ArrowDown" || event.code === "KeyS") runtime.input.down = true;
+    if (event.code === runtime.keybinds.moveDown) runtime.input.down = true;
 
     // Jump key (configurable, default Space)
-    if (event.code === runtime.keybinds.jump || event.code === "Space") {
+    if (event.code === runtime.keybinds.jump) {
       if (!runtime.input.jumpHeld) {
         runtime.input.jumpQueued = true;
       }
@@ -11339,14 +11358,14 @@ function bindInput() {
       return;
     }
 
-    if (!gameplayKeys.includes(event.code)) return;
+    if (!getGameplayKeys().has(event.code)) return;
 
-    if (event.code === "ArrowLeft" || event.code === "KeyA") runtime.input.left = false;
-    if (event.code === "ArrowRight" || event.code === "KeyD") runtime.input.right = false;
-    if (event.code === "ArrowUp" || event.code === "KeyW") runtime.input.up = false;
-    if (event.code === "ArrowDown" || event.code === "KeyS") runtime.input.down = false;
+    if (event.code === runtime.keybinds.moveLeft) runtime.input.left = false;
+    if (event.code === runtime.keybinds.moveRight) runtime.input.right = false;
+    if (event.code === runtime.keybinds.moveUp) runtime.input.up = false;
+    if (event.code === runtime.keybinds.moveDown) runtime.input.down = false;
 
-    if (event.code === runtime.keybinds.jump || event.code === "Space") {
+    if (event.code === runtime.keybinds.jump) {
       runtime.input.jumpHeld = false;
     }
   });
@@ -11600,7 +11619,10 @@ function keyCodeToDisplay(code) {
   if (code === "Space") return "Space";
   if (code.startsWith("Key")) return code.slice(3);
   if (code.startsWith("Digit")) return code.slice(5);
-  if (code.startsWith("Arrow")) return "↑↓←→"["UpDownLeftRight".indexOf(code.slice(5)) / (code.slice(5).length)] || code.slice(5);
+  if (code === "ArrowUp") return "↑";
+  if (code === "ArrowDown") return "↓";
+  if (code === "ArrowLeft") return "←";
+  if (code === "ArrowRight") return "→";
   return code.replace(/([A-Z])/g, " $1").trim();
 }
 

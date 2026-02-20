@@ -884,6 +884,8 @@ button {
   flex-direction: column;
   gap: 3px;
   min-width: 200px;
+  max-height: 280px;
+  overflow-y: auto;
 }
 
 .keybinds-grid .kb-row {
