@@ -2251,23 +2251,59 @@ function getRemoteCharacterFrameData(rp) {
     if (faceMeta) frameParts.push({ name: `face:${faceExpression}:${faceFrameIndex}`, meta: faceMeta });
   }
 
-  // Hair — skip if hair data not loaded yet
-  if (rpHairData) {
-    const hairParts = getHairFrameParts(action, frameIndex, rpHairData);
-    for (const hp of hairParts) frameParts.push(hp);
-  }
-
   // Equipment — use remote player's equip data
   // Skip weapon when sitting on a chair
   const rpHidingWeapon = action === "sit";
   const equipDataMap = remoteEquipData.get(rp.id);
-  // Check if remote player has an overall equipped
+
+  // Determine remote cap type for hair filtering
+  let rpCapType = "NONE";
   let rpHasOverall = false;
   if (equipDataMap) {
-    for (const [itemId] of equipDataMap) {
-      if (equipSlotFromId(Number(itemId)) === "Longcoat") { rpHasOverall = true; break; }
+    for (const [itemId, equipJson] of equipDataMap) {
+      const slot = equipSlotFromId(Number(itemId));
+      if (slot === "Longcoat") rpHasOverall = true;
+      if (slot === "Cap") {
+        const info = equipJson?.$$?.find(c => c.$imgdir === "info");
+        const vslotNode = (info?.$$ || []).find(c => c.$string === "vslot");
+        const vslot = vslotNode ? String(vslotNode.value ?? "") : "";
+        if (vslot === "CpH1H5") rpCapType = "HALFCOVER";
+        else if (vslot === "CpH5") rpCapType = "HEADBAND";
+        else if (vslot.length > 6 && vslot.startsWith("Cp")) rpCapType = "FULLCOVER";
+      }
     }
   }
+
+  // Hair — filtered by cap type (same logic as local player)
+  const rpIsClimbing = CLIMBING_STANCES.has(action);
+  if (rpHairData) {
+    const hairParts = getHairFrameParts(action, frameIndex, rpHairData);
+    for (const hp of hairParts) {
+      const z = hp.meta?.zName ?? "";
+      const layerName = hp.name.split(":").pop() || z;
+      if (rpIsClimbing) {
+        if (rpCapType === "FULLCOVER") continue;
+        if (rpCapType === "HALFCOVER") {
+          if (layerName === "backHair" || z === "backHair") continue;
+        } else {
+          if (layerName === "backHairBelowCap" || z === "backHairBelowCap") continue;
+        }
+        if (z === "hair" || z === "hairOverHead" || z === "hairShade" || z === "hairBelowBody") continue;
+      } else {
+        if (rpCapType === "FULLCOVER") {
+          if (z === "hairOverHead" || z === "backHair") continue;
+          if (layerName === "hairOverHead" || layerName === "backHair") continue;
+        } else if (rpCapType === "HALFCOVER") {
+          if (z === "hairOverHead" || layerName === "hairOverHead") continue;
+          if (z === "backHair" || layerName === "backHair") continue;
+        } else {
+          if (z === "backHairBelowCap" || layerName === "backHairBelowCap") continue;
+        }
+      }
+      frameParts.push(hp);
+    }
+  }
+
   if (equipDataMap) {
     for (const [itemId, equipJson] of equipDataMap) {
       const slot = equipSlotFromId(Number(itemId));
@@ -2282,7 +2318,16 @@ function getRemoteCharacterFrameData(rp) {
         eqFrame = 0;
       }
       const equipParts = getEquipFrameParts(equipJson, eqAction, eqFrame, `equip:${itemId}`);
-      for (const ep of equipParts) frameParts.push(ep);
+      for (const ep of equipParts) {
+        // Cap sub-layer filtering: capOverHair only for HEADBAND
+        if (slot === "Cap") {
+          const epZ = ep.meta?.zName ?? "";
+          if (epZ === "capOverHair" || epZ === "backCapOverHair") {
+            if (rpCapType !== "HEADBAND") continue;
+          }
+        }
+        frameParts.push(ep);
+      }
     }
   }
 
@@ -9171,9 +9216,47 @@ function getCharacterFrameData(
     }
   }
 
-  // Hair
+  // Hair — filtered by cap type (C++ CharLook::draw cap-type switch)
   const hairParts = getHairFrameParts(action, frameIndex);
+  const capType = getCapType();
+  const isClimbing = CLIMBING_STANCES.has(action);
   for (const hp of hairParts) {
+    const z = hp.meta?.zName ?? "";
+    const layerName = hp.name.split(":").pop() || z;
+
+    if (isClimbing) {
+      // Climbing: only back hair, filtered by cap type
+      // NONE: backHair only
+      // HEADBAND: backHair only (cap drawn separately via equip)
+      // HALFCOVER: backHairBelowCap only (not backHair)
+      // FULLCOVER: no hair at all
+      if (capType === "FULLCOVER") continue;
+      if (capType === "HALFCOVER") {
+        if (layerName === "backHair" || z === "backHair") continue; // skip full back hair
+        // Allow backHairBelowCap
+      } else {
+        // NONE or HEADBAND: skip backHairBelowCap (use full backHair)
+        if (layerName === "backHairBelowCap" || z === "backHairBelowCap") continue;
+      }
+      // During climbing, skip front hair layers (only back hair)
+      if (z === "hair" || z === "hairOverHead" || z === "hairShade" || z === "hairBelowBody") continue;
+    } else {
+      // Non-climbing: always draw hairBelowBody, hairShade, hair (DEFAULT)
+      // Cap-type controls hairOverHead and backHair layers
+      if (capType === "FULLCOVER") {
+        // Hide hairOverHead and backHair (cap covers everything)
+        if (z === "hairOverHead" || z === "backHair") continue;
+        if (layerName === "hairOverHead" || layerName === "backHair") continue;
+      } else if (capType === "HALFCOVER") {
+        // Hide hairOverHead (half-covered), swap backHair → backHairBelowCap
+        if (z === "hairOverHead") continue;
+        if (layerName === "hairOverHead") continue;
+        if (z === "backHair" || layerName === "backHair") continue; // use belowCap instead
+      } else {
+        // NONE or HEADBAND: skip backHairBelowCap (use full backHair + all front hair)
+        if (z === "backHairBelowCap" || layerName === "backHairBelowCap") continue;
+      }
+    }
     frameParts.push(hp);
   }
 
@@ -9197,6 +9280,13 @@ function getCharacterFrameData(
     }
     const equipParts = getEquipFrameParts(equipData, eqAction, eqFrame, `equip:${equipped.id}`);
     for (const ep of equipParts) {
+      // C++ cap sub-layer filtering: capOverHair only drawn for HEADBAND caps
+      if (slotType === "Cap") {
+        const epZ = ep.meta?.zName ?? "";
+        if (epZ === "capOverHair" || epZ === "backCapOverHair") {
+          if (capType !== "HEADBAND") continue;
+        }
+      }
       frameParts.push(ep);
     }
   }

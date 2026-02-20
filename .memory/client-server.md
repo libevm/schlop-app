@@ -562,11 +562,12 @@ Manually curated files (`resourcesv2/mob/`, `resourcesv2/sound/`) remain tracked
 - Each type has normal and degenerate stance arrays (`ATTACK_STANCES_BY_TYPE`, `DEGEN_STANCES_BY_TYPE`)
 - `getWeaponAttackStances(degenerate)` filters to stances with body frame data
 
-### Degenerate Attack (C++ Player::prepare_attack)
-- Bow/Crossbow without arrows (206xxxx), Claw without stars (207xxxx), Gun without bullets (233xxxx)
-- `isAttackDegenerate()` → `hasProjectileAmmo()` scans USE inventory
-- Degenerate: melee stances, damage /= 10, different sound
-- Remote players see correct stance (broadcast in `attack` message)
+### Ranged Ammo Check (C++ RegularAttack::can_use)
+- Bow/Crossbow without arrows (206xxxx), Claw without stars (207xxxx), Gun without bullets (233xxxx) → attack blocked
+- `hasProjectileAmmo()` scans USE inventory for matching `WEAPON_AMMO_PREFIXES`
+- Blocked attacks show grey system chat message ("Please equip throwing stars first." etc.)
+- Prone attacks bypass ammo check (always melee proneStab)
+- Degenerate flag now only applies when prone (damage /= 10)
 
 ### Equipment Slot Types (16 total)
 Cap, FaceAcc, EyeAcc, Earrings, Pendant, Cape, Coat, Longcoat, Shield, Glove, Pants, Shoes, Weapon, Ring, Belt, Medal
@@ -578,3 +579,38 @@ Cap, FaceAcc, EyeAcc, Earrings, Pendant, Cape, Coat, Longcoat, Shield, Glove, Pa
 ### Face Accessory Rendering
 - Uses face expression as stance (not body action), frame 0
 - Falls back to "default" expression; handles flat canvas children (no frame sub-nodes)
+
+---
+
+## Jump Quest Treasure Chest Reward System
+
+### Server (`ws.ts` → `jq_reward` handler)
+- `JQ_TREASURE_CHESTS` map: `"103000902"` → `{ npcId: "1052008", questName: "Shumi's Lost Coin" }`
+- Validates player is on the correct map, not already transitioning
+- `rollJqReward()` (reactor-system.ts): 50/50 equip or cash item, qty 1
+- Adds item to `client.inventory`, increments `client.achievements[questName]`
+- Persists immediately via `persistClientState()`
+- Sends `{ type: "jq_reward", quest_name, item_id, item_name, item_qty, item_category, completions }`
+- Then calls `roomManager.initiateMapChange()` → warps player to `100000001`
+
+### Client (`app.js`)
+- NPC script `subway_get1` (NPC 1052008): greeting + "Open Chest" option → calls `requestJqReward()`
+- `requestJqReward()`: online sends `{ type: "jq_reward" }`, offline just warps home
+- WS `jq_reward` handler: adds item to `playerInventory`, shows grey system chat message
+- `handleServerMapChange()` handles the subsequent unsolicited `change_map`
+
+### Item Name Lookup (`reactor-system.ts`)
+- `loadItemNames(resourceBase)`: loads names from String.wz (Eqp, Consume, Etc, Ins, Cash)
+- `getItemName(itemId)`: returns name or `"Item #${id}"` fallback
+- Called at startup in `dev.ts` alongside `loadDropPools()`
+
+### Achievements
+- `WSClient.achievements`: `Record<string, number>` — JQ completion counts
+- Persisted in `buildServerSave()` → `{ ...client.achievements }`
+- Default character template: empty `{}` (db.ts `buildDefaultCharacterSave`)
+- Server is authoritative — client does not send achievements via `save_state`
+
+### Chat Message Types
+- `type: "system"` — grey text (#9ca3af), italic
+- `type: "system", subtype: "welcome"` — yellow (#fbbf24), italic
+- `addSystemChatMessage(text, subtype)` — optional subtype parameter

@@ -136,7 +136,32 @@ C++ `CharEquips::getcaptype` reads `info/vslot` from cap WZ data:
 | `CpH1H5AyAs` (or longer) | FULLCOVER | All hair hidden |
 | (other) | NONE | All hair shown |
 
-*Currently parsed but not yet used for hair hiding logic.*
+### Hair Layer Filtering (C++ CharLook::draw)
+
+Hair WZ layers map to C++ Hair::Layer:
+- `hair` → DEFAULT, `hairOverHead` → OVERHEAD, `hairShade` → SHADE
+- `hairBelowBody` → BELOWBODY, `backHair` → BACK, `backHairBelowCap` → BELOWCAP
+
+**Non-climbing draw rules:**
+| Cap Type | Layers Drawn | Layers Hidden |
+|----------|-------------|---------------|
+| NONE | all hair layers | `backHairBelowCap` |
+| HEADBAND | all hair layers, `capOverHair` | `backHairBelowCap` |
+| HALFCOVER | `hair`, `hairShade`, `hairBelowBody`, `backHairBelowCap` | `hairOverHead`, `backHair` |
+| FULLCOVER | `hair`, `hairShade`, `hairBelowBody` | `hairOverHead`, `backHair`, `backHairBelowCap` |
+
+**Climbing draw rules (ladder/rope):**
+| Cap Type | Layers Drawn | Layers Hidden |
+|----------|-------------|---------------|
+| NONE / HEADBAND | `backHair` | all front hair, `backHairBelowCap` |
+| HALFCOVER | `backHairBelowCap` | all front hair, `backHair` |
+| FULLCOVER | none | all hair |
+
+**Cap sub-layer filtering:**
+- `capOverHair` / `backCapOverHair` — only drawn for HEADBAND caps
+- Other cap z-layers (`cap`, `capAccessory`, `capAccessoryBelowBody`) drawn for all cap types
+
+Applied to both local and remote players in `getCharacterFrameData` / `getRemoteCharacterFrameData`.
 
 ## Face Accessory Rendering
 
@@ -423,7 +448,6 @@ Navigates the `../../itemId/info/icon` path within the same WZ file to find the 
 
 - No stat requirements check (C++ `can_wear_equip` validates level/job/stats)
 - No gender restrictions
-- Cap type parsed (`getCapType`) but not yet used for hair hiding
 - No equip tooltips with stat details
 - No scroll use (applying scrolls to equipment)
 - No equipment swap via drag-drop between equip and inventory windows
