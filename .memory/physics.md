@@ -490,18 +490,52 @@ PICKEDUP state:
 
 ## Remote Player Interpolation (Phase 4)
 
-Remote players (other clients in multiplayer) use a movement interpolation system
-inspired by C++ `OtherChar`:
+Remote players use **snapshot interpolation** — the standard technique from
+Source Engine / Overwatch for smooth remote movement despite network jitter.
 
-- **Movement queue**: Server `player_move` messages are queued, not applied immediately.
-  Timer-based consumption: 3 ticks per queued move. If more queued, next timer starts.
-- **Position lerp**: `renderX/Y` interpolates toward `serverX/Y` each frame.
-  Speed factor = `min(1.0, dist / 4)` — faster when further away.
-  If distance > 300px → instant snap (teleport/knockback).
-- **Local animation**: Remote player frame index advances locally using `getRemoteFrameDelay()`,
+### How it works
+
+1. **Snapshot buffer**: Each `player_move` message is stored with an arrival timestamp:
+   `{ time: performance.now(), x, y, action, facing }`. Up to 20 snapshots buffered.
+
+2. **Render in the past**: The render time is `now - REMOTE_INTERP_DELAY_MS` (100ms).
+   This guarantees we almost always have two snapshots bracketing the render time.
+
+3. **Linear interpolation**: Find snapshots `s0` and `s1` such that
+   `s0.time ≤ renderTime ≤ s1.time`. Compute `t = (renderTime - s0.time) / (s1.time - s0.time)`.
+   Render position = `lerp(s0, s1, t)`. Allows slight extrapolation (up to t=1.5)
+   so the player doesn't freeze while waiting for the next snapshot.
+
+4. **Teleport detection**: If the distance between consecutive snapshots > 300px,
+   snap instantly (portal transition / knockback).
+
+5. **Pruning**: Old snapshots well before renderTime are discarded (keep ≥2 before
+   renderTime + everything after).
+
+### Why this eliminates jitter
+
+- **Ping variation doesn't matter**: Whether a packet arrives 30ms or 200ms after the
+  previous one, the snapshot timestamps accurately reflect arrival ordering. The 100ms
+  buffer absorbs jitter — we're always interpolating between two known good positions.
+- **No chase-lerp**: The old system used `renderX += dx * speed` which never converges
+  cleanly and oscillates around the target. Snapshot interpolation always produces a
+  mathematically exact position on the line between two known points.
+- **Burst handling**: If two packets arrive at once (common with TCP/WS), they get
+  different timestamps and are smoothly interpolated through in sequence.
+
+### Constants
+
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| `REMOTE_INTERP_DELAY_MS` | 100ms | Render delay behind real-time (~2x send interval) |
+| `REMOTE_SNAPSHOT_MAX` | 20 | Max buffered snapshots (~1s at 20Hz) |
+
+### Local animation
+
+- Remote player frame index advances locally using `getRemoteFrameDelay()`,
   not server-driven. Server sends stance/action, client runs its own frame timer.
-- **Frame delay heuristics**: walk1=150ms, attack=120ms, climb=200ms, stand=200ms.
-  Frame count read from body WZ data with fallbacks (walk=4, stand=3, attack=3).
+- Frame delay heuristics: walk1=150ms, attack=120ms, climb=200ms, stand=200ms.
+- Frame count read from body WZ data with fallbacks (walk=4, stand=3, attack=3).
 
 Functions: `updateRemotePlayers(dt)`, `getRemoteFrameDelay(rp)`, `getRemoteFrameCount(rp)`
 

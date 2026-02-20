@@ -1042,16 +1042,27 @@ const remoteEquipData = new Map();
 /** sessionId → per-player placement template cache */
 const remoteTemplateCache = new Map();
 
+// ── Snapshot interpolation constants ──
+// Render remote players slightly "in the past" so we always have two snapshots
+// to interpolate between. This eliminates jitter regardless of ping variance.
+// INTERP_DELAY should be ~2x the send interval (50ms send → 100ms delay).
+const REMOTE_INTERP_DELAY_MS = 100;
+// Maximum snapshots to buffer (1 second at 20Hz)
+const REMOTE_SNAPSHOT_MAX = 20;
+
 function createRemotePlayer(id, name, look, x, y, action, facing) {
+  const now = performance.now();
   return {
     id, name,
-    serverX: x, serverY: y,
+    // Snapshot buffer: circular array of { time, x, y, action, facing }
+    // Newest at end. We interpolate between two snapshots that bracket renderTime.
+    snapshots: [{ time: now, x, y, action: action || "stand1", facing: facing || -1 }],
+    // Render position (output of interpolation)
     renderX: x, renderY: y,
-    prevX: x, prevY: y,
+    // Current visual state (from interpolation)
     action: action || "stand1",
     facing: facing || -1,
     frameIndex: 0, frameTimer: 0,
-    moveQueue: [], moveTimer: 0,
     look: look || { face_id: 20000, hair_id: 30000, skin: 0, equipment: [] },
     chatBubble: null, chatBubbleExpires: 0,
     attacking: false, attackStance: "",
@@ -1150,8 +1161,13 @@ function handleServerMessage(msg) {
     case "player_move": {
       const rp = remotePlayers.get(msg.id);
       if (!rp) break;
-      rp.moveQueue.push({ x: msg.x, y: msg.y, action: msg.action, facing: msg.facing });
-      if (rp.moveTimer === 0) rp.moveTimer = 3;
+      // Push snapshot with arrival timestamp for interpolation
+      const snap = { time: performance.now(), x: msg.x, y: msg.y, action: msg.action, facing: msg.facing };
+      rp.snapshots.push(snap);
+      // Trim old snapshots (keep last REMOTE_SNAPSHOT_MAX)
+      if (rp.snapshots.length > REMOTE_SNAPSHOT_MAX) {
+        rp.snapshots.splice(0, rp.snapshots.length - REMOTE_SNAPSHOT_MAX);
+      }
       break;
     }
 
@@ -1271,39 +1287,87 @@ async function loadRemotePlayerEquipData(rp) {
 }
 
 function updateRemotePlayers(dt) {
+  const now = performance.now();
+  // Render time is "in the past" — we interpolate between snapshots at this time.
+  // This guarantees we (almost) always have two bracketing snapshots for smooth lerp.
+  const renderTime = now - REMOTE_INTERP_DELAY_MS;
+
   for (const [, rp] of remotePlayers) {
-    // 1. Consume movement queue (C++ OtherChar::update timer)
-    if (rp.moveTimer > 0) {
-      rp.moveTimer--;
-      if (rp.moveTimer <= 1 && rp.moveQueue.length > 0) {
-        const move = rp.moveQueue.shift();
-        rp.serverX = move.x;
-        rp.serverY = move.y;
-        if (!rp.attacking) {
-          rp.action = move.action;
-          rp.facing = move.facing;
+    const snaps = rp.snapshots;
+
+    // ── 1. Snapshot interpolation ──
+    if (snaps.length >= 2) {
+      // Find the two snapshots that bracket renderTime
+      // snaps are in chronological order (oldest first)
+      let i0 = 0;
+      let i1 = 1;
+      for (let i = 0; i < snaps.length - 1; i++) {
+        if (snaps[i + 1].time >= renderTime) {
+          i0 = i;
+          i1 = i + 1;
+          break;
         }
-        rp.moveTimer = rp.moveQueue.length > 0 ? 3 : 0;
+        // If renderTime is past all snapshots, use the last two
+        i0 = i;
+        i1 = i + 1;
+      }
+
+      const s0 = snaps[i0];
+      const s1 = snaps[i1];
+      const segmentDuration = s1.time - s0.time;
+
+      if (segmentDuration > 0) {
+        // t=0 at s0, t=1 at s1
+        const t = Math.max(0, Math.min(1.5, (renderTime - s0.time) / segmentDuration));
+        // Allow slight extrapolation (up to 1.5) to avoid freezing at the end
+
+        const targetX = s0.x + (s1.x - s0.x) * t;
+        const targetY = s0.y + (s1.y - s0.y) * t;
+
+        // Check for teleport (>300px jump between snapshots)
+        const snapDist = Math.sqrt((s1.x - s0.x) ** 2 + (s1.y - s0.y) ** 2);
+        if (snapDist > 300) {
+          // Teleport — snap immediately to latest
+          rp.renderX = s1.x;
+          rp.renderY = s1.y;
+        } else {
+          rp.renderX = targetX;
+          rp.renderY = targetY;
+        }
+      } else {
+        // Same timestamp — use s1
+        rp.renderX = s1.x;
+        rp.renderY = s1.y;
+      }
+
+      // Use the action/facing from the nearest snapshot at or before renderTime
+      const stateSnap = renderTime >= s1.time ? s1 : s0;
+      if (!rp.attacking) {
+        // Only update action from snapshots if not in attack animation
+        const newAction = stateSnap.action;
+        if (newAction !== rp.action) {
+          rp.action = newAction;
+          rp.frameIndex = 0;
+          rp.frameTimer = 0;
+        }
+        rp.facing = stateSnap.facing;
+      }
+
+      // Prune old snapshots that are well before renderTime (keep ≥2 before renderTime)
+      while (snaps.length > 3 && snaps[1].time < renderTime) {
+        snaps.shift();
+      }
+    } else if (snaps.length === 1) {
+      // Only one snapshot — just sit at that position
+      rp.renderX = snaps[0].x;
+      rp.renderY = snaps[0].y;
+      if (!rp.attacking) {
+        rp.action = snaps[0].action;
+        rp.facing = snaps[0].facing;
       }
     }
 
-    // 2. Interpolate render position toward server position
-    const dx = rp.serverX - rp.renderX;
-    const dy = rp.serverY - rp.renderY;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-
-    if (dist > 300) {
-      // Large error → snap
-      rp.renderX = rp.serverX;
-      rp.renderY = rp.serverY;
-    } else if (dist > 1) {
-      // Smooth lerp
-      const speed = Math.min(1.0, dist / 4);
-      rp.renderX += dx * speed;
-      rp.renderY += dy * speed;
-    }
-
-    // 3. Local animation timer
+    // ── 2. Local animation timer (frame advancement is client-side) ──
     rp.frameTimer += dt * 1000;
     const frameDelay = getRemoteFrameDelay(rp);
     if (rp.frameTimer >= frameDelay) {
