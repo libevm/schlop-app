@@ -1502,26 +1502,49 @@ function handleServerMessage(msg) {
     }
 
     case "mob_damage": {
-      // Another player attacked a mob — apply damage visuals if we're the authority
+      // Another player attacked a mob — authority applies actual state change
       if (!_isMobAuthority) break;
-      const state = lifeRuntimeState.get(msg.mob_idx);
+      const mobIdx = msg.mob_idx;
+      const state = lifeRuntimeState.get(mobIdx);
       if (!state || state.dead || state.dying) break;
+      const life = runtime.map?.lifeEntries[mobIdx];
+      if (!life) break;
       const dmg = msg.damage || 0;
       state.hp -= dmg;
       state.nameVisible = true;
       state.hpShowUntil = performance.now() + 5000;
+
+      const worldX = state.phobj ? state.phobj.x : life.x;
+      const worldY = state.phobj ? state.phobj.y : life.cy;
+      spawnDamageNumber(worldX, worldY, dmg, false);
+
+      const anim = lifeAnimations.get(`m:${life.id}`);
+      void playMobSfx(life.id, "Damage");
+
       // Apply knockback
       const dir = msg.direction || 1;
-      state.hitStaggerUntil = performance.now() + 400;
+      const kbDurationMs = (MOB_KB_COUNTER_END - MOB_KB_COUNTER_START) * (1000 / PHYS_TPS);
+      state.hitStaggerUntil = performance.now() + kbDurationMs;
       state.kbDir = dir;
       state.kbStartTime = performance.now();
-      state.hitCounter = 0;
+      state.hitCounter = MOB_KB_COUNTER_START;
+      state.facing = dir === 1 ? -1 : 1;
+      if (anim?.stances?.["hit1"]) {
+        state.stance = "hit1";
+        state.frameIndex = 0;
+        state.frameTimerMs = 0;
+      }
+      // Check for death
       if (state.hp <= 0) {
         state.hp = 0;
         state.dying = true;
-        state.stance = "die1";
-        state.frameIndex = 0;
-        state.frameTimerMs = 0;
+        state.dyingElapsed = 0;
+        if (anim?.stances?.["die1"]) {
+          state.stance = "die1";
+          state.frameIndex = 0;
+          state.frameTimerMs = 0;
+        }
+        void playMobSfx(life.id, "Die");
       }
       break;
     }
@@ -5162,12 +5185,61 @@ function performAttack() {
 
   if (targets.length > 0) {
     const target = targets[0];
-    applyAttackToMob(target);
+    // In online non-authority mode: calculate damage locally for visuals,
+    // but send mob_damage to server so authority applies actual state change
+    if (_wsConnected && !_isMobAuthority) {
+      applyAttackToMobVisualOnly(target);
+    } else {
+      applyAttackToMob(target);
+    }
+  }
+}
+
+/**
+ * Non-authority attack: show damage visuals locally + send mob_damage to server.
+ * The authority will apply actual HP/knockback/death from the mob_damage message.
+ */
+function applyAttackToMobVisualOnly(target) {
+  const state = target.state;
+  const anim = target.anim;
+  const life = target.life;
+  const mobLevel = anim?.level ?? 1;
+  const mobWdef = anim?.wdef ?? 0;
+  const mobAvoid = anim?.avoid ?? 0;
+
+  let { mindamage, maxdamage } = calculatePlayerDamageRange();
+  if (runtime.player.attackDegenerate) { mindamage /= 10; maxdamage /= 10; }
+
+  const result = calculateMobDamage(mindamage, maxdamage, mobLevel, mobWdef, mobAvoid);
+  const worldX = state.phobj ? state.phobj.x : life.x;
+  const worldY = state.phobj ? state.phobj.y : life.cy;
+
+  state.nameVisible = true;
+
+  // Show damage number locally
+  if (result.miss) {
+    spawnDamageNumber(worldX, worldY, 0, false);
+  } else {
+    spawnDamageNumber(worldX, worldY, result.damage, result.critical);
+    state.hpShowUntil = performance.now() + MOB_HP_SHOW_MS;
+  }
+  void playMobSfx(life.id, "Damage");
+
+  // Send to server — authority will apply the real state change
+  if (!result.miss) {
+    const attackerIsLeft = runtime.player.x < worldX;
+    wsSend({
+      type: "mob_damage",
+      mob_idx: target.idx,
+      damage: result.damage,
+      direction: attackerIsLeft ? 1 : -1,
+    });
   }
 }
 
 /**
  * Apply damage to a mob target. Implements C++ Mob::calculate_damage + apply_damage.
+ * Used by authority client (or offline mode).
  */
 function applyAttackToMob(target) {
   const now = performance.now();
@@ -5297,11 +5369,16 @@ function updatePlayerAttack(dt) {
 }
 
 function updateMobCombatStates(dtMs) {
+  // Non-authority in online mode: dying/respawn is controlled by authority via mob_state
+  const isNonAuthority = _wsConnected && !_isMobAuthority;
   const now = performance.now();
 
   for (const [idx, state] of lifeRuntimeState) {
     const life = runtime.map?.lifeEntries[idx];
     if (!life || life.type !== "m") continue;
+
+    // Non-authority: skip dying/respawn logic — authority manages these via mob_state
+    if (isNonAuthority) continue;
 
     // HIT knockback physics is handled in updateLifeAnimations (uses mobPhysicsUpdate
     // for proper wall/edge limits). This function only handles dying/respawn/aggro.
@@ -11095,10 +11172,11 @@ async function playMobSfx(mobId, soundType) {
 
 async function loadMap(mapId, spawnPortalName = null, spawnFromPortalTransfer = false) {
   rlog(`loadMap START mapId=${mapId} portal=${spawnPortalName} transfer=${spawnFromPortalTransfer}`);
-  // Clear remote players on map change
+  // Clear remote players and mob authority on map change
   remotePlayers.clear();
   remoteEquipData.clear();
   remoteTemplateCache.clear();
+  _isMobAuthority = false;
 
   const loadToken = runtime.mapLoadToken + 1;
   runtime.mapLoadToken = loadToken;
