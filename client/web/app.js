@@ -8785,21 +8785,28 @@ function drawChatBubble() {
   const text = runtime.player.bubbleText;
 
   ctx.save();
-  ctx.font = "12px 'Dotum', Arial, sans-serif";
+  const nameFont = "bold 11px 'Dotum', Arial, sans-serif";
+  const textFont = "12px 'Dotum', Arial, sans-serif";
+  const playerName = runtime.player.name || "Player";
 
+  ctx.font = textFont;
   const standardWidth = Math.max(1, Math.round(runtime.standardCharacterWidth || DEFAULT_STANDARD_CHARACTER_WIDTH));
   const maxBubbleWidth = Math.max(40, Math.round(standardWidth * CHAT_BUBBLE_STANDARD_WIDTH_MULTIPLIER));
   const maxTextWidth = Math.max(14, maxBubbleWidth - CHAT_BUBBLE_HORIZONTAL_PADDING * 2);
   const lines = wrapBubbleTextToWidth(text, maxTextWidth);
 
   const widestLine = Math.max(...lines.map((line) => ctx.measureText(line).width), 0);
+  ctx.font = nameFont;
+  const nameWidth = ctx.measureText(playerName).width;
+  const contentWidth = Math.max(widestLine, nameWidth);
   const width = Math.max(
     40,
-    Math.min(maxBubbleWidth, Math.ceil(widestLine) + CHAT_BUBBLE_HORIZONTAL_PADDING * 2),
+    Math.min(maxBubbleWidth, Math.ceil(contentWidth) + CHAT_BUBBLE_HORIZONTAL_PADDING * 2),
   );
+  const nameLineHeight = 14;
   const height = Math.max(
     26,
-    lines.length * CHAT_BUBBLE_LINE_HEIGHT + CHAT_BUBBLE_VERTICAL_PADDING * 2,
+    nameLineHeight + 2 + lines.length * CHAT_BUBBLE_LINE_HEIGHT + CHAT_BUBBLE_VERTICAL_PADDING * 2,
   );
 
   const clampedX = Math.max(6, Math.min(canvasEl.width - width - 6, anchor.x - width / 2));
@@ -8813,12 +8820,19 @@ function drawChatBubble() {
   ctx.lineWidth = 1;
   ctx.stroke();
 
-  ctx.fillStyle = "#1a1a2e";
+  // Name
+  ctx.font = nameFont;
+  ctx.fillStyle = "#3a6bc5";
   ctx.textBaseline = "top";
-  const textBlockHeight = lines.length * CHAT_BUBBLE_LINE_HEIGHT;
-  const textOffsetY = (height - textBlockHeight) / 2;
+  const nameX = clampedX + (width - nameWidth) / 2;
+  ctx.fillText(playerName, nameX, y + CHAT_BUBBLE_VERTICAL_PADDING);
+
+  // Message text
+  ctx.font = textFont;
+  ctx.fillStyle = "#1a1a2e";
+  const textStartY = y + CHAT_BUBBLE_VERTICAL_PADDING + nameLineHeight + 2;
   for (let index = 0; index < lines.length; index += 1) {
-    const lineY = y + textOffsetY + index * CHAT_BUBBLE_LINE_HEIGHT;
+    const lineY = textStartY + index * CHAT_BUBBLE_LINE_HEIGHT;
     ctx.fillText(lines[index], clampedX + CHAT_BUBBLE_HORIZONTAL_PADDING, lineY);
   }
 
