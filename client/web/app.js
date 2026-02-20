@@ -523,14 +523,22 @@ const openKeybindsBtnEl = document.getElementById("open-keybinds-btn");
 
 // Equip slots as flat 4-column grid
 const EQUIP_SLOT_LIST = [
-  { type: "Cap",       label: "Hat" },
-  { type: "Cape",      label: "Cape" },
-  { type: "Coat",      label: "Top" },
-  { type: "Shield",    label: "Shield" },
-  { type: "Glove",     label: "Gloves" },
-  { type: "Pants",     label: "Bottom" },
-  { type: "Shoes",     label: "Shoes" },
-  { type: "Weapon",    label: "Weapon" },
+  { type: "Cap",        label: "Hat" },
+  { type: "FaceAcc",    label: "Face Acc" },
+  { type: "EyeAcc",     label: "Eye Acc" },
+  { type: "Earrings",   label: "Earrings" },
+  { type: "Pendant",    label: "Pendant" },
+  { type: "Cape",       label: "Cape" },
+  { type: "Coat",       label: "Top" },
+  { type: "Longcoat",   label: "Overall" },
+  { type: "Shield",     label: "Shield" },
+  { type: "Glove",      label: "Gloves" },
+  { type: "Pants",      label: "Bottom" },
+  { type: "Shoes",      label: "Shoes" },
+  { type: "Weapon",     label: "Weapon" },
+  { type: "Ring",       label: "Ring" },
+  { type: "Belt",       label: "Belt" },
+  { type: "Medal",      label: "Medal" },
 ];
 
 const INV_COLS = 4;
@@ -611,7 +619,7 @@ function isItemStackable(itemId) {
 function equipWzCategoryFromId(id) {
   const p = Math.floor(id / 10000);
   if (p === 100) return "Cap";
-  if (p >= 101 && p <= 103) return "Accessory";
+  if (p >= 101 && p <= 103) return "Accessory"; // Face Acc, Eye Acc, Earrings
   if (p === 104) return "Coat";
   if (p === 105) return "Longcoat";
   if (p === 106) return "Pants";
@@ -620,23 +628,154 @@ function equipWzCategoryFromId(id) {
   if (p === 109) return "Shield";
   if (p === 110) return "Cape";
   if (p === 111) return "Ring";
+  if (p >= 112 && p <= 114) return "Accessory"; // Pendant, Belt, Medal
   if (p >= 130 && p <= 170) return "Weapon";
   return null;
 }
 
 // Equip slot key (for playerEquipped map) from equip item ID
 // C++ EquipData determines slot from index = id/10000 - 100
+// Equip slot key from item ID — C++ EquipData maps index = id/10000-100
+// Index: 0=Hat, 1=FaceAcc, 2=EyeAcc, 3=Earrings, 4=Top, 5=Overall(top slot),
+//        6=Bottom, 7=Shoes, 8=Gloves, 9=Shield, 10=Cape, 11=Ring, 12=Pendant,
+//        13=Belt, 14=Medal.  30-49 = Weapons.
 function equipSlotFromId(id) {
   const p = Math.floor(id / 10000);
   if (p === 100) return "Cap";
-  if (p === 104 || p === 105) return "Coat"; // Top + Overall share Coat slot
+  if (p === 101) return "FaceAcc";
+  if (p === 102) return "EyeAcc";
+  if (p === 103) return "Earrings";
+  if (p === 104) return "Coat";
+  if (p === 105) return "Longcoat";  // Overall — separate slot, hides Coat+Pants
   if (p === 106) return "Pants";
   if (p === 107) return "Shoes";
   if (p === 108) return "Glove";
   if (p === 109) return "Shield";
   if (p === 110) return "Cape";
+  if (p === 111) return "Ring";
+  if (p === 112) return "Pendant";
+  if (p === 113) return "Belt";
+  if (p === 114) return "Medal";
   if (p >= 130 && p <= 170) return "Weapon";
   return null;
+}
+
+// ─── Weapon type helpers (C++ Weapon::Type) ─────────────────────────
+// Two-handed weapons use stand2/walk2 stances instead of stand1/walk1
+const TWO_HANDED_PREFIXES = new Set([
+  138, // Staff
+  140, // 2H Sword
+  141, // 2H Axe
+  142, // 2H Mace
+  143, // Spear
+  144, // Polearm
+  146, // Crossbow
+]);
+
+function isWeaponTwoHanded(weaponId) {
+  return TWO_HANDED_PREFIXES.has(Math.floor(weaponId / 10000));
+}
+
+/**
+ * Get the preferred stand/walk stances from weapon WZ info.
+ * C++ reads info/stand and info/walk (1 or 2). Falls back to two-handed check.
+ */
+function getWeaponStances(weaponId) {
+  const wzData = runtime.characterEquipData[weaponId];
+  const info = wzData?.$$?.find(c => c.$imgdir === "info");
+  let standNo = 0, walkNo = 0;
+  if (info) {
+    for (const c of info.$$ || []) {
+      if (c.$int === "stand") standNo = c.value ?? 0;
+      if (c.$int === "walk") walkNo = c.value ?? 0;
+    }
+  }
+  const twoH = isWeaponTwoHanded(weaponId);
+  return {
+    stand: standNo === 2 ? "stand2" : (standNo === 1 ? "stand1" : (twoH ? "stand2" : "stand1")),
+    walk: walkNo === 2 ? "walk2" : (walkNo === 1 ? "walk1" : (twoH ? "walk2" : "walk1")),
+  };
+}
+
+/**
+ * Adjust stance based on equipped weapon (C++ CharEquips::adjust_stance).
+ * Two-handed weapons and weapons with stand=2/walk=2 use stand2/walk2.
+ */
+function adjustStanceForWeapon(action) {
+  const weapon = playerEquipped.get("Weapon");
+  if (!weapon) return action;
+  const stances = getWeaponStances(weapon.id);
+  if (action === "stand1" || action === "stand2") return stances.stand;
+  if (action === "walk1" || action === "walk2") return stances.walk;
+  return action;
+}
+
+/**
+ * Check if the player has an overall (Longcoat) equipped.
+ * C++ CharEquips::has_overall: id / 10000 == 105
+ * When an overall is equipped, Coat and Pants are hidden.
+ */
+function hasOverallEquipped() {
+  return playerEquipped.has("Longcoat");
+}
+
+/**
+ * Get the cap type from vslot in WZ info (C++ CharEquips::getcaptype).
+ * Determines whether hair is shown under/over the hat.
+ * - "CpH1H5"   → HALFCOVER (hair below cap shown)
+ * - "CpH1H5AyAs" or longer → FULLCOVER (all hair hidden)
+ * - "CpH5"     → HEADBAND (hair fully shown)
+ * - default    → NONE (hair fully shown)
+ */
+function getCapType() {
+  const cap = playerEquipped.get("Cap");
+  if (!cap) return "NONE";
+  const wzData = runtime.characterEquipData[cap.id];
+  if (!wzData) return "NONE";
+  const info = wzData.$$?.find(c => c.$imgdir === "info");
+  if (!info) return "NONE";
+  const vslotNode = (info.$$ || []).find(c => c.$string === "vslot");
+  const vslot = vslotNode ? String(vslotNode.value ?? "") : "";
+  if (vslot === "CpH1H5") return "HALFCOVER";
+  if (vslot === "CpH5") return "HEADBAND";
+  // Anything with more coverage than halfcover is full cover
+  if (vslot.length > 6 && vslot.startsWith("Cp")) return "FULLCOVER";
+  return "NONE";
+}
+
+/**
+ * Adjust stance for a remote player's weapon.
+ * Same logic as adjustStanceForWeapon but reads from remoteEquipData.
+ */
+function adjustStanceForRemoteWeapon(rp, action) {
+  const equipDataMap = remoteEquipData.get(rp.id);
+  if (!equipDataMap) return action;
+  // Find the weapon in remote equip data
+  let weaponId = 0;
+  let weaponWz = null;
+  for (const [itemId, equipJson] of equipDataMap) {
+    if (equipSlotFromId(Number(itemId)) === "Weapon") {
+      weaponId = Number(itemId);
+      weaponWz = equipJson;
+      break;
+    }
+  }
+  if (!weaponId) return action;
+  // Read stand/walk from WZ info
+  const info = weaponWz?.$$?.find(c => c.$imgdir === "info");
+  let standNo = 0, walkNo = 0;
+  if (info) {
+    for (const c of info.$$ || []) {
+      if (c.$int === "stand") standNo = c.value ?? 0;
+      if (c.$int === "walk") walkNo = c.value ?? 0;
+    }
+  }
+  const twoH = isWeaponTwoHanded(weaponId);
+  const preferStand = standNo === 2 ? "stand2" : (standNo === 1 ? "stand1" : (twoH ? "stand2" : "stand1"));
+  const preferWalk = walkNo === 2 ? "walk2" : (walkNo === 1 ? "walk1" : (twoH ? "walk2" : "walk1"));
+  if (action === "stand1" || action === "stand2") return preferStand;
+  if (action === "walk1" || action === "walk2") return preferWalk;
+  return action;
 }
 
 /** Ground drops — items on the map floor */
@@ -751,12 +890,15 @@ async function loadItemName(itemId) {
 function initPlayerEquipment(equips) {
   playerEquipped.clear();
   for (const eq of equips) {
-    const category = eq.category || equipWzCategoryFromId(eq.id) || "Coat";
-    const iconKey = loadEquipIcon(eq.id, category);
-    playerEquipped.set(category, { id: eq.id, name: "", iconKey });
+    // eq.category may be a WZ folder name (old saves) or an equip slot type (new saves)
+    // Always resolve the authoritative slot from the item ID
+    const slotType = equipSlotFromId(eq.id) || eq.category || "Coat";
+    const wzCategory = equipWzCategoryFromId(eq.id) || slotType;
+    const iconKey = loadEquipIcon(eq.id, wzCategory);
+    playerEquipped.set(slotType, { id: eq.id, name: "", iconKey });
     loadItemName(eq.id).then(name => {
-      const entry = playerEquipped.get(category);
-      if (entry) { entry.name = name || category; refreshUIWindows(); }
+      const entry = playerEquipped.get(slotType);
+      if (entry) { entry.name = name || slotType; refreshUIWindows(); }
     });
   }
 }
@@ -894,14 +1036,16 @@ function applyCharacterSave(save) {
   // Rebuild equipment
   playerEquipped.clear();
   for (const eq of (save.equipment || [])) {
-    const category = eq.slot_type;
-    const iconKey = loadEquipIcon(eq.item_id, equipWzCategoryFromId(eq.item_id) || category);
-    playerEquipped.set(category, { id: eq.item_id, name: eq.item_name || "", iconKey });
+    // Resolve slot from item ID (authoritative), fall back to saved slot_type
+    const slotType = equipSlotFromId(eq.item_id) || eq.slot_type;
+    const wzCategory = equipWzCategoryFromId(eq.item_id) || slotType;
+    const iconKey = loadEquipIcon(eq.item_id, wzCategory);
+    playerEquipped.set(slotType, { id: eq.item_id, name: eq.item_name || "", iconKey });
     // Async: load WZ stance data for character rendering
     loadEquipWzData(eq.item_id);
     // Async: load display name
     loadItemName(eq.item_id).then(name => {
-      const entry = playerEquipped.get(category);
+      const entry = playerEquipped.get(slotType);
       if (entry && name) { entry.name = name; refreshUIWindows(); }
     });
   }
@@ -1945,7 +2089,8 @@ function updateRemotePlayers(dt) {
 
 function getRemoteFrameDelay(rp) {
   // Read actual WZ frame delay from body data (same source as local player)
-  const frames = getCharacterActionFrames(rp.action);
+  const action = adjustStanceForRemoteWeapon(rp, rp.action);
+  const frames = getCharacterActionFrames(action);
   if (frames.length > 0) {
     const frameNode = frames[rp.frameIndex % frames.length];
     const leafRec = imgdirLeafRecord(frameNode);
@@ -1953,19 +2098,20 @@ function getRemoteFrameDelay(rp) {
     if (wzDelay > 0) return wzDelay;
   }
   // Fallbacks when WZ data not available
-  if (rp.action === "walk1") return 150;
+  if (action.startsWith("walk")) return 150;
   if (rp.attacking) return 200;
-  if (rp.action === "ladder" || rp.action === "rope") return 200;
+  if (action === "ladder" || action === "rope") return 200;
   return 200;
 }
 
 function getRemoteFrameCount(rp) {
   // Try reading from character body WZ data
-  const frames = getCharacterActionFrames(rp.action);
+  const action = adjustStanceForRemoteWeapon(rp, rp.action);
+  const frames = getCharacterActionFrames(action);
   if (frames.length > 0) return frames.length;
   // Fallback
-  if (rp.action === "walk1") return 4;
-  if (rp.action === "stand1") return 3;
+  if (action.startsWith("walk")) return 4;
+  if (action.startsWith("stand")) return 3;
   if (rp.attacking) return 3;
   return 3;
 }
@@ -1975,10 +2121,13 @@ function getRemoteFrameCount(rp) {
  * instead of the local player's equipment.
  */
 function getRemoteCharacterFrameData(rp) {
-  const action = rp.action;
+  let action = rp.action;
   const frameIndex = rp.frameIndex;
   const faceExpression = rp.faceExpression || "default";
   const faceFrameIndex = rp.faceFrameIndex || 0;
+
+  // Adjust stance for remote player's weapon (C++ CharEquips::adjust_stance)
+  action = adjustStanceForRemoteWeapon(rp, action);
 
   const frames = getCharacterActionFrames(action);
   if (frames.length === 0) return null;
@@ -2029,10 +2178,27 @@ function getRemoteCharacterFrameData(rp) {
   // Skip weapon when sitting on a chair
   const rpHidingWeapon = action === "sit";
   const equipDataMap = remoteEquipData.get(rp.id);
+  // Check if remote player has an overall equipped
+  let rpHasOverall = false;
+  if (equipDataMap) {
+    for (const [itemId] of equipDataMap) {
+      if (equipSlotFromId(Number(itemId)) === "Longcoat") { rpHasOverall = true; break; }
+    }
+  }
   if (equipDataMap) {
     for (const [itemId, equipJson] of equipDataMap) {
-      if (rpHidingWeapon && equipSlotFromId(Number(itemId)) === "Weapon") continue;
-      const equipParts = getEquipFrameParts(equipJson, action, frameIndex, `equip:${itemId}`);
+      const slot = equipSlotFromId(Number(itemId));
+      if (rpHidingWeapon && slot === "Weapon") continue;
+      // When overall equipped, skip separate top and bottom pieces
+      if (rpHasOverall && (slot === "Coat" || slot === "Pants")) continue;
+      // Face accessories use face expression as stance (C++ parity)
+      let eqAction = action;
+      let eqFrame = frameIndex;
+      if (slot === "FaceAcc") {
+        eqAction = faceExpression;
+        eqFrame = 0;
+      }
+      const equipParts = getEquipFrameParts(equipJson, eqAction, eqFrame, `equip:${itemId}`);
       for (const ep of equipParts) frameParts.push(ep);
     }
   }
@@ -2775,8 +2941,9 @@ function equipItemFromInventory(invIndex) {
   if (draggedItem.active) cancelItemDrag(true);
 
   // Derive equip slot from item ID (matching the keys used in playerEquipped).
-  // item.category may be "EQUIP" (inv tab name from reactor drops) — never use that as slot.
-  const slotType = equipWzCategoryFromId(item.id) || equipSlotFromId(item.id);
+  // equipSlotFromId is the primary slot resolver (maps to EQUIP_SLOT_LIST types).
+  // equipWzCategoryFromId maps to WZ folder names (e.g. "Accessory") — not equip slots.
+  const slotType = equipSlotFromId(item.id);
   if (!slotType) return;
 
   // If something already in that slot, swap to inventory (reuse the outgoing item's slot)
@@ -8461,16 +8628,29 @@ function getEquipFrameParts(data, action, frameIndex, prefix) {
     // weapons have no ladder/rope stance and are drawn only as BACKWEAPON if present).
     if (CLIMBING_STANCES.has(action)) return [];
 
-    // For other stances, fall back
-    actionNode = childByName(data, "stand1");
+    // For face accessories: fall back to "default" expression if specific one missing
+    actionNode = childByName(data, "default");
+    // For body equips: fall back to "stand1" stance if specific one missing
+    if (!actionNode) actionNode = childByName(data, "stand1");
     if (!actionNode) return [];
   }
 
   const frames = imgdirChildren(actionNode).sort((a, b) => Number(a.$imgdir) - Number(b.$imgdir));
-  if (frames.length === 0) return [];
 
-  const frameNode = frames[frameIndex % frames.length];
-  const framePath = [actionNode.$imgdir ?? action, String(frameNode.$imgdir ?? frameIndex)];
+  // Face accessories and some equips have canvas children directly under the action node
+  // (no numbered frame sub-nodes). Treat the action node itself as a single frame.
+  let frameNode;
+  let framePath;
+  if (frames.length === 0) {
+    // Check if actionNode has direct canvas children (face accessory pattern)
+    const hasDirectCanvas = (actionNode.$$ ?? []).some(c => typeof c.$canvas === "string" || typeof c.$uol === "string");
+    if (!hasDirectCanvas) return [];
+    frameNode = actionNode;
+    framePath = [actionNode.$imgdir ?? action];
+  } else {
+    frameNode = frames[frameIndex % frames.length];
+    framePath = [actionNode.$imgdir ?? action, String(frameNode.$imgdir ?? frameIndex)];
+  }
   const parts = [];
 
   for (const child of frameNode.$$ ?? []) {
@@ -8620,6 +8800,9 @@ function getCharacterFrameData(
   faceExpression = runtime.faceAnimation.expression,
   faceFrameIndex = runtime.faceAnimation.frameIndex,
 ) {
+  // C++ CharEquips::adjust_stance — weapon may override stand/walk stances
+  action = adjustStanceForWeapon(action);
+
   const frames = getCharacterActionFrames(action);
   if (frames.length === 0) return null;
 
@@ -8683,11 +8866,22 @@ function getCharacterFrameData(
   // Equipment — iterate currently equipped items (dynamic, not DEFAULT_EQUIPS)
   // Skip weapon when sitting on a chair
   const hidingWeapon = action === "sit";
+  // C++ parity: if overall (Longcoat) is equipped, hide separate Coat and Pants
+  const hasOverall = hasOverallEquipped();
   for (const [slotType, equipped] of playerEquipped) {
     if (hidingWeapon && slotType === "Weapon") continue;
+    // When overall equipped, skip separate top and bottom pieces
+    if (hasOverall && (slotType === "Coat" || slotType === "Pants")) continue;
     const equipData = runtime.characterEquipData[equipped.id];
     if (!equipData) continue;
-    const equipParts = getEquipFrameParts(equipData, action, frameIndex, `equip:${equipped.id}`);
+    // Face accessories use face expression as stance, frame 0 (C++ draws FACEACC at frame 0 with faceargs)
+    let eqAction = action;
+    let eqFrame = frameIndex;
+    if (slotType === "FaceAcc") {
+      eqAction = faceExpression;
+      eqFrame = 0;
+    }
+    const equipParts = getEquipFrameParts(equipData, eqAction, eqFrame, `equip:${equipped.id}`);
     for (const ep of equipParts) {
       frameParts.push(ep);
     }
@@ -9807,7 +10001,8 @@ function updatePlayer(dt) {
       player.frameTimer += dt * 1000;
       if (player.frameTimer >= delayMs) {
         player.frameTimer = 0;
-        const frames = getCharacterActionFrames(player.action);
+        const adjustedAction = adjustStanceForWeapon(player.action);
+        const frames = getCharacterActionFrames(adjustedAction);
         if (frames.length > 0) {
           player.frameIndex = (player.frameIndex + 1) % frames.length;
         }

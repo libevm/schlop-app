@@ -2,22 +2,30 @@
 
 > Implements the MapleStory equipment window, equip/unequip mechanics, and
 > dynamic character sprite rendering. C++ reference: `UIEquipInventory`,
-> `Inventory`, `EquipSlot`, `EquipData`, `CharLook`.
+> `Inventory`, `EquipSlot`, `EquipData`, `CharLook`, `Clothing`, `WeaponData`.
 
 ## Equipment Slots
 
 ### Slot List (`EQUIP_SLOT_LIST`)
 
-| Slot Type | UI Label | Item ID Range     | WZ Folder  |
-|-----------|----------|-------------------|------------|
-| Cap       | Hat      | 100xxxx           | Cap        |
-| Cape      | Cape     | 110xxxx           | Cape       |
-| Coat      | Top      | 104xxxx / 105xxxx | Coat / Longcoat |
-| Shield    | Shield   | 109xxxx           | Shield     |
-| Glove     | Gloves   | 108xxxx           | Glove      |
-| Pants     | Bottom   | 106xxxx           | Pants      |
-| Shoes     | Shoes    | 107xxxx           | Shoes      |
-| Weapon    | Weapon   | 130xxxx–170xxxx   | Weapon     |
+| Slot Type  | UI Label  | Item ID Range     | WZ Folder  | Visible Sprite |
+|------------|-----------|-------------------|------------|----------------|
+| Cap        | Hat       | 100xxxx           | Cap        | ✅ |
+| FaceAcc    | Face Acc  | 101xxxx           | Accessory  | ✅ (expression-based) |
+| EyeAcc     | Eye Acc   | 102xxxx           | Accessory  | ✅ |
+| Earrings   | Earrings  | 103xxxx           | Accessory  | ✅ |
+| Pendant    | Pendant   | 112xxxx           | Accessory  | ❌ (stats only) |
+| Cape       | Cape      | 110xxxx           | Cape       | ✅ |
+| Coat       | Top       | 104xxxx           | Coat       | ✅ |
+| Longcoat   | Overall   | 105xxxx           | Longcoat   | ✅ (hides Coat+Pants) |
+| Shield     | Shield    | 109xxxx           | Shield     | ✅ |
+| Glove      | Gloves    | 108xxxx           | Glove      | ✅ |
+| Pants      | Bottom    | 106xxxx           | Pants      | ✅ |
+| Shoes      | Shoes     | 107xxxx           | Shoes      | ✅ |
+| Weapon     | Weapon    | 130xxxx–170xxxx   | Weapon     | ✅ |
+| Ring       | Ring      | 111xxxx           | Ring       | ❌ (stats only) |
+| Belt       | Belt      | 113xxxx           | Accessory  | ❌ (stats only) |
+| Medal      | Medal     | 114xxxx           | Accessory  | ❌ (stats only) |
 
 ### Item ID → Slot Mapping (`equipSlotFromId`)
 
@@ -27,12 +35,20 @@ C++ parity with `EquipData` constructor: `index = id / 10000 - 100`
 function equipSlotFromId(id) {
   const p = Math.floor(id / 10000);
   if (p === 100) return "Cap";
-  if (p === 104 || p === 105) return "Coat"; // Top + Overall share slot
+  if (p === 101) return "FaceAcc";
+  if (p === 102) return "EyeAcc";
+  if (p === 103) return "Earrings";
+  if (p === 104) return "Coat";
+  if (p === 105) return "Longcoat";  // Overall — separate slot, hides Coat+Pants
   if (p === 106) return "Pants";
   if (p === 107) return "Shoes";
   if (p === 108) return "Glove";
   if (p === 109) return "Shield";
   if (p === 110) return "Cape";
+  if (p === 111) return "Ring";
+  if (p === 112) return "Pendant";
+  if (p === 113) return "Belt";
+  if (p === 114) return "Medal";
   if (p >= 130 && p <= 170) return "Weapon";
   return null;
 }
@@ -46,7 +62,7 @@ Maps item ID prefix to `Character.wz` subfolder for loading sprites/icons:
 function equipWzCategoryFromId(id) {
   const p = Math.floor(id / 10000);
   if (p === 100) return "Cap";
-  if (p >= 101 && p <= 103) return "Accessory";
+  if (p >= 101 && p <= 103) return "Accessory"; // Face, Eye, Ear
   if (p === 104) return "Coat";
   if (p === 105) return "Longcoat";
   if (p === 106) return "Pants";
@@ -55,16 +71,96 @@ function equipWzCategoryFromId(id) {
   if (p === 109) return "Shield";
   if (p === 110) return "Cape";
   if (p === 111) return "Ring";
+  if (p >= 112 && p <= 114) return "Accessory"; // Pendant, Belt, Medal
   if (p >= 130 && p <= 170) return "Weapon";
   return null;
 }
+```
+
+## Weapon Type System (C++ `Weapon::Type`)
+
+### Weapon Types
+
+| Prefix | Type | Two-Handed | Stance |
+|--------|------|------------|--------|
+| 130 | 1H Sword | ❌ | stand1/walk1 |
+| 131 | 1H Axe | ❌ | stand1/walk1 |
+| 132 | 1H Mace | ❌ | stand1/walk1 |
+| 133 | Dagger | ❌ | stand1/walk1 |
+| 137 | Wand | ❌ | stand1/walk1 |
+| 138 | Staff | ✅ | stand2/walk2 |
+| 140 | 2H Sword | ✅ | stand2/walk2 |
+| 141 | 2H Axe | ✅ | stand2/walk2 |
+| 142 | 2H Mace | ✅ | stand2/walk2 |
+| 143 | Spear | ✅ | stand2/walk2 |
+| 144 | Polearm | ✅ | stand2/walk2 |
+| 145 | Bow | ❌ | from WZ info |
+| 146 | Crossbow | ✅ | stand2/walk2 |
+| 147 | Claw | ❌ | stand1/walk1 |
+| 148 | Knuckle | ❌ | stand1/walk1 |
+| 149 | Gun | ❌ | from WZ info |
+| 170 | Cash | ❌ | from WZ info |
+
+### Stance Adjustment (`adjustStanceForWeapon`)
+
+C++ `CharEquips::adjust_stance`: when a weapon is equipped, stand1/walk1 may be
+replaced with stand2/walk2 based on:
+1. Weapon WZ `info/stand` and `info/walk` values (1 or 2)
+2. Fallback: `TWO_HANDED_PREFIXES` set (staff, 2H weapons, crossbow)
+
+Applied in `getCharacterFrameData()` and `getRemoteCharacterFrameData()`.
+
+### `getWeaponStances(weaponId)`
+
+Reads `info/stand` and `info/walk` from the weapon's WZ data. Returns
+`{ stand: "stand1"|"stand2", walk: "walk1"|"walk2" }`.
+
+## Overall (Longcoat) Handling
+
+C++ `CharEquips::has_overall`: `id / 10000 == 105`
+
+When an overall is equipped:
+- `hasOverallEquipped()` returns true
+- Equipment iteration in `getCharacterFrameData` skips Coat and Pants slots
+- Same logic in `getRemoteCharacterFrameData` for other players
+- Longcoat occupies its own slot (`"Longcoat"`), separate from Coat/Pants
+
+## Cap Type / Hair Visibility (`getCapType`)
+
+C++ `CharEquips::getcaptype` reads `info/vslot` from cap WZ data:
+
+| vslot | Cap Type | Hair Visibility |
+|-------|----------|-----------------|
+| `CpH5` | HEADBAND | All hair shown |
+| `CpH1H5` | HALFCOVER | belowCap hair only |
+| `CpH1H5AyAs` (or longer) | FULLCOVER | All hair hidden |
+| (other) | NONE | All hair shown |
+
+*Currently parsed but not yet used for hair hiding logic.*
+
+## Face Accessory Rendering
+
+Face accessories (101xxxx) have a unique WZ structure:
+- Top-level nodes are expression names (`default`, `blink`, `smile`, etc.)
+- Each contains direct canvas children (not numbered frame sub-nodes)
+- Canvas z-layer: `accessoryFace`
+- Anchored to `brow` vector
+
+Special handling in equipment rendering:
+- `getCharacterFrameData`: passes `faceExpression` (not body action) and frame 0
+- `getEquipFrameParts`: handles flat canvas children (no frame sub-nodes)
+- Falls back to `"default"` expression if specific one missing
+
+C++ draws face accessories at `faceargs` (face-shifted position), frame 0:
+```cpp
+equips.draw(EquipSlot::Id::FACE, interstance, Clothing::Layer::FACEACC, 0, faceargs);
 ```
 
 ## Data Model
 
 ### `playerEquipped` (Map<string, object>)
 
-Keyed by slot type (e.g. `"Coat"`, `"Weapon"`). Each value:
+Keyed by slot type (e.g. `"Coat"`, `"Weapon"`, `"FaceAcc"`). Each value:
 ```js
 {
   id: number,       // item ID (e.g. 1040002)
@@ -87,10 +183,6 @@ the client mirrors this for offline mode only.
 | Pants | 1060002 | 1061002 |
 | Shoes | 1072001 | 1072001 (unisex) |
 | Weapon | 1302000 | 1302000 (unisex) |
-
-After creation, `face_id`, `hair_id`, and equipment are **stored character state**
-on `runtime.player` and in the save data. They are never re-derived from gender —
-they can be changed independently (e.g. hair salon, equip swap).
 
 ### `runtime.characterEquipData` (Object)
 
@@ -125,7 +217,7 @@ User double-clicks inventory item (EQUIP tab)
   → equipItemFromInventory(invIndex)
     → hideTooltip()
     → cancelItemDrag(true)  [silent]
-    → slotType = item.category || equipSlotFromId(item.id)
+    → slotType = equipSlotFromId(item.id)
     → if slot occupied: swap existing → inventory (reuses outgoing item's slot index)
     → playerInventory.splice(invIndex, 1)
     → playerEquipped.set(slotType, { id, name, iconKey })
@@ -152,18 +244,39 @@ User drags equipped item → clicks canvas
 
 ### Dynamic Equipment Iteration
 
-`getCharacterFrameData()` iterates `playerEquipped` (not the static `DEFAULT_EQUIPS`):
+`getCharacterFrameData()` iterates `playerEquipped`:
 
 ```js
-for (const [, equipped] of playerEquipped) {
+// Adjust stance for weapon (stand1 → stand2 for two-handed)
+action = adjustStanceForWeapon(action);
+
+const hasOverall = hasOverallEquipped();
+for (const [slotType, equipped] of playerEquipped) {
+  if (hidingWeapon && slotType === "Weapon") continue;
+  if (hasOverall && (slotType === "Coat" || slotType === "Pants")) continue;
   const equipData = runtime.characterEquipData[equipped.id];
   if (!equipData) continue;
-  const equipParts = getEquipFrameParts(equipData, action, frameIndex, `equip:${equipped.id}`);
+  // Face accessories use expression as stance
+  let eqAction = action, eqFrame = frameIndex;
+  if (slotType === "FaceAcc") { eqAction = faceExpression; eqFrame = 0; }
+  const equipParts = getEquipFrameParts(equipData, eqAction, eqFrame, `equip:${equipped.id}`);
   for (const ep of equipParts) frameParts.push(ep);
 }
 ```
 
-This means equipment changes are **immediately reflected** in the character sprite.
+### `getEquipFrameParts` Enhancements
+
+- Handles flat canvas children (face accessories with no numbered frame sub-nodes)
+- Falls back to `"default"` → `"stand1"` if action not found
+- During climbing, equips without ladder/rope stance are hidden (C++ parity)
+- Reads `z` string child for zmap layer ordering
+
+### Remote Player Equipment
+
+`getRemoteCharacterFrameData` applies same logic:
+- `adjustStanceForRemoteWeapon(rp, action)` reads weapon from `remoteEquipData`
+- Overall detection checks `remoteEquipData` for Longcoat items
+- Face accessories use expression as stance
 
 ### WZ Data Loading (`loadEquipWzData`)
 
@@ -184,8 +297,8 @@ On first character data request, fetches face/hair WZ from `runtime.player.face_
 `runtime.player.hair_id` (via `playerFacePath()` / `playerHairPath()`), and builds equip
 fetch list from current `playerEquipped`:
 ```js
-fetchJson(`/resources/Character.wz/${playerFacePath()}`),  // e.g. Face/00021000.img.json
-fetchJson(`/resources/Character.wz/${playerHairPath()}`),  // e.g. Hair/00031000.img.json
+fetchJson(`/resources/Character.wz/${playerFacePath()}`),
+fetchJson(`/resources/Character.wz/${playerHairPath()}`),
 const equipEntries = [...playerEquipped.entries()].map(([slotType, eq]) => ({
   id: eq.id,
   category: equipWzCategoryFromId(eq.id) || slotType,
@@ -219,7 +332,7 @@ Without clearing, the character continues rendering the old equipment set.
 ### Grid Layout
 
 - `equip-grid`: 4-column CSS grid of 36×36px slots
-- 8 slots matching `EQUIP_SLOT_LIST`
+- 16 slots matching `EQUIP_SLOT_LIST`
 - Empty slots show label text (e.g. "Hat", "Weapon")
 - Filled slots show equip icon with tooltip on hover
 
@@ -242,7 +355,9 @@ Without clearing, the character continues rendering the old equipment set.
 
 Equipment is saved/loaded via `buildCharacterSave()` / `applyCharacterSave()`:
 - Each equip serialized as `{ slot_type, item_id, item_name }`
-- On load, `loadEquipWzData(id)` is called for each equip (async, for character rendering)
+- `slot_type` uses new slot names: Cap, FaceAcc, EyeAcc, Earrings, Coat, Longcoat, etc.
+- On load, `equipSlotFromId(item_id)` resolves authoritative slot (ignores saved slot_type)
+- `loadEquipWzData(id)` called for each equip (async, for character rendering)
 - Icons and names async-fetched; `characterPlacementTemplateCache` cleared on equip WZ load
 - Save triggers: equip/unequip, loot, drop, portal transition, level up, slot swap, 30s timer, beforeunload
 - Online: dual-path — WS `save_state` (immediate DB persist) + REST `POST /api/character/save` (backup)
@@ -253,8 +368,7 @@ Equipment is saved/loaded via `buildCharacterSave()` / `applyCharacterSave()`:
 
 - No stat requirements check (C++ `can_wear_equip` validates level/job/stats)
 - No gender restrictions
-- No overall/longcoat detection (both map to "Coat" slot, should hide pants)
-- No ring/pendant/belt/medal/accessory slots in UI grid
+- Cap type parsed (`getCapType`) but not yet used for hair hiding
 - No equip tooltips with stat details
 - No scroll use (applying scrolls to equipment)
 - No equipment swap via drag-drop between equip and inventory windows
