@@ -182,7 +182,14 @@ export async function handleCharacterRequest(
       );
     }
 
-    saveCharacterData(db, sessionId, JSON.stringify(body));
+    // Preserve server-authoritative achievements — client save must not overwrite them
+    const existingData = existing as Record<string, unknown>;
+    const bodyObj = body as Record<string, unknown>;
+    if (existingData.achievements && typeof existingData.achievements === "object") {
+      bodyObj.achievements = existingData.achievements;
+    }
+
+    saveCharacterData(db, sessionId, JSON.stringify(bodyObj));
     return jsonResponse({ ok: true });
   }
 

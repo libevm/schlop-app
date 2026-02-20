@@ -1037,16 +1037,7 @@ function buildCharacterSave() {
       slot: it.slot,
       category: it.category || null,
     })),
-    achievements: {
-      mobs_killed: 0,
-      maps_visited: [],
-      portals_used: 0,
-      items_looted: 0,
-      max_level_reached: runtime.player.level,
-      total_damage_dealt: 0,
-      deaths: 0,
-      play_time_ms: 0,
-    },
+    achievements: {},
     version: 1,
     saved_at: new Date().toISOString(),
   };

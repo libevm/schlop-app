@@ -42,10 +42,7 @@ function buildDefaultCharacterSave(name: string, gender: boolean): object {
       { item_id: 4000001, qty: 3, inv_type: "ETC", slot: 1, category: null },
       { item_id: 3010000, qty: 1, inv_type: "SETUP", slot: 0, category: null },
     ],
-    achievements: {
-      mobs_killed: 0, maps_visited: [], portals_used: 0, items_looted: 0,
-      max_level_reached: 1, total_damage_dealt: 0, deaths: 0, play_time_ms: 0,
-    },
+    achievements: {},
     version: 1,
     saved_at: new Date().toISOString(),
   };
