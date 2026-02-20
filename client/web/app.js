@@ -1971,7 +1971,7 @@ function handleServerMessage(msg) {
       // Grey system message in chat
       const sysMsg = {
         name: "",
-        text: `You've completed ${questName} and have received ${itemName}! Refresh if it doesn't appear in your inventory.`,
+        text: `You've completed ${questName} and have received ${itemName}! Refresh the page if it doesn't appear in your inventory.`,
         timestamp: Date.now(),
         type: "system",
       };
