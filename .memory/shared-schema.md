@@ -405,6 +405,12 @@ Sent to ALL players in room (including the dropper so they can replace the local
 ```
 Sent to ALL players. Looter adds item to inventory; others animate pickup.
 
+### `drop_expire` — Item expired from map (broadcast to ALL in room)
+```json
+{ "type": "drop_expire", "drop_id": 42 }
+```
+Sent when a drop has been on the ground for 180 seconds. Client fades it out over 2s.
+
 ### Global (sent to ALL connected players)
 
 ### `global_level_up` — Celebration broadcast (level ≥ 10)

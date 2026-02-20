@@ -34,6 +34,11 @@ export interface WSClientData {
   client: WSClient | null;
 }
 
+/** How long drops persist on the map before expiring (ms). MapleStory standard ~180s. */
+export const DROP_EXPIRE_MS = 180_000;
+/** How often the server sweeps for expired drops (ms). */
+const DROP_SWEEP_INTERVAL_MS = 5_000;
+
 export interface MapDrop {
   drop_id: number;
   item_id: number;
@@ -45,6 +50,7 @@ export interface MapDrop {
   owner_id: string;   // session ID of who dropped it
   iconKey: string;    // client icon cache key for rendering
   category: string | null;
+  created_at: number; // Date.now() timestamp
 }
 
 // ─── Room Manager ───────────────────────────────────────────────────
@@ -176,9 +182,9 @@ export class RoomManager {
 
   // ── Drop management ──
 
-  addDrop(mapId: string, drop: Omit<MapDrop, "drop_id">): MapDrop {
+  addDrop(mapId: string, drop: Omit<MapDrop, "drop_id" | "created_at">): MapDrop {
     const dropId = this._nextDropId++;
-    const fullDrop: MapDrop = { ...drop, drop_id: dropId };
+    const fullDrop: MapDrop = { ...drop, drop_id: dropId, created_at: Date.now() };
     let drops = this.mapDrops.get(mapId);
     if (!drops) {
       drops = new Map();
@@ -202,6 +208,29 @@ export class RoomManager {
     const drops = this.mapDrops.get(mapId);
     if (!drops) return [];
     return Array.from(drops.values());
+  }
+
+  /** Start periodic sweep for expired drops. Call once at server start. */
+  startDropSweep(): void {
+    setInterval(() => this.sweepExpiredDrops(), DROP_SWEEP_INTERVAL_MS);
+  }
+
+  /** Remove drops older than DROP_EXPIRE_MS, broadcast drop_expire to rooms. */
+  private sweepExpiredDrops(): void {
+    const now = Date.now();
+    for (const [mapId, drops] of this.mapDrops) {
+      const expired: number[] = [];
+      for (const [dropId, drop] of drops) {
+        if (now - drop.created_at >= DROP_EXPIRE_MS) {
+          expired.push(dropId);
+        }
+      }
+      for (const dropId of expired) {
+        drops.delete(dropId);
+        this.broadcastToRoom(mapId, { type: "drop_expire", drop_id: dropId });
+      }
+      if (drops.size === 0) this.mapDrops.delete(mapId);
+    }
   }
 
   // ── Internal ──

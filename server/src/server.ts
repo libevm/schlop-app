@@ -393,6 +393,7 @@ export function createServer(
     // Room manager for WebSocket multiplayer
     const roomManager = new RoomManager();
     if (db) roomManager.start();
+    roomManager.startDropSweep();
 
     const server = Bun.serve<WSClientData>({
       port: cfg.port,

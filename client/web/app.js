@@ -618,6 +618,8 @@ const DROP_SPINSTEP = 0.3;      // spin per tick while airborne
 const DROP_PHYS_GRAVITY = 0.35; // 2.5x gravity for snappier landing
 const DROP_PHYS_TERMINAL_VY = 12;// terminal fall speed
 const LOOT_ANIM_DURATION = 400; // ms — pickup fly animation
+const DROP_EXPIRE_MS = 180_000; // 180s — drops disappear after this (C++ server standard)
+const DROP_EXPIRE_FADE_MS = 2000; // 2s fade-out animation before removal
 
 /** Icon data URI cache */
 const iconDataUriCache = new Map();
@@ -1412,6 +1414,16 @@ function handleServerMessage(msg) {
       } else {
         // Someone else looted — animate flying toward them
         animateDropPickup(dropId, msg.looter_id);
+      }
+      break;
+    }
+
+    case "drop_expire": {
+      // Server expired a drop — fade it out
+      const drop = groundDrops.find(d => d.drop_id === msg.drop_id);
+      if (drop && !drop.pickingUp) {
+        drop.expiring = true;
+        drop.expireStart = performance.now();
       }
       break;
     }
@@ -2242,6 +2254,8 @@ function dropItemOnMap() {
     spawnTime: performance.now(),
     pickingUp: false,
     pickupStart: 0,
+    expiring: false,
+    expireStart: 0,
   });
 
   // Remove from source
@@ -2301,6 +2315,27 @@ function updateGroundDrops(dt) {
         groundDrops.splice(i, 1);
       }
       continue;
+    }
+
+    // Expiry fade-out (server-triggered or client-side timeout)
+    if (drop.expiring) {
+      const elapsed = performance.now() - drop.expireStart;
+      const t = Math.min(1, elapsed / DROP_EXPIRE_FADE_MS);
+      drop.opacity = 1 - t;
+      if (t >= 1) {
+        groundDrops.splice(i, 1);
+      }
+      continue;
+    }
+
+    // Client-side expiry check (offline mode, or if server sweep hasn't triggered yet)
+    if (drop.onGround && !_wsConnected) {
+      const age = performance.now() - drop.spawnTime;
+      if (age >= DROP_EXPIRE_MS) {
+        drop.expiring = true;
+        drop.expireStart = performance.now();
+        continue;
+      }
     }
 
     if (!drop.onGround) {
@@ -2389,8 +2424,8 @@ function tryLootDrop() {
 
   for (let i = 0; i < groundDrops.length; i++) {
     const drop = groundDrops[i];
-    // Must be landed (done rotating) and not already being picked up
-    if (drop.pickingUp || !drop.onGround) continue;
+    // Must be landed (done rotating), not being picked up, and not expiring
+    if (drop.pickingUp || !drop.onGround || drop.expiring) continue;
     // Check overlap between player touch hitbox and drop item bounds (32×32 centered)
     const dropBounds = normalizedRect(
       drop.x - 16, drop.x + 16,
@@ -2491,6 +2526,8 @@ function createDropFromServer(dropData, animate) {
     spawnTime: performance.now(),
     pickingUp: false,
     pickupStart: 0,
+    expiring: false,
+    expireStart: 0,
   });
 }
 

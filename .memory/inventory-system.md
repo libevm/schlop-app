@@ -165,6 +165,12 @@ Drops are synced across all players in the same map via the server.
 
 **Map enter**: `map_state` includes `drops[]` — all existing drops appear landed (no animation)
 
+**Drop expiry** (180 seconds):
+- Server: `sweepExpiredDrops()` runs every 5s, removes drops older than `DROP_EXPIRE_MS` (180s), broadcasts `drop_expire { drop_id }` to room
+- Client: on `drop_expire` message, starts 2s fade-out animation (`expiring=true, expireStart`)
+- Offline: client-side timer checks `spawnTime` age when `onGround && !_wsConnected`
+- Expiring drops cannot be looted (`drop.expiring` check in `tryLootDrop`)
+
 **Offline mode**: Drops work locally with negative temp IDs, no server interaction.
 
 ### Drop States (C++ `Drop::State`)
