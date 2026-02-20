@@ -842,13 +842,54 @@ function loadItemIcon(itemId) {
     if (!itemNode?.$$) return;
     const infoNode = itemNode.$$.find(c => c.$imgdir === "info");
     if (!infoNode?.$$) return;
+    // Direct canvas icon
     const iconNode = infoNode.$$.find(c => c.$canvas === "icon" || c.$canvas === "iconRaw");
     if (iconNode?.basedata) {
       iconDataUriCache.set(key, `data:image/png;base64,${iconNode.basedata}`);
       refreshUIWindows();
+      return;
+    }
+    // UOL reference — e.g. "../../02040008/info/icon"
+    // Resolve relative to the info node: ../../ goes up to file root, then navigate path
+    const uolNode = infoNode.$$.find(c => {
+      const v = String(c.value ?? "");
+      return v.includes("info/icon") && v.includes("../");
+    });
+    if (uolNode) {
+      const resolved = resolveItemIconUol(json, String(uolNode.value));
+      if (resolved?.basedata) {
+        iconDataUriCache.set(key, `data:image/png;base64,${resolved.basedata}`);
+        refreshUIWindows();
+      }
     }
   }).catch(() => {});
   return key;
+}
+
+/**
+ * Resolve a UOL icon reference within a WZ item file.
+ * UOL format: "../../{itemId}/info/icon" — relative to the info node.
+ * From info level: ../../ goes to file root, then itemId/info/icon.
+ */
+function resolveItemIconUol(fileJson, uolPath) {
+  // Normalize: strip leading ../../ pairs to get the absolute path from file root
+  const parts = uolPath.split("/");
+  // Count leading ".." segments — each pair of "../" goes up one level
+  let upCount = 0;
+  while (upCount < parts.length && parts[upCount] === "..") upCount++;
+  // The remaining path is relative to the ancestor node
+  // From info (depth 2 within item/info), going up 2 levels reaches file root
+  const relPath = parts.slice(upCount);
+  // Navigate from file root: relPath[0] = itemId, relPath[1] = "info", relPath[2] = "icon"
+  let node = fileJson;
+  for (const seg of relPath) {
+    if (!node?.$$) return null;
+    // Try $imgdir match first, then $canvas match
+    const child = node.$$.find(c => c.$imgdir === seg) || node.$$.find(c => c.$canvas === seg);
+    if (!child) return null;
+    node = child;
+  }
+  return node;
 }
 
 function findStringName(node, targetId) {
