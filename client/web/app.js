@@ -2759,7 +2759,9 @@ function equipItemFromInventory(invIndex) {
   // Cancel any active drag silently — this function plays its own sound
   if (draggedItem.active) cancelItemDrag(true);
 
-  const slotType = item.category || equipSlotFromId(item.id);
+  // Derive equip slot from item ID (matching the keys used in playerEquipped).
+  // item.category may be "EQUIP" (inv tab name from reactor drops) — never use that as slot.
+  const slotType = equipWzCategoryFromId(item.id) || equipSlotFromId(item.id);
   if (!slotType) return;
 
   // If something already in that slot, swap to inventory (reuse the outgoing item's slot)
