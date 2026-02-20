@@ -2034,10 +2034,13 @@ function showPlayerInfoModal(rp) {
   const overlay = document.createElement("div");
   overlay.id = "player-info-modal";
   overlay.className = "modal-overlay";
-  overlay.style.cssText = "cursor:none;z-index:200000;user-select:none;";
+  overlay.style.cssText = "cursor:none;z-index:200000;user-select:none;pointer-events:none;";
   overlay.innerHTML = `
-    <div class="modal-panel" style="width:240px;">
-      <div class="modal-titlebar"><span class="modal-title">${name}</span></div>
+    <div class="modal-panel" id="player-info-panel"
+      style="width:240px;position:absolute;pointer-events:auto;">
+      <div class="modal-titlebar" id="player-info-titlebar" style="cursor:none;">
+        <span class="modal-title">${name}</span>
+      </div>
       <div class="modal-body" style="padding:14px 16px 10px;text-align:center;">
         <canvas id="player-info-sprite" width="120" height="120"
           style="display:block;margin:0 auto 10px;image-rendering:pixelated;"></canvas>
@@ -2054,11 +2057,43 @@ function showPlayerInfoModal(rp) {
   `;
   document.body.appendChild(overlay);
 
+  // Center the panel initially
+  const panel = overlay.querySelector("#player-info-panel");
+  const rect = overlay.getBoundingClientRect();
+  panel.style.left = `${(rect.width - 240) / 2}px`;
+  panel.style.top = `${(rect.height - panel.offsetHeight) / 2}px`;
+
+  // Make draggable by titlebar
+  const titlebar = overlay.querySelector("#player-info-titlebar");
+  let dragOff = null;
+  titlebar.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    dragOff = { x: e.clientX - panel.offsetLeft, y: e.clientY - panel.offsetTop };
+  });
+  window.addEventListener("pointermove", onDragMove);
+  window.addEventListener("pointerup", onDragUp);
+  function onDragMove(e) {
+    if (!dragOff) return;
+    const oRect = overlay.getBoundingClientRect();
+    let nx = e.clientX - dragOff.x;
+    let ny = e.clientY - dragOff.y;
+    nx = Math.max(0, Math.min(oRect.width - panel.offsetWidth, nx));
+    ny = Math.max(0, Math.min(oRect.height - panel.offsetHeight, ny));
+    panel.style.left = `${nx}px`;
+    panel.style.top = `${ny}px`;
+  }
+  function onDragUp() { dragOff = null; }
+
   // Render sprite async (retries until hair/face loaded)
   const spriteCanvas = overlay.querySelector("#player-info-sprite");
   renderRemotePlayerSprite(rp, spriteCanvas);
 
-  const close = () => { overlay.remove(); window.removeEventListener("keydown", onKey); };
+  const close = () => {
+    overlay.remove();
+    window.removeEventListener("keydown", onKey);
+    window.removeEventListener("pointermove", onDragMove);
+    window.removeEventListener("pointerup", onDragUp);
+  };
   overlay.querySelector("#player-info-close").addEventListener("click", (e) => {
     e.stopPropagation();
     playUISound("BtMouseClick");
