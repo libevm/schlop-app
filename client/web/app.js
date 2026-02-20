@@ -5075,6 +5075,116 @@ const DEFAULT_ACCURACY = 10;
 const DEFAULT_WATK = 15;
 const SWORD_1H_ATTACK_STANCES = ["stabO1", "stabO2", "swingO1", "swingO2", "swingO3"];
 
+// ─── Attack stances per weapon attack type (C++ CharLook::getattackstance) ───
+// Attack type is read from weapon WZ info/attack ($short).
+// Index: 0=NONE, 1=S1A1M1D (1H), 2=SPEAR, 3=BOW, 4=CROSSBOW, 5=S2A2M2 (2H), 6=WAND, 7=CLAW, 8=KNUCKLE, 9=GUN
+const ATTACK_STANCES_BY_TYPE = [
+  /* 0: NONE */     [],
+  /* 1: S1A1M1D */  ["stabO1", "stabO2", "swingO1", "swingO2", "swingO3"],
+  /* 2: SPEAR */    ["stabT1", "swingP1"],
+  /* 3: BOW */      ["shoot1"],
+  /* 4: CROSSBOW */ ["shoot2"],
+  /* 5: S2A2M2 */   ["stabO1", "stabO2", "swingT1", "swingT2", "swingT3"],
+  /* 6: WAND */     ["swingO1", "swingO2"],
+  /* 7: CLAW */     ["swingO1", "swingO2"],
+  /* 8: KNUCKLE */  ["swingO1", "swingO2"],
+  /* 9: GUN */      ["shot"],
+];
+
+// Degenerate (prone) stances per weapon attack type
+const DEGEN_STANCES_BY_TYPE = [
+  /* 0: NONE */     [],
+  /* 1: S1A1M1D */  [],
+  /* 2: SPEAR */    [],
+  /* 3: BOW */      ["swingT1", "swingT3"],
+  /* 4: CROSSBOW */ ["swingT1", "stabT1"],
+  /* 5: S2A2M2 */   [],
+  /* 6: WAND */     [],
+  /* 7: CLAW */     ["swingT1", "stabT1"],
+  /* 8: KNUCKLE */  [],
+  /* 9: GUN */      ["swingP1", "stabT2"],
+];
+
+// Weapon sound effect keys per weapon type prefix (C++ WeaponData::get_usesound via sfx)
+const WEAPON_SFX_BY_PREFIX = {
+  130: "swordL",    // 1H Sword
+  131: "swordL",    // 1H Axe
+  132: "mace",      // 1H Mace
+  133: "swordL",    // Dagger
+  137: "mace",      // Wand
+  138: "mace",      // Staff
+  140: "swordL",    // 2H Sword
+  141: "swordS",    // 2H Axe
+  142: "mace",      // 2H Mace
+  143: "spear",     // Spear
+  144: "poleArm",   // Polearm
+  145: "bow",       // Bow
+  146: "cBow",      // Crossbow
+  147: "tGlove",    // Claw
+  148: "knuckle",   // Knuckle
+  149: "gun",       // Gun
+};
+
+/**
+ * Get the attack type from the currently equipped weapon's WZ info.
+ * Returns the attack index (1-9) or 1 (1H default) if no weapon / no data.
+ */
+function getWeaponAttackType() {
+  const weapon = playerEquipped.get("Weapon");
+  if (!weapon) return 1; // default to 1H
+  const wzData = runtime.characterEquipData[weapon.id];
+  if (!wzData) return 1;
+  const info = wzData.$$?.find(c => c.$imgdir === "info");
+  if (!info) return 1;
+  for (const c of info.$$ || []) {
+    if (c.$short === "attack" || c.$int === "attack") return Number(c.value) || 1;
+  }
+  return 1;
+}
+
+/**
+ * Get the attack stances for the current weapon (C++ CharLook::getattackstance).
+ * @param {boolean} degenerate - true when prone (uses degen stances for ranged)
+ * @returns {string[]} Array of possible attack stance names
+ */
+function getWeaponAttackStances(degenerate) {
+  const attackType = getWeaponAttackType();
+  const stances = degenerate
+    ? (DEGEN_STANCES_BY_TYPE[attackType] || [])
+    : (ATTACK_STANCES_BY_TYPE[attackType] || []);
+  // Filter to stances that actually have frames in body data
+  const available = stances.filter(s => getCharacterActionFrames(s).length > 0);
+  if (available.length > 0) return available;
+  // Fallback: try the non-degenerate stances
+  if (degenerate) {
+    const fallback = (ATTACK_STANCES_BY_TYPE[attackType] || []).filter(s => getCharacterActionFrames(s).length > 0);
+    if (fallback.length > 0) return fallback;
+  }
+  // Ultimate fallback: 1H stances
+  return SWORD_1H_ATTACK_STANCES.filter(s => getCharacterActionFrames(s).length > 0);
+}
+
+/**
+ * Get the weapon sound effect key for the current weapon.
+ */
+function getWeaponSfxKey() {
+  const weapon = playerEquipped.get("Weapon");
+  if (!weapon) return "swordL";
+  // Try reading sfx from WZ info
+  const wzData = runtime.characterEquipData[weapon.id];
+  if (wzData) {
+    const info = wzData.$$?.find(c => c.$imgdir === "info");
+    if (info) {
+      for (const c of info.$$ || []) {
+        if (c.$string === "sfx") return String(c.value || "swordL");
+      }
+    }
+  }
+  // Fallback: derive from weapon type prefix
+  const prefix = Math.floor(weapon.id / 10000);
+  return WEAPON_SFX_BY_PREFIX[prefix] || "swordL";
+}
+
 const damageNumbers = []; // { x, y, vspeed, value, critical, opacity, miss }
 
 // ─── WZ Damage Number Sprites ────────────────────────────────────────────────
@@ -6176,8 +6286,9 @@ function performAttack() {
   if (isProne && getCharacterActionFrames("proneStab").length > 0) {
     attackStance = "proneStab";
   } else {
-    const stanceIdx = Math.floor(Math.random() * SWORD_1H_ATTACK_STANCES.length);
-    attackStance = SWORD_1H_ATTACK_STANCES[stanceIdx];
+    const stances = getWeaponAttackStances(isProne);
+    const stanceIdx = Math.floor(Math.random() * stances.length);
+    attackStance = stances[stanceIdx] || "swingO1";
   }
 
   // Start attack animation
@@ -6189,8 +6300,8 @@ function performAttack() {
   player.attackCooldownUntil = now + ATTACK_COOLDOWN_MS;
 
   // C++ CharLook::attack → weapon.get_usesound(degenerate).play()
-  // For 1H sword: Sound/Weapon.img/swordS/Attack
-  playSfx("Weapon", "swordS/Attack");
+  const sfxKey = getWeaponSfxKey();
+  playSfx("Weapon", `${sfxKey}/Attack`);
   wsSend({ type: "attack", stance: attackStance });
 
   // Find closest mob in range (mobcount=1 for regular attack)
@@ -9101,8 +9212,16 @@ function buildMapAssetPreloadTasks(map) {
 }
 
 function addCharacterPreloadTasks(taskMap) {
-  const actions = ["stand1", "walk1", "jump", "ladder", "rope", "prone", "sit",
-    "proneStab", ...SWORD_1H_ATTACK_STANCES];
+  // Preload all possible stances including weapon-specific attack stances
+  const allAttackStances = new Set();
+  for (const stances of ATTACK_STANCES_BY_TYPE) {
+    for (const s of stances) allAttackStances.add(s);
+  }
+  for (const stances of DEGEN_STANCES_BY_TYPE) {
+    for (const s of stances) allAttackStances.add(s);
+  }
+  const actions = ["stand1", "stand2", "walk1", "walk2", "jump", "ladder", "rope", "prone", "sit",
+    "proneStab", ...allAttackStances];
 
   for (const action of actions) {
     const actionFrames = getCharacterActionFrames(action);
