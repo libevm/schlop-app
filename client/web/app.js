@@ -247,23 +247,34 @@ function cameraHeightBias() {
  * Each entry is { id, category, path } where path is relative to Character.wz.
  * Equipment IDs follow MapleStory conventions: id/10000 determines category.
  */
-const DEFAULT_EQUIPS_MALE = [
-  { id: 1040002, category: "Coat",    path: "Coat/01040002.img.json" },
-  { id: 1060002, category: "Pants",   path: "Pants/01060002.img.json" },
-  { id: 1072001, category: "Shoes",   path: "Shoes/01072001.img.json" },
-  { id: 1302000, category: "Weapon",  path: "Weapon/01302000.img.json" },
-];
-const DEFAULT_EQUIPS_FEMALE = [
-  { id: 1041002, category: "Coat",    path: "Coat/01041002.img.json" },
-  { id: 1061002, category: "Pants",   path: "Pants/01061002.img.json" },
-  { id: 1072001, category: "Shoes",   path: "Shoes/01072001.img.json" },
-  { id: 1302000, category: "Weapon",  path: "Weapon/01302000.img.json" },
-];
-function getDefaultEquips() { return runtime.player.gender ? DEFAULT_EQUIPS_FEMALE : DEFAULT_EQUIPS_MALE; }
-function getDefaultFaceId() { return runtime.player.gender ? 21000 : 20000; }
-function getDefaultHairId() { return runtime.player.gender ? 31000 : 30000; }
-function getDefaultHairPath() { const id = getDefaultHairId(); return `Hair/${String(id).padStart(8, "0")}.img.json`; }
-function getDefaultFacePath() { const id = getDefaultFaceId(); return `Face/${String(id).padStart(8, "0")}.img.json`; }
+/**
+ * Gender-aware new-character defaults. Called once at creation time.
+ * After creation, face_id/hair_id/equipment are stored as character state
+ * and can be changed independently (e.g. hair salon, equip swap).
+ */
+function newCharacterDefaults(gender) {
+  const female = gender === true;
+  return {
+    face_id: female ? 21000 : 20000,
+    hair_id: female ? 31000 : 30000,
+    equipment: female
+      ? [
+          { id: 1041002, category: "Coat" },
+          { id: 1061002, category: "Pants" },
+          { id: 1072001, category: "Shoes" },
+          { id: 1302000, category: "Weapon" },
+        ]
+      : [
+          { id: 1040002, category: "Coat" },
+          { id: 1060002, category: "Pants" },
+          { id: 1072001, category: "Shoes" },
+          { id: 1302000, category: "Weapon" },
+        ],
+  };
+}
+/** Build WZ path fragments from runtime.player.face_id / hair_id */
+function playerFacePath() { return `Face/${String(runtime.player.face_id).padStart(8, "0")}.img.json`; }
+function playerHairPath() { return `Hair/${String(runtime.player.hair_id).padStart(8, "0")}.img.json`; }
 
 const runtime = {
   map: null,
@@ -308,6 +319,8 @@ const runtime = {
     attackCooldownUntil: 0,
     name: "MapleWeb",
     gender: false,
+    face_id: 20000,
+    hair_id: 30000,
     level: 1,
     job: "Beginner",
     hp: 50,
@@ -666,14 +679,15 @@ async function loadItemName(itemId) {
   return null;
 }
 
-function initPlayerEquipment() {
+function initPlayerEquipment(equips) {
   playerEquipped.clear();
-  for (const eq of getDefaultEquips()) {
-    const iconKey = loadEquipIcon(eq.id, eq.category);
-    playerEquipped.set(eq.category, { id: eq.id, name: "", iconKey });
+  for (const eq of equips) {
+    const category = eq.category || equipWzCategoryFromId(eq.id) || "Coat";
+    const iconKey = loadEquipIcon(eq.id, category);
+    playerEquipped.set(category, { id: eq.id, name: "", iconKey });
     loadItemName(eq.id).then(name => {
-      const entry = playerEquipped.get(eq.category);
-      if (entry) { entry.name = name || eq.category; refreshUIWindows(); }
+      const entry = playerEquipped.get(category);
+      if (entry) { entry.name = name || category; refreshUIWindows(); }
     });
   }
 }
@@ -731,8 +745,8 @@ function buildCharacterSave() {
       name: runtime.player.name,
       gender: runtime.player.gender ?? false,
       skin: 0,
-      face_id: getDefaultFaceId(),
-      hair_id: getDefaultHairId(),
+      face_id: runtime.player.face_id,
+      hair_id: runtime.player.hair_id,
     },
     stats: {
       level: runtime.player.level,
@@ -789,6 +803,8 @@ function applyCharacterSave(save) {
   // Identity
   p.name = save.identity.name || "MapleWeb";
   p.gender = save.identity.gender ?? false;
+  p.face_id = save.identity.face_id || (p.gender ? 21000 : 20000);
+  p.hair_id = save.identity.hair_id || (p.gender ? 31000 : 30000);
   // Stats
   p.level = save.stats.level ?? 1;
   p.job = save.stats.job ?? "Beginner";
@@ -1072,7 +1088,7 @@ function createRemotePlayer(id, name, look, x, y, action, facing) {
     action: action || "stand1",
     facing: facing || -1,
     frameIndex: 0, frameTimer: 0,
-    look: look || { face_id: getDefaultFaceId(), hair_id: getDefaultHairId(), skin: 0, equipment: [] },
+    look: look || { face_id: 20000, hair_id: 30000, skin: 0, equipment: [] },
     chatBubble: null, chatBubbleExpires: 0,
     attacking: false, attackStance: "",
     climbing: false,
@@ -6643,9 +6659,9 @@ function requestCharacterData() {
         const fetches = [
           fetchJson("/resources/Character.wz/00002000.img.json"),
           fetchJson("/resources/Character.wz/00012000.img.json"),
-          fetchJson(`/resources/Character.wz/${getDefaultFacePath()}`),
+          fetchJson(`/resources/Character.wz/${playerFacePath()}`),
           fetchJson("/resources/Base.wz/zmap.img.json"),
-          fetchJson(`/resources/Character.wz/${getDefaultHairPath()}`),
+          fetchJson(`/resources/Character.wz/${playerHairPath()}`),
           ...equipEntries.map((eq) => fetchJson(`/resources/Character.wz/${eq.category}/${eq.padded}.img.json`)),
         ];
 
@@ -6956,7 +6972,7 @@ function getHairFrameParts(action, frameIndex) {
             const zChild = (child.$$ ?? []).find((c) => c.$string === "z");
             if (zChild) meta.zName = String(zChild.value ?? child.$canvas);
             parts.push({
-              name: `hair:${getDefaultHairId()}:${action}:${frameIndex}:${child.$canvas}`,
+              name: `hair:${runtime.player.hair_id}:${action}:${frameIndex}:${child.$canvas}`,
               meta,
             });
           }
@@ -6972,7 +6988,7 @@ function getHairFrameParts(action, frameIndex) {
               const resolvedName = canvasNode?.$canvas ?? child.$uol;
               if (zChild) meta.zName = String(zChild.value ?? resolvedName);
               parts.push({
-                name: `hair:${getDefaultHairId()}:${action}:${frameIndex}:${resolvedName}`,
+                name: `hair:${runtime.player.hair_id}:${action}:${frameIndex}:${resolvedName}`,
                 meta,
               });
             }
@@ -6988,7 +7004,7 @@ function getHairFrameParts(action, frameIndex) {
   const defaultNode = childByName(hairData, "default");
   if (!defaultNode) return [];
 
-  return extractHairPartsFromContainer(defaultNode, `hair:${getDefaultHairId()}:default`);
+  return extractHairPartsFromContainer(defaultNode, `hair:${runtime.player.hair_id}:default`);
 }
 
 /**
@@ -11542,9 +11558,12 @@ const params = new URLSearchParams(window.location.search);
     const { name, gender } = await showCharacterCreateOverlay();
     runtime.player.name = name;
     runtime.player.gender = gender;
+    const defaults = newCharacterDefaults(gender);
+    runtime.player.face_id = defaults.face_id;
+    runtime.player.hair_id = defaults.hair_id;
     startMapId = params.get("mapId") ?? "100000001";
     startPortalName = null;
-    initPlayerEquipment();
+    initPlayerEquipment(defaults.equipment);
     initPlayerInventory();
     saveCharacter();
   }
