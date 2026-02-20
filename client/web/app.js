@@ -552,10 +552,10 @@ const groundDrops = [];
 const DROP_PICKUP_RANGE = 50;   // C++ uses drop bounds(32x32) at player pos
 const DROP_BOB_SPEED = 0.025;   // C++ moved += 0.025 per tick
 const DROP_BOB_AMP = 2.5;       // C++ cos(moved) * 2.5
-const DROP_SPAWN_VSPEED = -5.0; // C++ phobj.vspeed = -5.0f
-const DROP_SPINSTEP = 0.2;      // C++ static const float SPINSTEP = 0.2f
-const DROP_PHYS_GRAVITY = 0.14; // match game gravity per tick
-const DROP_PHYS_TERMINAL_VY = 8;// terminal fall speed
+const DROP_SPAWN_VSPEED = -4.0; // initial upward arc (slightly reduced for faster land)
+const DROP_SPINSTEP = 0.25;     // spin per tick while airborne
+const DROP_PHYS_GRAVITY = 0.28; // 2x gravity for snappier drop
+const DROP_PHYS_TERMINAL_VY = 10;// terminal fall speed
 const LOOT_ANIM_DURATION = 400; // ms — pickup fly animation
 
 /** Icon data URI cache */
