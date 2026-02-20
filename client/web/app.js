@@ -37,6 +37,10 @@ const settingsBgmToggleEl = document.getElementById("settings-bgm-toggle");
 const settingsSfxToggleEl = document.getElementById("settings-sfx-toggle");
 const settingsFixedResEl = document.getElementById("settings-fixed-res");
 const settingsMinimapToggleEl = document.getElementById("settings-minimap-toggle");
+const settingsLogoutBtn = document.getElementById("settings-logout-btn");
+const logoutConfirmEl = document.getElementById("logout-confirm");
+const logoutConfirmYesEl = document.getElementById("logout-confirm-yes");
+const logoutConfirmNoEl = document.getElementById("logout-confirm-no");
 const canvasEl = document.getElementById("map-canvas");
 const ctx = canvasEl.getContext("2d", { alpha: false, desynchronized: true }) || canvasEl.getContext("2d");
 if (!ctx) {
@@ -11166,6 +11170,24 @@ settingsFixedResEl?.addEventListener("change", () => {
 settingsMinimapToggleEl?.addEventListener("change", () => {
   runtime.settings.minimapVisible = settingsMinimapToggleEl.checked;
   saveSettings();
+});
+
+// Logout button
+settingsLogoutBtn?.addEventListener("click", () => {
+  if (logoutConfirmEl) logoutConfirmEl.classList.remove("hidden");
+});
+logoutConfirmNoEl?.addEventListener("click", () => {
+  if (logoutConfirmEl) logoutConfirmEl.classList.add("hidden");
+});
+logoutConfirmYesEl?.addEventListener("click", () => {
+  // Clear all session/save data
+  localStorage.removeItem(SESSION_KEY);
+  localStorage.removeItem(CHARACTER_SAVE_KEY);
+  localStorage.removeItem(SETTINGS_CACHE_KEY);
+  // Disconnect WS if connected
+  if (_ws) { try { _ws.close(); } catch {} }
+  // Reload page — will show character creation overlay
+  window.location.reload();
 });
 
 // ─── Key Bindings Configurator ──────────────────────────────────────────────

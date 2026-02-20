@@ -149,6 +149,61 @@ body:has(.canvas-wrapper.fixed-res) {
   margin: 0;
 }
 
+.settings-logout-btn {
+  width: 100%;
+  padding: 6px 0;
+  background: rgba(180, 60, 60, 0.25);
+  color: #e8a0a0;
+  border: 1px solid rgba(180, 60, 60, 0.4);
+  border-radius: 4px;
+  font: 12px 'Dotum', Arial, sans-serif;
+  cursor: none;
+  transition: background 0.15s;
+}
+.settings-logout-btn:hover {
+  background: rgba(180, 60, 60, 0.45);
+}
+
+.logout-confirm {
+  margin-top: 8px;
+  padding: 8px;
+  background: rgba(180, 60, 60, 0.15);
+  border: 1px solid rgba(180, 60, 60, 0.3);
+  border-radius: 4px;
+  text-align: center;
+}
+.logout-confirm.hidden { display: none; }
+.logout-confirm span {
+  display: block;
+  font: 11px 'Dotum', Arial, sans-serif;
+  color: #e8c0c0;
+  margin-bottom: 8px;
+}
+.logout-confirm-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+.logout-confirm-yes, .logout-confirm-no {
+  padding: 4px 14px;
+  font: 11px 'Dotum', Arial, sans-serif;
+  border-radius: 3px;
+  cursor: none;
+  border: 1px solid;
+}
+.logout-confirm-yes {
+  background: rgba(180, 50, 50, 0.5);
+  border-color: rgba(200, 60, 60, 0.5);
+  color: #ffa0a0;
+}
+.logout-confirm-yes:hover { background: rgba(200, 50, 50, 0.7); }
+.logout-confirm-no {
+  background: rgba(80, 80, 100, 0.4);
+  border-color: rgba(100, 100, 130, 0.4);
+  color: #c0c8d8;
+}
+.logout-confirm-no:hover { background: rgba(100, 100, 120, 0.6); }
+
 .settings-btn {
   width: 100%;
   padding: 4px 8px;
