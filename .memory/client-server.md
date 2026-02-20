@@ -297,6 +297,32 @@ allClients: Map<sessionId, WSClient>
 - Animation fully local: uses stance speed (walk=hspeed, climb=vspeed, else 1.0)
 - Per-player equip WZ data loaded separately from local player's data
 - Correction: <2px ignore, 2-300px smooth lerp, >300px instant snap
+- Attack frame delay reads actual WZ data (not hardcoded 120ms)
+- Face expressions synced via `player_face`, shown for 2.5s, static frame 0 (no cycling — avoids async decode blink), image pre-warmed on receipt
+
+### Server-Authoritative Item Drops
+- Server stores drops per map: `RoomManager.mapDrops: Map<mapId, Map<drop_id, MapDrop>>`
+- `MapDrop` fields: `drop_id`, `item_id`, `name`, `qty`, `x`, `startY`, `destY`, `owner_id`, `iconKey`, `category`
+- Drop flow: client sends `drop_item` → server assigns unique `drop_id` → broadcasts `drop_spawn` to ALL in room (including dropper to replace temp ID)
+- Loot flow: client sends `loot_item { drop_id }` → server removes from state → broadcasts `drop_loot` to ALL (looter adds to inventory, others see pickup animation)
+- Loot animation flies toward the looter's position (local player or remote player via `_lootTargetX/Y`)
+- `map_state` includes `drops[]` for players entering a map (drops appear already landed)
+- Offline mode: drops use negative temp IDs, no server interaction
+
+### Cooldowns
+- **Chat**: 1s between messages (`_lastChatSendTime`), silently dropped if too fast
+- **Emote**: 1s between expression changes (`_lastEmoteTime`), hotkeys ignored if too fast
+
+### Duplicate Login Blocking
+- WS close code 4006 now shows full-screen blocking modal BEFORE map loads
+- `connectWebSocketAsync()` returns Promise<boolean>: true on first message (auth accepted), false on 4006
+- Boot sequence changed to: connect WS first → if blocked, show overlay + stop → else load map + enter_map
+- Overlay offers Retry (reconnects async, loads map on success) or Log Out (wipes localStorage, reloads)
+
+### Movement Keybinds
+- WASD removed — only configurable movement keys in `runtime.keybinds`
+- `moveLeft`, `moveRight`, `moveUp`, `moveDown` (default: arrow keys)
+- `getGameplayKeys()` builds key set dynamically from current keybinds
 
 ---
 

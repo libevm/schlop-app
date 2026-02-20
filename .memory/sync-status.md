@@ -1,6 +1,6 @@
 # .memory Sync Status
 
-Last synced: 2026-02-20T06:30:00+11:00
+Last synced: 2026-02-20T07:15:00+11:00
 Status: ✅ Synced
 
 ## Current authoritative memory files
@@ -20,10 +20,11 @@ Status: ✅ Synced
 | `cpp-port-architecture-snapshot.md` | C++ reference client architecture snapshot (read-only reference) |
 
 ## Codebase Metrics
-- `client/web/app.js`: ~11,580 lines
+- `client/web/app.js`: ~11,700 lines
 - CI: `bun run ci` ✅ (167 tests across 6 suites)
 - `runtime.player.face_id` / `runtime.player.hair_id`: stored character state (not derived from gender)
 - FPS counter includes ping display (color-coded, 10s interval)
+- Latest commit: `95063ac` on `origin/main`
 
 ## Key Architecture Decisions
 
@@ -57,6 +58,37 @@ Status: ✅ Synced
 - Teleport detection: >300px between snapshots → instant snap
 - Animation fully local: client runs frame timers per remote player
 - Per-player equip WZ data storage (separate from local player)
+- **Remote attack frame delay**: reads actual WZ delay from body data (not hardcoded)
+- **Remote face expressions**: synced via `player_face` message, shown for 2.5s, frame 0 only (no cycling to avoid async decode blink), pre-warmed on receipt
+
+### Server-authoritative item drops
+- Server stores drops per map: `RoomManager.mapDrops: Map<mapId, Map<drop_id, MapDrop>>`
+- Drop flow: client sends `drop_item` → server assigns `drop_id` → broadcasts `drop_spawn` to ALL
+- Loot flow: client sends `loot_item { drop_id }` → server removes → broadcasts `drop_loot` to ALL
+- Loot animation flies toward looter's position (local or remote player)
+- `map_state` includes `drops[]` for players entering a map
+- `MapDrop` fields: drop_id, item_id, name, qty, x, startY, destY, owner_id, iconKey, category
+- Offline mode: drops work locally with negative temp IDs
+
+### Cooldowns
+- **Chat**: 1s cooldown (`_lastChatSendTime`) — `sendChatMessage` drops if <1s
+- **Emote**: 1s cooldown (`_lastEmoteTime`) — face hotkeys ignored if <1s since last
+
+### Duplicate login blocking
+- WS 4006 now shows full-screen blocking modal BEFORE map loads
+- `connectWebSocketAsync()` returns promise: true on auth success, false on 4006
+- Boot sequence: connect WS → if blocked, show overlay + stop → else load map
+- Overlay has Retry (reconnects, loads map on success) and Log Out (full wipe)
+
+### Movement keybinds
+- WASD removed — only configurable movement keys (default: arrow keys)
+- `moveLeft`, `moveRight`, `moveUp`, `moveDown` in `runtime.keybinds`
+- `getGameplayKeys()` builds key set dynamically from current keybinds
+
+### Claim account button
+- Golden pulsing animation (1.5s cycle, scale 1→1.08)
+- Red "!" notification badge with bounce
+- Standard 34px icon-only button, aligned with other HUD buttons
 
 ### File organization
 - Split `app.js` into modules before Phase 4: `net.js`, `save.js`, `ui-character-create.js`
@@ -84,5 +116,9 @@ SESSION_KEY = "mapleweb.session"
 CHARACTER_SAVE_KEY = "mapleweb.character.v1"
 SETTINGS_CACHE_KEY = "mapleweb.settings.v1"
 KEYBINDS_STORAGE_KEY = "mapleweb.keybinds.v1"
+_lastChatSendTime = 0                      // 1s chat cooldown
+_lastEmoteTime = 0                         // 1s emote cooldown
+_duplicateLoginBlocked = false             // true if 4006 received
 // Tooltip z-index: 99990 | Cursor z-index: 999999 | Ghost item: 999998
+// Duplicate login overlay z-index: 200000
 ```
