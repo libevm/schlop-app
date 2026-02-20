@@ -6375,26 +6375,29 @@ function performAttack() {
   if (player.climbing) return;
   if (now < player.attackCooldownUntil) return;
 
-  // C++ RegularAttack::can_use — ranged weapons require ammo to attack
-  const weapon = playerEquipped.get("Weapon");
-  if (weapon) {
-    const wpfx = Math.floor(weapon.id / 10000);
-    if (WEAPON_AMMO_PREFIXES[wpfx] && !hasProjectileAmmo()) {
-      // C++ ForbidSkillMessage: show "no arrows/stars/bullets" in chat
-      const ammoMsg = wpfx === 145 || wpfx === 146 ? "Please equip arrows first."
-                    : wpfx === 147 ? "Please equip throwing stars first."
-                    : "Please equip bullets first.";
-      const sysMsg = { name: "", text: ammoMsg, timestamp: Date.now(), type: "system" };
-      runtime.chat.history.push(sysMsg);
-      if (runtime.chat.history.length > runtime.chat.maxHistory) runtime.chat.history.shift();
-      appendChatLogMessage(sysMsg);
-      player.attackCooldownUntil = now + 300; // brief cooldown to prevent spam
-      return;
+  // C++ Player::prepare_attack: prone is always a melee stab (no ammo needed)
+  const isProne = player.action === "prone" || player.action === "sit";
+
+  // C++ RegularAttack::can_use — ranged weapons require ammo (only when not prone)
+  if (!isProne) {
+    const weapon = playerEquipped.get("Weapon");
+    if (weapon) {
+      const wpfx = Math.floor(weapon.id / 10000);
+      if (WEAPON_AMMO_PREFIXES[wpfx] && !hasProjectileAmmo()) {
+        const ammoMsg = wpfx === 145 || wpfx === 146 ? "Please equip arrows first."
+                      : wpfx === 147 ? "Please equip throwing stars first."
+                      : "Please equip bullets first.";
+        const sysMsg = { name: "", text: ammoMsg, timestamp: Date.now(), type: "system" };
+        runtime.chat.history.push(sysMsg);
+        if (runtime.chat.history.length > runtime.chat.maxHistory) runtime.chat.history.shift();
+        appendChatLogMessage(sysMsg);
+        player.attackCooldownUntil = now + 300; // brief cooldown to prevent spam
+        return;
+      }
     }
   }
 
-  // C++ Player::prepare_attack + CharLook::getattackstance
-  const isProne = player.action === "prone" || player.action === "sit";
+  // C++ CharLook::getattackstance
   let attackStance;
   if (isProne && getCharacterActionFrames("proneStab").length > 0) {
     attackStance = "proneStab";
