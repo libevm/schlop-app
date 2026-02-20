@@ -526,10 +526,11 @@ export function createServer(
             data.client = client;
             roomManager.addClient(client);
 
-            // Send map_state to the new client
+            // Send map_state to the new client (players + drops)
             const players = roomManager.getMapState(client.mapId)
               .filter(p => p.id !== sessionId);
-            ws.send(JSON.stringify({ type: "map_state", players }));
+            const drops = roomManager.getDrops(client.mapId);
+            ws.send(JSON.stringify({ type: "map_state", players, drops }));
 
             // Broadcast player_enter to the room (exclude self)
             roomManager.broadcastToRoom(client.mapId, {

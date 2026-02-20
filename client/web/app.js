@@ -603,7 +603,8 @@ function equipSlotFromId(id) {
 
 /** Ground drops — items on the map floor */
 const groundDrops = [];
-// Each: { id, name, qty, iconKey, x, y, vx, vy, onGround, opacity, angle, bobPhase, spawnTime, category }
+// Each: { drop_id, id, name, qty, iconKey, x, y, vy, onGround, opacity, angle, bobPhase, spawnTime, destY, category, pickingUp, pickupStart }
+let _localDropIdCounter = -1; // negative IDs for local drops (offline / before server assigns ID)
 
 const DROP_PICKUP_RANGE = 50;   // C++ uses drop bounds(32x32) at player pos
 const DROP_BOB_SPEED = 0.025;   // C++ moved += 0.025 per tick
@@ -1185,6 +1186,10 @@ function handleServerMessage(msg) {
         remotePlayers.set(p.id, rp);
         loadRemotePlayerEquipData(rp);
       }
+      // Restore drops already on the map (landed, no animation)
+      for (const d of msg.drops || []) {
+        createDropFromServer(d, false);
+      }
       break;
 
     case "player_enter":
@@ -1295,6 +1300,37 @@ function handleServerMessage(msg) {
     case "player_die":
     case "player_respawn":
       break; // visual state updates can be added later
+
+    case "drop_spawn": {
+      // Server assigned a drop — check if this is our own drop (replace local ID)
+      const sd = msg.drop;
+      if (sd.owner_id === sessionId) {
+        // Find our local drop with matching item/position and replace its ID
+        const local = groundDrops.find(d =>
+          d.drop_id < 0 && d.id === sd.item_id &&
+          Math.abs(d.x - sd.x) < 1 && Math.abs(d.destY - sd.destY) < 1
+        );
+        if (local) { local.drop_id = sd.drop_id; break; }
+      }
+      // Remote player dropped an item — create with arc animation
+      createDropFromServer(sd, true);
+      break;
+    }
+
+    case "drop_loot": {
+      const dropId = msg.drop_id;
+      if (msg.looter_id === sessionId) {
+        // We looted it — server confirmed. Add to inventory + animate pickup.
+        const drop = groundDrops.find(d => d.drop_id === dropId);
+        if (drop) {
+          lootDropLocally(drop);
+        }
+      } else {
+        // Someone else looted — just animate it disappearing
+        animateDropPickup(dropId);
+      }
+      break;
+    }
 
     case "global_level_up":
       addSystemChatMessage(`🎉 ${msg.name} has reached level ${msg.level}!`);
@@ -2080,12 +2116,20 @@ function dropItemOnMap() {
               || findFootholdBelow(runtime.map, dropX, player.y - 100);
   const destY = destFh ? destFh.y - 4 : player.y - 4;
 
+  const dropQty = draggedItem.source === "inventory" ? draggedItem.qty : 1;
+  const dropCategory = draggedItem.category;
+  const dropIconKey = draggedItem.iconKey;
+  const dropName = draggedItem.name;
+  const dropItemId = draggedItem.id;
+  const localId = _localDropIdCounter--;
+
   groundDrops.push({
-    id: draggedItem.id,
-    name: draggedItem.name,
-    qty: draggedItem.source === "inventory" ? draggedItem.qty : 1,
-    iconKey: draggedItem.iconKey,
-    category: draggedItem.category,
+    drop_id: localId,         // temporary local ID; replaced by server ID in online mode
+    id: dropItemId,
+    name: dropName,
+    qty: dropQty,
+    iconKey: dropIconKey,
+    category: dropCategory,
     x: dropX,
     y: startY,
     destY: destY,             // foothold landing Y (C++ basey = dest.y() - 4)
@@ -2114,6 +2158,18 @@ function dropItemOnMap() {
   draggedItem.active = false;
   playUISound("DropItem");
   refreshUIWindows();
+
+  // Tell server about the drop (server assigns real drop_id, broadcasts to room)
+  wsSend({
+    type: "drop_item",
+    item_id: dropItemId,
+    name: dropName,
+    qty: dropQty,
+    x: dropX,
+    destY: destY,
+    iconKey: dropIconKey,
+    category: dropCategory,
+  });
 }
 
 // ── Ground drop physics + rendering ──
@@ -2237,42 +2293,89 @@ function tryLootDrop() {
       drop.y - 32, drop.y,
     );
     if (rectsOverlap(pBounds, dropBounds)) {
-      // Pick it up
-      drop.pickingUp = true;
-      drop.pickupStart = performance.now();
-
-      // Add back to inventory
-      const invType = inventoryTypeById(drop.id) || "ETC";
-      const existing = playerInventory.find(e => e.id === drop.id && e.invType === invType);
-      if (existing && invType !== "EQUIP") {
-        // Stackable items (non-equip) merge quantities
-        existing.qty += drop.qty;
-      } else {
-        const wzCat = equipWzCategoryFromId(drop.id);
-        const iconKey = wzCat
-          ? loadEquipIcon(drop.id, wzCat)
-          : loadItemIcon(drop.id);
-        const freeSlot = findFreeSlot(invType);
-        if (freeSlot === -1) {
-          rlog(`${invType} tab is full, cannot pick up item`);
-          return;
-        }
-        playerInventory.push({
-          id: drop.id,
-          name: drop.name,
-          qty: drop.qty,
-          iconKey: iconKey,
-          invType,
-          category: drop.category || null,
-          slot: freeSlot,
-        });
+      if (_wsConnected) {
+        // Online: ask server to loot — server broadcasts drop_loot to all
+        wsSend({ type: "loot_item", drop_id: drop.drop_id });
+        return; // Wait for server confirmation
       }
-
-      playUISound("PickUpItem");
-      refreshUIWindows();
-      return; // One item per loot press (C++ parity: lootenabled = false)
+      // Offline: loot locally
+      lootDropLocally(drop);
+      return;
     }
   }
+}
+
+/** Add a looted drop's item to the local player's inventory and start pickup animation. */
+function lootDropLocally(drop) {
+  drop.pickingUp = true;
+  drop.pickupStart = performance.now();
+
+  const invType = inventoryTypeById(drop.id) || "ETC";
+  const existing = playerInventory.find(e => e.id === drop.id && e.invType === invType);
+  if (existing && invType !== "EQUIP") {
+    existing.qty += drop.qty;
+  } else {
+    const wzCat = equipWzCategoryFromId(drop.id);
+    const iconKey = wzCat ? loadEquipIcon(drop.id, wzCat) : loadItemIcon(drop.id);
+    const freeSlot = findFreeSlot(invType);
+    if (freeSlot === -1) {
+      rlog(`${invType} tab is full, cannot pick up item`);
+      drop.pickingUp = false; // cancel
+      return;
+    }
+    playerInventory.push({
+      id: drop.id, name: drop.name, qty: drop.qty, iconKey,
+      invType, category: drop.category || null, slot: freeSlot,
+    });
+  }
+  playUISound("PickUpItem");
+  refreshUIWindows();
+}
+
+/** Start pickup animation on a drop (for remote player looting). */
+function animateDropPickup(dropId) {
+  const drop = groundDrops.find(d => d.drop_id === dropId);
+  if (drop && !drop.pickingUp) {
+    drop.pickingUp = true;
+    drop.pickupStart = performance.now();
+  }
+}
+
+/** Create a ground drop from server data (remote spawn or map_state). */
+function createDropFromServer(dropData, animate) {
+  // Don't duplicate if already exists
+  if (groundDrops.find(d => d.drop_id === dropData.drop_id)) return;
+
+  // Preload icon
+  if (dropData.iconKey) {
+    const existingUri = getIconDataUri(dropData.iconKey);
+    if (!existingUri) {
+      // Need to load the icon — figure out if it's equip or item
+      const wzCat = equipWzCategoryFromId(dropData.item_id);
+      if (wzCat) { loadEquipIcon(dropData.item_id, wzCat); }
+      else { loadItemIcon(dropData.item_id); }
+    }
+  }
+
+  groundDrops.push({
+    drop_id: dropData.drop_id,
+    id: dropData.item_id,
+    name: dropData.name || "",
+    qty: dropData.qty || 1,
+    iconKey: dropData.iconKey || "",
+    category: dropData.category || null,
+    x: dropData.x,
+    y: animate ? (dropData.destY - 80) : dropData.destY, // if animate, start above and arc down
+    destY: dropData.destY,
+    vy: animate ? DROP_SPAWN_VSPEED : 0,
+    onGround: !animate,
+    opacity: 1.0,
+    angle: 0,
+    bobPhase: 0,
+    spawnTime: performance.now(),
+    pickingUp: false,
+    pickupStart: 0,
+  });
 }
 
 function getUIWindowEl(key) {

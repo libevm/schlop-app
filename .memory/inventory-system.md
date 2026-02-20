@@ -127,6 +127,7 @@ Each entry:
 ### Drop Object Shape
 ```js
 {
+  drop_id,    // server-assigned unique ID (positive), or local temp ID (negative, offline)
   id, name, qty, iconKey, category,
   x,          // world X (fixed at drop position)
   y,          // world Y (animated)
@@ -141,6 +142,30 @@ Each entry:
   pickupStart,// timestamp of loot start
 }
 ```
+
+### Server-Authoritative Drop Sync
+
+Drops are synced across all players in the same map via the server.
+
+**Server state**: `RoomManager.mapDrops: Map<mapId, Map<drop_id, MapDrop>>`
+
+**Drop flow**:
+1. Player drags item to map → local drop created with temp negative `drop_id`
+2. Client sends `drop_item` to server (includes item_id, name, qty, x, destY, iconKey, category)
+3. Server creates `MapDrop` with unique positive `drop_id`, stores in `mapDrops`
+4. Server broadcasts `drop_spawn` to ALL in room (including dropper)
+5. Dropper's handler: matches local temp drop by item_id+position, replaces `drop_id`
+6. Other clients: `createDropFromServer()` adds drop with arc animation
+
+**Loot flow**:
+1. Player presses Z near a drop → client sends `loot_item` with `drop_id`
+2. Server removes drop from `mapDrops`, broadcasts `drop_loot` to ALL
+3. Looter's handler: `lootDropLocally()` adds to inventory + pickup animation
+4. Other clients: `animateDropPickup()` plays disappear animation
+
+**Map enter**: `map_state` includes `drops[]` — all existing drops appear landed (no animation)
+
+**Offline mode**: Drops work locally with negative temp IDs, no server interaction.
 
 ### Drop States (C++ `Drop::State`)
 - **DROPPED** (`onGround=false`): vertical gravity arc, spin, X fixed

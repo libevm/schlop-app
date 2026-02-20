@@ -228,13 +228,24 @@ Every message has a `type` string field.
 
 ### `drop_item` — Item dropped on map
 ```json
-{ "type": "drop_item", "item_id": 2000000, "x": 100, "y": 200 }
+{
+  "type": "drop_item",
+  "item_id": 2000000,
+  "name": "Red Potion",
+  "qty": 5,
+  "x": 100,
+  "destY": 200,
+  "iconKey": "item-icon:2000000",
+  "category": null
+}
 ```
+Server creates a `MapDrop` with unique `drop_id`, broadcasts `drop_spawn` to ALL in room.
 
 ### `loot_item` — Item looted from map
 ```json
-{ "type": "loot_item", "drop_index": 3 }
+{ "type": "loot_item", "drop_id": 42 }
 ```
+Server removes drop by `drop_id`, broadcasts `drop_loot` to ALL in room (including looter).
 
 ### `ping` — Heartbeat
 ```json
@@ -261,6 +272,19 @@ Every message has a `type` string field.
       "action": "stand1",
       "facing": -1,
       "look": { "face_id": 20000, "hair_id": 30000, "skin": 0, "equipment": [...] }
+    }
+  ],
+  "drops": [
+    {
+      "drop_id": 42,
+      "item_id": 2000000,
+      "name": "Red Potion",
+      "qty": 5,
+      "x": 100,
+      "destY": 200,
+      "owner_id": "abc-session-id",
+      "iconKey": "item-icon:2000000",
+      "category": null
     }
   ]
 }
@@ -347,15 +371,39 @@ Every message has a `type` string field.
 { "type": "player_respawn", "id": "abc" }
 ```
 
-### `drop_spawn` — Item dropped on map
+### `drop_spawn` — Item dropped on map (broadcast to ALL in room)
 ```json
-{ "type": "drop_spawn", "drop": { "index": 5, "item_id": 2000000, "x": 100, "destY": 200, "owner_id": "abc" } }
+{
+  "type": "drop_spawn",
+  "drop": {
+    "drop_id": 42,
+    "item_id": 2000000,
+    "name": "Red Potion",
+    "qty": 5,
+    "x": 100,
+    "destY": 200,
+    "owner_id": "abc-session-id",
+    "iconKey": "item-icon:2000000",
+    "category": null
+  }
+}
 ```
+Sent to ALL players in room (including the dropper so they can replace the local temp ID).
 
-### `drop_loot` — Item looted from map
+### `drop_loot` — Item looted from map (broadcast to ALL in room)
 ```json
-{ "type": "drop_loot", "drop_index": 5, "looter_id": "abc" }
+{
+  "type": "drop_loot",
+  "drop_id": 42,
+  "looter_id": "abc-session-id",
+  "item_id": 2000000,
+  "name": "Red Potion",
+  "qty": 5,
+  "category": null,
+  "iconKey": "item-icon:2000000"
+}
 ```
+Sent to ALL players. Looter adds item to inventory; others animate pickup.
 
 ### Global (sent to ALL connected players)
 

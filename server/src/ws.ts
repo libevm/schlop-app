@@ -34,6 +34,18 @@ export interface WSClientData {
   client: WSClient | null;
 }
 
+export interface MapDrop {
+  drop_id: number;
+  item_id: number;
+  name: string;
+  qty: number;
+  x: number;
+  destY: number;
+  owner_id: string;  // session ID of who dropped it
+  iconKey: string;    // client icon cache key for rendering
+  category: string | null;
+}
+
 // ─── Room Manager ───────────────────────────────────────────────────
 
 export class RoomManager {
@@ -41,6 +53,10 @@ export class RoomManager {
   rooms: Map<string, Map<string, WSClient>> = new Map();
   /** sessionId → client */
   allClients: Map<string, WSClient> = new Map();
+  /** mapId → (drop_id → MapDrop) — server-authoritative drop state */
+  mapDrops: Map<string, Map<number, MapDrop>> = new Map();
+  /** Auto-incrementing drop ID counter */
+  private _nextDropId = 1;
 
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private playerCountInterval: ReturnType<typeof setInterval> | null = null;
@@ -97,9 +113,10 @@ export class RoomManager {
     client.mapId = newMapId;
     this.addClientToRoom(client, newMapId);
 
-    // Send map_state snapshot to the joining client
+    // Send map_state snapshot to the joining client (players + drops)
     const players = this.getMapState(newMapId).filter(p => p.id !== sessionId);
-    this.sendTo(client, { type: "map_state", players });
+    const drops = this.getDrops(newMapId);
+    this.sendTo(client, { type: "map_state", players, drops });
 
     // Broadcast player_enter to new room (exclude self)
     this.broadcastToRoom(newMapId, {
@@ -154,6 +171,36 @@ export class RoomManager {
 
   getPlayerCount(): number {
     return this.allClients.size;
+  }
+
+  // ── Drop management ──
+
+  addDrop(mapId: string, drop: Omit<MapDrop, "drop_id">): MapDrop {
+    const dropId = this._nextDropId++;
+    const fullDrop: MapDrop = { ...drop, drop_id: dropId };
+    let drops = this.mapDrops.get(mapId);
+    if (!drops) {
+      drops = new Map();
+      this.mapDrops.set(mapId, drops);
+    }
+    drops.set(dropId, fullDrop);
+    return fullDrop;
+  }
+
+  removeDrop(mapId: string, dropId: number): MapDrop | null {
+    const drops = this.mapDrops.get(mapId);
+    if (!drops) return null;
+    const drop = drops.get(dropId);
+    if (!drop) return null;
+    drops.delete(dropId);
+    if (drops.size === 0) this.mapDrops.delete(mapId);
+    return drop;
+  }
+
+  getDrops(mapId: string): MapDrop[] {
+    const drops = this.mapDrops.get(mapId);
+    if (!drops) return [];
+    return Array.from(drops.values());
   }
 
   // ── Internal ──
@@ -332,24 +379,43 @@ export function handleClientMessage(
       }, client.id);
       break;
 
-    case "drop_item":
+    case "drop_item": {
+      // Server creates the drop, assigns unique ID, broadcasts to ALL in room
+      const drop = roomManager.addDrop(client.mapId, {
+        item_id: msg.item_id as number,
+        name: (msg.name as string) || "",
+        qty: (msg.qty as number) || 1,
+        x: msg.x as number,
+        destY: msg.destY as number,
+        owner_id: client.id,
+        iconKey: (msg.iconKey as string) || "",
+        category: (msg.category as string) || null,
+      });
+      // Broadcast to everyone in the room INCLUDING the dropper
+      // (dropper uses drop_id to replace their local drop)
       roomManager.broadcastToRoom(client.mapId, {
         type: "drop_spawn",
-        drop: {
-          item_id: msg.item_id,
-          x: msg.x,
-          y: msg.y,
-          owner_id: client.id,
-        },
-      }, client.id);
+        drop,
+      });
       break;
+    }
 
-    case "loot_item":
+    case "loot_item": {
+      const dropId = msg.drop_id as number;
+      const looted = roomManager.removeDrop(client.mapId, dropId);
+      if (!looted) break; // drop doesn't exist (already looted)
+      // Broadcast to ALL in room including the looter
       roomManager.broadcastToRoom(client.mapId, {
         type: "drop_loot",
-        drop_index: msg.drop_index,
+        drop_id: dropId,
         looter_id: client.id,
-      }, client.id);
+        item_id: looted.item_id,
+        name: looted.name,
+        qty: looted.qty,
+        category: looted.category,
+        iconKey: looted.iconKey,
+      });
       break;
+    }
   }
 }
