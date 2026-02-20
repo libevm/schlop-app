@@ -148,4 +148,4 @@ function startServer(startPort, attempts = 10) {
 const server = startServer(requestedPort);
 console.log(`🍄 MapleWeb OFFLINE client running at http://${host}:${server.port}`);
 console.log("   Mode: offline (no server, all state local)");
-console.log("   Default map: /?mapId=100020000");
+console.log("   Default map: /?mapId=100000001");

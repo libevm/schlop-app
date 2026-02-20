@@ -13,6 +13,26 @@
     </script>
   </head>
   <body>
+    <!-- Character Creation Overlay -->
+    <div id="character-create-overlay" class="character-create-overlay hidden">
+      <div class="character-create-panel">
+        <div class="character-create-header">Create Your Character</div>
+        <div class="character-create-field">
+          <label class="character-create-label" for="character-name-input">Name</label>
+          <input id="character-name-input" class="character-create-input" type="text" maxlength="12" autocomplete="off" placeholder="Enter a name…" />
+          <div id="character-name-error" class="character-create-error"></div>
+        </div>
+        <div class="character-create-field">
+          <label class="character-create-label">Gender</label>
+          <div class="character-create-gender-row">
+            <button id="gender-male" class="character-create-gender-btn active" type="button">Male</button>
+            <button id="gender-female" class="character-create-gender-btn" type="button">Female</button>
+          </div>
+        </div>
+        <button id="character-create-submit" class="character-create-submit" type="button" disabled>Enter World</button>
+      </div>
+    </div>
+
     <div class="canvas-wrapper">
       <canvas id="map-canvas" width="1280" height="960" tabindex="0"></canvas>
 

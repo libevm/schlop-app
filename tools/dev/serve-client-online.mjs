@@ -210,4 +210,4 @@ const server = startServer(requestedPort);
 console.log(`🍄 MapleWeb ONLINE client running at http://${host}:${server.port}`);
 console.log(`   Mode: online (game server: ${gameServerUrl})`);
 console.log("   API proxy: /api/* → game server");
-console.log("   Default map: /?mapId=100020000");
+console.log("   Default map: /?mapId=100000001");

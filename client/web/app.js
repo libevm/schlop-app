@@ -193,6 +193,19 @@ const STAT_CACHE_KEY = "mapleweb.debug.playerStats.v1";
 const CHAT_LOG_HEIGHT_CACHE_KEY = "mapleweb.debug.chatLogHeight.v1";
 const CHAT_LOG_COLLAPSED_KEY = "mapleweb.chatLogCollapsed.v1";
 const KEYBINDS_STORAGE_KEY = "mapleweb.keybinds.v1";
+const SESSION_KEY = "mapleweb.session";
+const CHARACTER_SAVE_KEY = "mapleweb.character.v1";
+
+// ─── Session ID ───────────────────────────────────────────────────────────────
+function getOrCreateSessionId() {
+  let id = localStorage.getItem(SESSION_KEY);
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem(SESSION_KEY, id);
+  }
+  return id;
+}
+const sessionId = getOrCreateSessionId();
 
 // Some map IDs are absent in the extracted client dataset. Redirect these to
 // equivalent accessible maps to avoid hard 404 failures in browser play.
@@ -265,6 +278,7 @@ const runtime = {
     attackFrameTimer: 0,
     attackCooldownUntil: 0,
     name: "MapleWeb",
+    gender: false,
     level: 1,
     job: "Beginner",
     hp: 50,
@@ -658,6 +672,260 @@ function initPlayerInventory() {
   }
 }
 
+// ─── Character Save / Load System ──────────────────────────────────────────────
+
+/**
+ * Find the closest spawn portal (type 0) to the given position.
+ * Returns the portal name string, or null if no spawn portals exist.
+ */
+function findClosestSpawnPortal(x, y) {
+  if (!runtime.map || !runtime.map.portalEntries) return null;
+  let best = null;
+  let bestDist = Infinity;
+  for (const p of runtime.map.portalEntries) {
+    if (p.type !== 0) continue;
+    const dx = p.x - x;
+    const dy = p.y - y;
+    const d = dx * dx + dy * dy;
+    if (d < bestDist) { bestDist = d; best = p.name; }
+  }
+  return best;
+}
+
+/**
+ * Build a CharacterSave object from current runtime state.
+ * Matches .memory/shared-schema.md CharacterSave shape exactly.
+ */
+function buildCharacterSave() {
+  return {
+    identity: {
+      name: runtime.player.name,
+      gender: runtime.player.gender ?? false,
+      skin: 0,
+      face_id: 20000,
+      hair_id: DEFAULT_HAIR_ID,
+    },
+    stats: {
+      level: runtime.player.level,
+      job: runtime.player.job,
+      exp: runtime.player.exp,
+      max_exp: runtime.player.maxExp,
+      hp: runtime.player.hp,
+      max_hp: runtime.player.maxHp,
+      mp: runtime.player.mp,
+      max_mp: runtime.player.maxMp,
+      speed: runtime.player.stats.speed,
+      jump: runtime.player.stats.jump,
+      meso: 0,
+    },
+    location: {
+      map_id: runtime.mapId || "100000001",
+      spawn_portal: findClosestSpawnPortal(runtime.player.x, runtime.player.y),
+      facing: runtime.player.facing,
+    },
+    equipment: [...playerEquipped.entries()].map(([slot_type, eq]) => ({
+      slot_type,
+      item_id: eq.id,
+      item_name: eq.name,
+    })),
+    inventory: playerInventory.map(it => ({
+      item_id: it.id,
+      qty: it.qty,
+      inv_type: it.invType,
+      slot: it.slot,
+      category: it.category || null,
+    })),
+    achievements: {
+      mobs_killed: 0,
+      maps_visited: [],
+      portals_used: 0,
+      items_looted: 0,
+      max_level_reached: runtime.player.level,
+      total_damage_dealt: 0,
+      deaths: 0,
+      play_time_ms: 0,
+    },
+    version: 1,
+    saved_at: new Date().toISOString(),
+  };
+}
+
+/**
+ * Apply a CharacterSave to runtime state.
+ * Rebuilds equipment + inventory from the save data.
+ * Returns { mapId, spawnPortal } for the caller to decide which map to load.
+ */
+function applyCharacterSave(save) {
+  const p = runtime.player;
+  // Identity
+  p.name = save.identity.name || "MapleWeb";
+  p.gender = save.identity.gender ?? false;
+  // Stats
+  p.level = save.stats.level ?? 1;
+  p.job = save.stats.job ?? "Beginner";
+  p.exp = save.stats.exp ?? 0;
+  p.maxExp = save.stats.max_exp ?? 15;
+  p.hp = save.stats.hp ?? 50;
+  p.maxHp = save.stats.max_hp ?? 50;
+  p.mp = save.stats.mp ?? 5;
+  p.maxMp = save.stats.max_mp ?? 5;
+  p.stats.speed = save.stats.speed ?? 100;
+  p.stats.jump = save.stats.jump ?? 100;
+  // Facing
+  p.facing = save.location.facing ?? -1;
+
+  // Rebuild equipment
+  playerEquipped.clear();
+  for (const eq of (save.equipment || [])) {
+    const category = eq.slot_type;
+    const iconKey = loadEquipIcon(eq.item_id, equipWzCategoryFromId(eq.item_id) || category);
+    playerEquipped.set(category, { id: eq.item_id, name: eq.item_name || "", iconKey });
+    // Async: load WZ stance data for character rendering
+    loadEquipWzData(eq.item_id);
+    // Async: load display name
+    loadItemName(eq.item_id).then(name => {
+      const entry = playerEquipped.get(category);
+      if (entry && name) { entry.name = name; refreshUIWindows(); }
+    });
+  }
+
+  // Rebuild inventory
+  playerInventory.length = 0;
+  for (const it of (save.inventory || [])) {
+    const invType = it.inv_type || inventoryTypeById(it.item_id) || "ETC";
+    const isEquip = invType === "EQUIP";
+    const iconKey = isEquip
+      ? loadEquipIcon(it.item_id, equipWzCategoryFromId(it.item_id) || it.category || "")
+      : loadItemIcon(it.item_id);
+    playerInventory.push({
+      id: it.item_id,
+      name: "...",
+      qty: it.qty ?? 1,
+      iconKey,
+      invType,
+      category: it.category || null,
+      slot: it.slot ?? 0,
+    });
+    loadItemName(it.item_id).then(name => {
+      const entry = playerInventory.find(e => e.id === it.item_id);
+      if (entry && name) { entry.name = name; refreshUIWindows(); }
+    });
+  }
+
+  refreshUIWindows();
+  rlog(`applyCharacterSave: ${p.name} Lv${p.level} ${p.job}`);
+  return {
+    mapId: save.location.map_id || "100000001",
+    spawnPortal: save.location.spawn_portal || null,
+  };
+}
+
+/**
+ * Save character to localStorage (offline mode).
+ */
+function saveCharacter() {
+  try {
+    const save = buildCharacterSave();
+    localStorage.setItem(CHARACTER_SAVE_KEY, JSON.stringify(save));
+  } catch (e) {
+    rlog("saveCharacter error: " + (e.message || e));
+  }
+}
+
+/**
+ * Load character from localStorage (offline mode).
+ * Returns a CharacterSave object or null.
+ */
+function loadCharacter() {
+  try {
+    const raw = localStorage.getItem(CHARACTER_SAVE_KEY);
+    if (!raw) return null;
+    const save = JSON.parse(raw);
+    if (!save || save.version !== 1) return null;
+    return save;
+  } catch { return null; }
+}
+
+/**
+ * Show the character creation overlay. Returns a promise that resolves
+ * with { name, gender } when the user submits.
+ */
+function showCharacterCreateOverlay() {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById("character-create-overlay");
+    const nameInput = document.getElementById("character-name-input");
+    const nameError = document.getElementById("character-name-error");
+    const maleBtn = document.getElementById("gender-male");
+    const femaleBtn = document.getElementById("gender-female");
+    const submitBtn = document.getElementById("character-create-submit");
+    if (!overlay || !nameInput || !submitBtn) {
+      // Fallback if HTML elements missing
+      resolve({ name: "MapleWeb", gender: false });
+      return;
+    }
+
+    overlay.classList.remove("hidden");
+    nameInput.focus();
+    let selectedGender = false; // false = male
+
+    function validateName() {
+      const val = nameInput.value.trim();
+      if (val.length === 0) {
+        nameError.textContent = "";
+        submitBtn.disabled = true;
+        return;
+      }
+      if (val.length < 2) {
+        nameError.textContent = "Name must be at least 2 characters";
+        submitBtn.disabled = true;
+        return;
+      }
+      if (val.length > 12) {
+        nameError.textContent = "Name must be 12 characters or less";
+        submitBtn.disabled = true;
+        return;
+      }
+      if (!/^[a-zA-Z0-9 ]+$/.test(val)) {
+        nameError.textContent = "Only letters, numbers, and spaces allowed";
+        submitBtn.disabled = true;
+        return;
+      }
+      if (val.startsWith(" ") || val.endsWith(" ")) {
+        nameError.textContent = "No leading or trailing spaces";
+        submitBtn.disabled = true;
+        return;
+      }
+      nameError.textContent = "";
+      submitBtn.disabled = false;
+    }
+
+    nameInput.addEventListener("input", validateName);
+
+    maleBtn.addEventListener("click", () => {
+      selectedGender = false;
+      maleBtn.classList.add("active");
+      femaleBtn.classList.remove("active");
+    });
+    femaleBtn.addEventListener("click", () => {
+      selectedGender = true;
+      femaleBtn.classList.add("active");
+      maleBtn.classList.remove("active");
+    });
+
+    function submit() {
+      const val = nameInput.value.trim();
+      if (submitBtn.disabled || val.length < 2) return;
+      overlay.classList.add("hidden");
+      resolve({ name: val, gender: selectedGender });
+    }
+
+    submitBtn.addEventListener("click", submit);
+    nameInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") submit();
+    });
+  });
+}
+
 function buildSlotEl(icon, label, qty, tooltipData, clickData) {
   const slot = document.createElement("div");
   slot.className = icon ? "item-slot" : "item-slot empty";
@@ -1016,6 +1284,7 @@ function unequipItem(slotType) {
 
   playUISound("DragEnd");
   refreshUIWindows();
+  saveCharacter();
 }
 
 // Equip: move from inventory EQUIP tab → equipment slot → update sprite
@@ -1066,6 +1335,7 @@ function equipItemFromInventory(invIndex) {
 
   playUISound("DragEnd");
   refreshUIWindows();
+  saveCharacter();
 }
 
 function dropItemOnMap() {
@@ -3869,6 +4139,7 @@ function applyAttackToMob(target) {
       runtime.player.maxMp += 4 + Math.floor(Math.random() * 3);
       runtime.player.mp = runtime.player.maxMp;
       rlog(`LEVEL UP! Now level ${runtime.player.level}`);
+      saveCharacter();
     }
   }
 }
@@ -5508,6 +5779,7 @@ async function runPortalMapTransition(targetMapId, targetPortalName) {
   try {
     await loadMap(targetMapId, targetPortalName || null, true);
     rlog(`portalTransition loadMap resolved`);
+    saveCharacter();
   } catch (err) {
     rlog(`portalTransition loadMap THREW: ${err?.message ?? err}`);
   } finally {
@@ -10212,8 +10484,8 @@ summaryEl?.addEventListener("blur", () => {
 loadSettings();
 syncSettingsToUI();
 applyFixedRes();
-initPlayerEquipment();
-initPlayerInventory();
+// Note: initPlayerEquipment() and initPlayerInventory() are called conditionally
+// in the startup block below — either from applyCharacterSave() or after character creation.
 initUIWindowDrag();
 refreshUIWindows();
 
@@ -10402,7 +10674,39 @@ requestAnimationFrame(tick);
 // Start loading screen asset preload in background (non-blocking)
 preloadLoadingScreenAssets();
 
+// ── Auto-save timer + page unload save ──
+setInterval(saveCharacter, 30_000);
+window.addEventListener("beforeunload", saveCharacter);
+
+// ── Character load / create → first map load ──
 const params = new URLSearchParams(window.location.search);
-const initialMapId = params.get("mapId") ?? "104040000";
-mapIdInputEl.value = initialMapId;
-loadMap(initialMapId);
+{
+  const savedCharacter = loadCharacter();
+  let startMapId, startPortalName;
+
+  if (savedCharacter) {
+    const restored = applyCharacterSave(savedCharacter);
+    startMapId = params.get("mapId") ?? restored.mapId ?? "100000001";
+    startPortalName = restored.spawnPortal ?? null;
+    rlog("Loaded character from save: " + savedCharacter.identity.name);
+  } else {
+    // New player — show character creation overlay
+    showCharacterCreateOverlay().then(({ name, gender }) => {
+      runtime.player.name = name;
+      runtime.player.gender = gender;
+      const mapId = params.get("mapId") ?? "100000001";
+      mapIdInputEl.value = mapId;
+      initPlayerEquipment();
+      initPlayerInventory();
+      saveCharacter();
+      loadMap(mapId);
+    });
+    // Early return — loadMap will be called after overlay resolves
+    startMapId = null;
+  }
+
+  if (startMapId) {
+    mapIdInputEl.value = startMapId;
+    loadMap(startMapId, startPortalName);
+  }
+}
