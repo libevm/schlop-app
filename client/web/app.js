@@ -2396,8 +2396,11 @@ function dropItemOnMap() {
   executeDropOnMap(itemQty);
 }
 
+let _dropQtyModalOpen = false;
+
 /** Show modal asking how many items to drop (for stackable items with qty > 1) */
 function showDropQuantityModal(maxQty) {
+  _dropQtyModalOpen = true;
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
   overlay.style.cssText = "cursor:none;z-index:200000;";
@@ -2405,8 +2408,8 @@ function showDropQuantityModal(maxQty) {
     <div class="modal-panel" style="width:260px;">
       <div class="modal-titlebar"><span class="modal-title">Drop Item</span></div>
       <div class="modal-body" style="padding:12px 16px;">
-        <div class="modal-desc" style="margin-bottom:8px;">How many would you like to drop?</div>
-        <div style="display:flex;align-items:center;gap:8px;">
+        <div class="modal-desc" style="margin-bottom:8px;text-align:center;">How many would you like to drop?</div>
+        <div style="display:flex;align-items:center;justify-content:center;gap:8px;">
           <input type="number" class="modal-input" id="drop-qty-input"
             min="1" max="${maxQty}" value="${maxQty}"
             style="width:80px;text-align:center;" />
@@ -2429,7 +2432,7 @@ function showDropQuantityModal(maxQty) {
   input.select();
 
   let closed = false;
-  const close = () => { if (closed) return; closed = true; overlay.remove(); };
+  const close = () => { if (closed) return; closed = true; _dropQtyModalOpen = false; overlay.remove(); };
 
   const confirm = () => {
     let qty = parseInt(input.value, 10);
@@ -2958,8 +2961,8 @@ function updateCursorElement() {
   _cursorEl.style.left = `${wzCursor.clientX}px`;
   _cursorEl.style.top = `${wzCursor.clientY}px`;
 
-  // Ghost item follows cursor
-  if (draggedItem.active) {
+  // Ghost item follows cursor (hidden while drop quantity modal is open)
+  if (draggedItem.active && !_dropQtyModalOpen) {
     const iconUri = getIconDataUri(draggedItem.iconKey);
     if (iconUri) {
       if (_ghostItemEl.src !== iconUri) _ghostItemEl.src = iconUri;
