@@ -3,6 +3,8 @@
  *
  * Tables:
  * - characters: session_id → JSON character data
+ * - names: name → session_id (unique names)
+ * - credentials: session_id → password_hash (claimed accounts)
  * - names: case-insensitive name → session_id (first-come-first-serve)
  */
 import { Database } from "bun:sqlite";
@@ -91,16 +93,10 @@ export function initDatabase(dbPath: string = "./data/maple.db"): Database {
 // ─── Helpers ────────────────────────────────────────────────────────
 
 export function saveCharacterData(db: Database, sessionId: string, data: string): void {
-  // Update existing character (normal save)
-  const result = db.prepare(
+  // UPDATE only — new characters must go through createDefaultCharacter + reserveName
+  db.prepare(
     "UPDATE characters SET data = ?, version = 1, updated_at = datetime('now') WHERE session_id = ?"
   ).run(data, sessionId);
-  // If no row was updated, this is a new character — insert
-  if (result.changes === 0) {
-    db.prepare(
-      "INSERT INTO characters (session_id, data, version, updated_at) VALUES (?, ?, 1, datetime('now'))"
-    ).run(sessionId, data);
-  }
 }
 
 /** Insert or replace a character row. Only called from createDefaultCharacter. */
@@ -142,6 +138,34 @@ export function reserveName(
   db.prepare("DELETE FROM names WHERE session_id = ?").run(sessionId);
   db.prepare("INSERT INTO names (name, session_id) VALUES (?, ?)").run(trimmed, sessionId);
   return { ok: true };
+}
+
+/**
+ * Release a name if the holder is unclaimed (no password) AND offline (no active WS).
+ * Deletes the name reservation + character data for the old session.
+ * Returns true if the name was freed, false if it's still protected.
+ */
+export function releaseUnclaimedName(
+  db: Database,
+  name: string,
+  roomManager?: { getClient(id: string): unknown },
+): boolean {
+  const nameRow = db.prepare("SELECT session_id FROM names WHERE name = ?").get(name) as { session_id: string } | null;
+  if (!nameRow) return false; // name doesn't exist
+
+  const holderId = nameRow.session_id;
+
+  // Check if the holder has claimed their account (has a password)
+  const claimed = db.prepare("SELECT 1 FROM credentials WHERE session_id = ?").get(holderId);
+  if (claimed) return false; // claimed accounts are permanently protected
+
+  // Check if the holder is currently online
+  if (roomManager && roomManager.getClient(holderId)) return false; // online — can't take
+
+  // Unclaimed + offline → release the name + delete their character data
+  db.prepare("DELETE FROM names WHERE session_id = ?").run(holderId);
+  db.prepare("DELETE FROM characters WHERE session_id = ?").run(holderId);
+  return true;
 }
 
 export function getNameBySession(db: Database, sessionId: string): string | null {

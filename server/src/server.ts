@@ -302,6 +302,7 @@ function routeRequest(
   metrics: ServerMetrics,
   ctx: RequestContext,
   db: Database | null,
+  roomManager?: RoomManager,
 ): Response | Promise<Response> {
   const path = url.pathname;
 
@@ -320,7 +321,7 @@ function routeRequest(
 
   // Character API (separate middleware)
   if (db && path.startsWith("/api/character/")) {
-    return handleCharacterRequest(request, url, db).then((resp) => {
+    return handleCharacterRequest(request, url, db, roomManager).then((resp) => {
       if (resp) return resp;
       return errorResponse("NOT_FOUND", `Route not found: ${method} ${path}`, 404, ctx.correlationId);
     });
@@ -424,7 +425,7 @@ export function createServer(
         metrics.requestCount++;
 
         try {
-          const response = await routeRequest(url, method, request, provider, cfg, metrics, ctx, db);
+          const response = await routeRequest(url, method, request, provider, cfg, metrics, ctx, db, roomManager);
           const elapsed = performance.now() - startTime;
           metrics.totalLatencyMs += elapsed;
 
@@ -527,11 +528,12 @@ export function createServer(
             data.client = client;
             roomManager.addClient(client);
 
-            // Send map_state to the new client (players + drops)
+            // Send map_state to the new client (players + drops + mob authority)
             const players = roomManager.getMapState(client.mapId)
               .filter(p => p.id !== sessionId);
             const drops = roomManager.getDrops(client.mapId);
-            ws.send(JSON.stringify({ type: "map_state", players, drops }));
+            const isMobAuthority = roomManager.mobAuthority.get(client.mapId) === sessionId;
+            ws.send(JSON.stringify({ type: "map_state", players, drops, mob_authority: isMobAuthority }));
 
             // Broadcast player_enter to the room (exclude self)
             roomManager.broadcastToRoom(client.mapId, {

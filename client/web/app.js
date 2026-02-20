@@ -1128,6 +1128,9 @@ let _wsPingMs = -1; // -1 = no measurement yet
 let _lastChatSendTime = 0; // 1s cooldown between chat messages
 let _lastEmoteTime = 0;    // 1s cooldown between emote changes
 let _duplicateLoginBlocked = false; // true if 4006 close received
+let _isMobAuthority = false; // true if this client controls mob AI for the current map
+let _lastMobStateSendTime = 0; // 10Hz mob state broadcasts
+const MOB_STATE_SEND_INTERVAL = 100; // ms between mob state sends (10Hz)
 
 /** sessionId → RemotePlayer */
 const remotePlayers = new Map();
@@ -1232,6 +1235,34 @@ function wsSend(msg) {
   }
 }
 
+function sendMobState() {
+  if (!runtime.map) return;
+  const mobs = [];
+  for (const [idx, state] of lifeRuntimeState) {
+    const life = runtime.map.lifeEntries[idx];
+    if (!life || life.type !== "m") continue;
+    const ph = state.phobj;
+    if (!ph) continue;
+    mobs.push({
+      idx,
+      x: Math.round(ph.x),
+      y: Math.round(ph.y),
+      hspeed: Math.round(ph.hspeed * 10) / 10,
+      facing: state.facing,
+      stance: state.stance,
+      behavior: state.behaviorState,
+      hp: state.hp,
+      dead: state.dead,
+      dying: state.dying,
+      nameVisible: state.nameVisible,
+      respawnAt: state.respawnAt || 0,
+    });
+  }
+  if (mobs.length > 0) {
+    wsSend({ type: "mob_state", mobs });
+  }
+}
+
 function wsSendEquipChange() {
   wsSend({
     type: "equip_change",
@@ -1258,6 +1289,8 @@ function handleServerMessage(msg) {
       for (const d of msg.drops || []) {
         createDropFromServer(d, false);
       }
+      // Mob authority: this client controls mob AI if flagged
+      _isMobAuthority = !!msg.mob_authority;
       break;
 
     case "player_enter":
@@ -1414,6 +1447,81 @@ function handleServerMessage(msg) {
       } else {
         // Someone else looted — animate flying toward them
         animateDropPickup(dropId, msg.looter_id);
+      }
+      break;
+    }
+
+    case "mob_authority":
+      _isMobAuthority = !!msg.active;
+      rlog(`Mob authority ${_isMobAuthority ? "granted" : "revoked"}`);
+      break;
+
+    case "mob_state": {
+      // Received mob positions from the authority — apply to local mob state
+      if (!runtime.map || _isMobAuthority) break;
+      const mobs = msg.mobs;
+      if (!Array.isArray(mobs)) break;
+      for (const m of mobs) {
+        const state = lifeRuntimeState.get(m.idx);
+        if (!state || !state.phobj) continue;
+        state.phobj.x = m.x;
+        state.phobj.y = m.y;
+        state.phobj.hspeed = m.hspeed || 0;
+        state.facing = m.facing;
+        if (m.stance && m.stance !== state.stance) {
+          state.stance = m.stance;
+          state.frameIndex = 0;
+          state.frameTimerMs = 0;
+        }
+        state.behaviorState = m.behavior || "stand";
+        // Sync combat state
+        if (m.dead && !state.dead) {
+          state.dead = true;
+          state.dying = false;
+          state.respawnAt = m.respawnAt || (performance.now() + 7000);
+        }
+        if (m.dying && !state.dying && !state.dead) {
+          state.dying = true;
+          state.stance = "die1";
+          state.frameIndex = 0;
+          state.frameTimerMs = 0;
+        }
+        if (!m.dead && !m.dying && state.dead) {
+          // Mob respawned
+          state.dead = false;
+          state.dying = false;
+          state.hp = state.maxHp;
+          state.stance = "stand";
+          state.frameIndex = 0;
+          state.frameTimerMs = 0;
+        }
+        if (typeof m.hp === "number") state.hp = m.hp;
+        if (m.nameVisible) state.nameVisible = true;
+      }
+      break;
+    }
+
+    case "mob_damage": {
+      // Another player attacked a mob — apply damage visuals if we're the authority
+      if (!_isMobAuthority) break;
+      const state = lifeRuntimeState.get(msg.mob_idx);
+      if (!state || state.dead || state.dying) break;
+      const dmg = msg.damage || 0;
+      state.hp -= dmg;
+      state.nameVisible = true;
+      state.hpShowUntil = performance.now() + 5000;
+      // Apply knockback
+      const dir = msg.direction || 1;
+      state.hitStaggerUntil = performance.now() + 400;
+      state.kbDir = dir;
+      state.kbStartTime = performance.now();
+      state.hitCounter = 0;
+      if (state.hp <= 0) {
+        state.hp = 0;
+        state.dying = true;
+        state.stance = "die1";
+        state.frameIndex = 0;
+        state.frameTimerMs = 0;
       }
       break;
     }
@@ -4544,9 +4652,15 @@ function updateLifeAnimations(dtMs) {
     if (!anim) continue;
 
     // --- Mob AI + physics ---
+    // In online mode, only the mob authority runs AI/physics.
+    // Non-authority clients receive positions via mob_state messages.
+    const isOnlineNonAuthority = _wsConnected && !_isMobAuthority && life.type === "m";
+
     // ── C++ Mob::update — faithful port ──
     // Skip update for dead/dying mobs (C++ dying branch just normalizes phobj)
-    if (state.dying || state.dead) {
+    if (isOnlineNonAuthority) {
+      // Non-authority: skip AI/physics, only run frame animation below
+    } else if (state.dying || state.dead) {
       // C++ dying: phobj.normalize(); physics.get_fht().update_fh(phobj);
       if (state.phobj) { state.phobj.hspeed = 0; state.phobj.vspeed = 0; }
     } else if (state.canMove && state.phobj) {
@@ -10655,6 +10769,11 @@ function update(dt) {
         facing: runtime.player.facing,
       });
       _lastPosSendTime = now;
+    }
+    // Mob authority: broadcast mob state at 10Hz
+    if (_isMobAuthority && now - _lastMobStateSendTime >= MOB_STATE_SEND_INTERVAL) {
+      _lastMobStateSendTime = now;
+      sendMobState();
     }
   }
 

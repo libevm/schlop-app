@@ -64,6 +64,8 @@ export class RoomManager {
   mapDrops: Map<string, Map<number, MapDrop>> = new Map();
   /** Auto-incrementing drop ID counter */
   private _nextDropId = 1;
+  /** mapId → sessionId of the mob authority (the client controlling mobs) */
+  mobAuthority: Map<string, string> = new Map();
 
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private playerCountInterval: ReturnType<typeof setInterval> | null = null;
@@ -120,10 +122,11 @@ export class RoomManager {
     client.mapId = newMapId;
     this.addClientToRoom(client, newMapId);
 
-    // Send map_state snapshot to the joining client (players + drops)
+    // Send map_state snapshot to the joining client (players + drops + mob authority)
     const players = this.getMapState(newMapId).filter(p => p.id !== sessionId);
     const drops = this.getDrops(newMapId);
-    this.sendTo(client, { type: "map_state", players, drops });
+    const isMobAuthority = this.mobAuthority.get(newMapId) === sessionId;
+    this.sendTo(client, { type: "map_state", players, drops, mob_authority: isMobAuthority });
 
     // Broadcast player_enter to new room (exclude self)
     this.broadcastToRoom(newMapId, {
@@ -243,16 +246,34 @@ export class RoomManager {
       this.rooms.set(mapId, room);
     }
     room.set(client.id, client);
+
+    // Assign mob authority if none exists for this map
+    if (!this.mobAuthority.has(mapId)) {
+      this.mobAuthority.set(mapId, client.id);
+    }
   }
 
   private removeClientFromRoom(client: WSClient): void {
-    const room = this.rooms.get(client.mapId);
+    const mapId = client.mapId;
+    const room = this.rooms.get(mapId);
     if (room) {
       room.delete(client.id);
       // Broadcast player_leave to old room
-      this.broadcastToRoom(client.mapId, { type: "player_leave", id: client.id });
+      this.broadcastToRoom(mapId, { type: "player_leave", id: client.id });
+
+      // Reassign mob authority if the leaving client was the authority
+      if (this.mobAuthority.get(mapId) === client.id) {
+        this.mobAuthority.delete(mapId);
+        if (room.size > 0) {
+          const nextAuthority = room.values().next().value!;
+          this.mobAuthority.set(mapId, nextAuthority.id);
+          // Notify the new authority
+          this.sendTo(nextAuthority, { type: "mob_authority", active: true });
+        }
+      }
+
       // Clean up empty rooms
-      if (room.size === 0) this.rooms.delete(client.mapId);
+      if (room.size === 0) this.rooms.delete(mapId);
     }
   }
 
@@ -428,6 +449,29 @@ export function handleClientMessage(
         type: "drop_spawn",
         drop,
       });
+      break;
+    }
+
+    case "mob_state": {
+      // Only accept from the mob authority for this map
+      if (roomManager.mobAuthority.get(client.mapId) !== client.id) break;
+      // Relay mob state to all OTHER clients in the room
+      roomManager.broadcastToRoom(client.mapId, {
+        type: "mob_state",
+        mobs: msg.mobs,
+      }, client.id);
+      break;
+    }
+
+    case "mob_damage": {
+      // Player hit a mob — broadcast to all including authority so it can apply damage
+      roomManager.broadcastToRoom(client.mapId, {
+        type: "mob_damage",
+        attacker_id: client.id,
+        mob_idx: msg.mob_idx,
+        damage: msg.damage,
+        direction: msg.direction,
+      }, client.id);
       break;
     }
 

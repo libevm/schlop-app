@@ -57,11 +57,32 @@ describe("character API", () => {
     expect(body.data.version).toBe(1);
   });
 
-  test("POST /api/character/create rejects duplicate name", async () => {
+  test("POST /api/character/create allows taking unclaimed offline name", async () => {
+    // session1 created "TestPlayer" but never claimed (no password) and is offline
+    // session2 should be able to take it
     const res = await fetch(`${baseUrl}/api/character/create`, {
       method: "POST",
       headers: authHeaders(session2),
       body: JSON.stringify({ name: "TestPlayer", gender: true }),
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(body.data.identity.name).toBe("TestPlayer");
+  });
+
+  test("POST /api/character/create rejects claimed name", async () => {
+    // session2 now owns "TestPlayer" — claim it with a password
+    await fetch(`${baseUrl}/api/character/claim`, {
+      method: "POST",
+      headers: { ...authHeaders(session2), "Content-Type": "application/json" },
+      body: JSON.stringify({ password: "test1234" }),
+    });
+    // session1 should NOT be able to take it now (claimed)
+    const res = await fetch(`${baseUrl}/api/character/create`, {
+      method: "POST",
+      headers: authHeaders(session1),
+      body: JSON.stringify({ name: "TestPlayer", gender: false }),
     });
     expect(res.status).toBe(409);
     const body = await res.json();
@@ -78,11 +99,21 @@ describe("character API", () => {
     expect(res.status).toBe(400);
   });
 
+  test("POST /api/character/create session1 gets new name for remaining tests", async () => {
+    // session1 lost "TestPlayer" — create with a new name for remaining tests
+    const res = await fetch(`${baseUrl}/api/character/create`, {
+      method: "POST",
+      headers: authHeaders(session1),
+      body: JSON.stringify({ name: "TestPlayer2", gender: false }),
+    });
+    expect(res.status).toBe(201);
+  });
+
   test("POST /api/character/create allows same session to re-create", async () => {
     const res = await fetch(`${baseUrl}/api/character/create`, {
       method: "POST",
       headers: authHeaders(session1),
-      body: JSON.stringify({ name: "TestPlayer", gender: true }),
+      body: JSON.stringify({ name: "TestPlayer2", gender: true }),
     });
     // Same session re-reserving same name should succeed
     expect(res.status).toBe(201);
@@ -97,7 +128,7 @@ describe("character API", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.ok).toBe(true);
-    expect(body.data.identity.name).toBe("TestPlayer");
+    expect(body.data.identity.name).toBe("TestPlayer2");
   });
 
   test("GET /api/character/load returns 404 for unknown session", async () => {
@@ -197,10 +228,12 @@ describe("character API", () => {
   });
 
   test("POST /api/character/name rejects taken name", async () => {
+    // session1 owns "TestPlayer2" — session2 shouldn't be able to take it
+    // (session1 is unclaimed but /name endpoint doesn't release unclaimed names)
     const res = await fetch(`${baseUrl}/api/character/name`, {
       method: "POST",
       headers: authHeaders(session2),
-      body: JSON.stringify({ name: "TestPlayer" }),
+      body: JSON.stringify({ name: "TestPlayer2" }),
     });
     expect(res.status).toBe(409);
     const body = await res.json();
@@ -239,6 +272,7 @@ describe("character API", () => {
   });
 
   test("GET /api/character/claimed returns claimed status", async () => {
+    // session1 was just claimed above
     const res = await fetch(`${baseUrl}/api/character/claimed`, {
       headers: authHeaders(session1),
     });
@@ -246,20 +280,22 @@ describe("character API", () => {
     const body = await res.json();
     expect(body.claimed).toBe(true);
 
+    // session2 was claimed earlier (in the "rejects claimed name" test)
     const res2 = await fetch(`${baseUrl}/api/character/claimed`, {
       headers: authHeaders(session2),
     });
     const body2 = await res2.json();
-    expect(body2.claimed).toBe(false);
+    expect(body2.claimed).toBe(true);
   });
 
   // ── Login ──
 
   test("POST /api/character/login succeeds with correct credentials", async () => {
+    // session1 owns "TestPlayer2" and claimed it with "test1234"
     const res = await fetch(`${baseUrl}/api/character/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "TestPlayer", password: "test1234" }),
+      body: JSON.stringify({ name: "TestPlayer2", password: "test1234" }),
     });
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -271,7 +307,7 @@ describe("character API", () => {
     const res = await fetch(`${baseUrl}/api/character/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "TestPlayer", password: "wrong" }),
+      body: JSON.stringify({ name: "TestPlayer2", password: "wrong" }),
     });
     expect(res.status).toBe(401);
     const body = await res.json();
@@ -297,11 +333,11 @@ describe("character API", () => {
   });
 
   test("POST /api/character/login requires no auth header", async () => {
-    // No Authorization header — should still work
+    // No Authorization header — should still work (login IS the auth)
     const res = await fetch(`${baseUrl}/api/character/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "TestPlayer", password: "test1234" }),
+      body: JSON.stringify({ name: "TestPlayer2", password: "test1234" }),
     });
     expect(res.status).toBe(200);
   });

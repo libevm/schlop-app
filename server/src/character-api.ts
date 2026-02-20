@@ -8,6 +8,7 @@
  * - POST /api/character/name    → reserve a name
  */
 import type { Database } from "bun:sqlite";
+import type { RoomManager } from "./ws.ts";
 import {
   saveCharacterData,
   loadCharacterData,
@@ -16,6 +17,7 @@ import {
   isAccountClaimed,
   claimAccount,
   loginAccount,
+  releaseUnclaimedName,
 } from "./db.ts";
 
 // ─── Helpers ────────────────────────────────────────────────────────
@@ -42,6 +44,7 @@ export async function handleCharacterRequest(
   request: Request,
   url: URL,
   db: Database,
+  roomManager?: RoomManager,
 ): Promise<Response | null> {
   const path = url.pathname;
   const method = request.method;
@@ -108,13 +111,21 @@ export async function handleCharacterRequest(
       );
     }
 
-    // Check if name is available
-    const nameResult = reserveName(db, sessionId, name);
+    // Check if name is available — if taken by an unclaimed + offline session, reclaim it
+    let nameResult = reserveName(db, sessionId, name);
     if (!nameResult.ok) {
-      return jsonResponse(
-        { ok: false, error: { code: "NAME_TAKEN", message: "That name is already taken" } },
-        409,
-      );
+      // Name is taken — check if the holder is unclaimed AND offline
+      const released = releaseUnclaimedName(db, name, roomManager);
+      if (released) {
+        // Name was freed — try reserving again
+        nameResult = reserveName(db, sessionId, name);
+      }
+      if (!nameResult.ok) {
+        return jsonResponse(
+          { ok: false, error: { code: "NAME_TAKEN", message: "That name is already taken" } },
+          409,
+        );
+      }
     }
 
     // Create default character
