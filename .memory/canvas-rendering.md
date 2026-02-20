@@ -31,7 +31,7 @@ tick(timestampMs)                ← requestAnimationFrame
 2. If loading.active → drawLoadingScreen() → return
 3. If !runtime.map  → drawTransitionOverlay() → return
 4. drawBackgroundLayer(0)       ← back backgrounds (front=0)
-5. drawMapLayersWithCharacter() ← per layer: drawMapLayer + drawLifeSprites(layer) + drawCharacter + drawAllRemotePlayerSprites at playerLayer
+5. drawMapLayersWithCharacter() ← per layer: drawMapLayer + drawLifeSprites(layer) + drawAllRemotePlayerSprites + drawCharacter at playerLayer (local player always on top)
 6. drawReactors()               ← reactor sprites (state 0 idle)
 7. drawDamageNumbers()          ← floating damage text from combat
 8. drawRopeGuides()             ← debug overlay (if enabled)
@@ -690,8 +690,15 @@ Items can be dropped on the map and looted by the player.
   NPCs with known scripts (taxis, Spinel) show specific options. NPCs with unknown scripts
   show flavor text + travel options to all major towns. NPCs without scripts show flavor text.
   Cursor changes to pointer on NPC hover. Option highlight on hover with gold color.
-- **Minimap**: collapsible panel showing map image with player (green dot + white border),
-  remote players (blue dots, C++ `marker["another"]`), portal (yellow dots),
-  NPC (light blue dots), reactor (purple dots) markers. Toggle via settings.
+- **Minimap**: collapsible panel showing map image with markers. Toggle via settings.
   Click +/− to collapse/expand. World-to-minimap coordinate transform using map center offset and scale.
   Remote player positions interpolated from server snapshots — appear on minimap in real-time.
+  Marker colors: yellow (local player + white border), red (remote players),
+  green (NPCs), blue (visible portals type 2), purple (reactors).
+- **Pickup journal**: right-aligned text above chat bar (`#pickup-journal`). Shows
+  "You picked up [qty] ItemName" entries. Newest appends to bottom. Entries fade after 5s
+  (1s CSS opacity transition), then removed from DOM. Plain white text with drop shadow, no card.
+- **Drop quantity modal**: HUD-styled modal for dropping stackable items with qty > 1.
+  `_dropQtyModalOpen` flag suppresses ghost item rendering in `updateCursorElement`.
+  Cursor click state reset on modal open (prevents stuck clicking animation).
+  Guard prevents double-open from wrapper+canvas pointerdown firing on same event.

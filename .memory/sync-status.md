@@ -1,6 +1,6 @@
 # .memory Sync Status
 
-Last synced: 2026-02-20T08:30:00+11:00
+Last synced: 2026-02-20T09:45:00+11:00
 Status: ✅ Synced
 
 ## Current authoritative memory files
@@ -24,7 +24,7 @@ Status: ✅ Synced
 - CI: `bun run ci` ✅ (167 tests across 6 suites)
 - `runtime.player.face_id` / `runtime.player.hair_id`: stored character state (not derived from gender)
 - FPS counter includes ping display (color-coded, 10s interval)
-- Latest commit: `605f177` on `origin/main`
+- Latest commit: `7ae2b2f` on `origin/main`
 
 ## Key Architecture Decisions
 
