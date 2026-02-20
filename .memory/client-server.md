@@ -547,3 +547,34 @@ Manually curated files (`resourcesv2/mob/`, `resourcesv2/sound/`) remain tracked
 | keybinds | `UIKeyConfig` (localStorage only — not server-persisted) |
 | settings | Client-side config (localStorage only) |
 | achievements | Not in C++ client (custom addition) |
+
+---
+
+## Combat & Equipment Rendering
+
+### Weapon Stance Adjustment (C++ CharEquips::adjust_stance)
+- Two-handed weapons (staff, 2H sword/axe/mace, spear, polearm, crossbow) use stand2/walk2
+- `adjustStanceForWeapon(action)` reads weapon WZ `info/stand` and `info/walk`
+- Applied in `getCharacterFrameData`, animation timer, remote player rendering
+
+### Attack Stances (C++ CharLook::getattackstance)
+- Attack type read from weapon WZ `info/attack` ($short): 1-9
+- Each type has normal and degenerate stance arrays (`ATTACK_STANCES_BY_TYPE`, `DEGEN_STANCES_BY_TYPE`)
+- `getWeaponAttackStances(degenerate)` filters to stances with body frame data
+
+### Degenerate Attack (C++ Player::prepare_attack)
+- Bow/Crossbow without arrows (206xxxx), Claw without stars (207xxxx), Gun without bullets (233xxxx)
+- `isAttackDegenerate()` → `hasProjectileAmmo()` scans USE inventory
+- Degenerate: melee stances, damage /= 10, different sound
+- Remote players see correct stance (broadcast in `attack` message)
+
+### Equipment Slot Types (16 total)
+Cap, FaceAcc, EyeAcc, Earrings, Pendant, Cape, Coat, Longcoat, Shield, Glove, Pants, Shoes, Weapon, Ring, Belt, Medal
+
+### Overall (Longcoat) Handling
+- `hasOverallEquipped()` → hides Coat + Pants in rendering
+- Separate slot from Coat (C++ CharEquips::has_overall: id/10000 == 105)
+
+### Face Accessory Rendering
+- Uses face expression as stance (not body action), frame 0
+- Falls back to "default" expression; handles flat canvas children (no frame sub-nodes)

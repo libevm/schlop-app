@@ -395,6 +395,14 @@ Life sprite frames extract basedata into separate objects, so deleting `frame.ba
 - `tryLootDrop()` skips drops where `ownerId !== sessionId` and age < 5s
 - Server `loot_failed` handler: `not_found`/`already_looted` → remove drop; `owned` → drop stays
 
+### Item Icon Loading
+
+- `loadItemIcon(itemId)` → fetches `Item.wz/{folder}/{prefix}.img.json`, finds `info/icon` canvas
+- Handles **UOL icon references**: 663 Consume + 37 Etc items use UOL (e.g. `../../02040008/info/icon`)
+- `resolveItemIconUol(fileJson, uolPath)` navigates the relative path within the same WZ file
+- `loadEquipIcon(equipId, category)` → fetches `Character.wz/{category}/{padded}.img.json > info/icon`
+- All icons cached in `iconDataUriCache` as base64 data URIs
+
 ### Reactor Debug
 
 - `drawReactorMarkers()` — magenta squares + reactor ID + HP/state (shown with life markers)

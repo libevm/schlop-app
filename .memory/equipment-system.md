@@ -389,8 +389,35 @@ Attack type is read from weapon WZ `info/attack` (`$short`):
 Read from `Sound.wz/Weapon.img.json > {sfx}/Attack`:
 bow, cBow, tGlove, poleArm, spear, gun, knuckle, mace, swordL, swordS
 
+### Degenerate Attack (C++ `Player::prepare_attack`)
+
+Ranged weapons without ammo use alternate melee stances and deal 1/10 damage.
+
+| Weapon | Ammo Required | Ammo ID Prefix |
+|--------|--------------|----------------|
+| Bow (145) | Arrows | 206xxxx |
+| Crossbow (146) | Arrows | 206xxxx |
+| Claw (147) | Throwing Stars | 207xxxx |
+| Gun (149) | Bullets | 233xxxx |
+
+`isAttackDegenerate()` checks:
+1. Prone → always degenerate
+2. Bow/Crossbow/Claw/Gun → `!hasProjectileAmmo()` (scans USE inventory for matching prefix)
+3. Other weapons → never degenerate
+
+`hasProjectileAmmo()` searches `playerInventory` for USE items with matching `WEAPON_AMMO_PREFIXES[weaponPrefix]`.
+
+When degenerate: stances from `DEGEN_STANCES_BY_TYPE` (melee swings), damage `/= 10`.
+Remote players see correct animation since actual stance name is broadcast.
+
 ### Preloading
 `addCharacterPreloadTasks` includes all attack stances (stand2, walk2, all swingX/stabX/shootX/shot).
+
+### Item Icon UOL Resolution
+
+663 Consume items and 37 Etc items use UOL references for icons (e.g. `../../02040008/info/icon`).
+`loadItemIcon()` resolves UOL references via `resolveItemIconUol()` when direct `$canvas` icon is missing.
+Navigates the `../../itemId/info/icon` path within the same WZ file to find the target canvas node.
 
 ## Known Limitations
 
