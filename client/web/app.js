@@ -1694,12 +1694,11 @@ function handleServerMessage(msg) {
     // ── Server-authoritative reactor system ──
 
     case "reactor_hit": {
-      // C++ set_state(): plays src[this->state]["hit"] BEFORE advancing state.
-      // So we play hit anim for the pre-hit state, then update.
+      // Every non-destroy hit plays the state 0 "shake" animation
       const rIdx = msg.reactor_idx;
       const rState = reactorRuntimeState.get(rIdx);
       if (rState) {
-        rState.hitAnimState = rState.state; // animation uses pre-hit state
+        rState.hitAnimState = 0; // always use state 0 hit anim (box shake)
         rState.state = msg.new_state;
         rState.hp = msg.new_hp;
         rState.hitAnimPlaying = true;

@@ -334,37 +334,47 @@ Life sprite frames extract basedata into separate objects, so deleting `frame.ba
 
 `drawReactors()`:
 - Iterates `reactorRuntimeState` entries
-- Position from `reactor.x` / `reactor.y` (static map positions)
-- Screen Y uses `worldY - cam.y + halfH` — same formula as `worldToScreen`
-- Facing from `reactor.f` flag
+- Position from `reactor.x` / `reactor.y` — y is set so sprite bottom sits on foothold
+  (y = footholdY - (spriteHeight - originY), e.g. 274 - 17 = 257 for the wooden box)
+- Standard WZ origin-based rendering: `drawImage(img, screenX - originX, screenY - originY)`
+- Screen coords: `worldX/Y - cam.x/y + halfW/H`
 - Off-screen culling with 100px margin
-- Origin-based positioning from frame metadata
-- Renders current WZ state's idle frame OR hit animation frame
-- Supports opacity for fade-in (respawn) and fade-out (destroy)
-- Multi-state: each hit advances WZ state (different visuals per damage level)
+- Renders current WZ state's idle frame OR hit animation frame (exact state, no fallback)
+- Supports opacity for fade-in (respawn, 0.5s) and fade-out (destroy, 0.33s)
+- Hit animation plays for the **pre-hit state** (`hitAnimState`), matching C++ `set_state()`
 
 ### Reactor Loading
 
 - `loadReactorAnimation(reactorId)` loads from `Reactor.wz/{padded7}.img.json`
-- Loads ALL states (not just state 0): idle canvas frames + `hit` sub-animation per state
+- Loads ALL states: idle canvas frames + `hit` sub-animation per state
 - Returns `{ states: { [stateNum]: { idle: [frames], hit: [frames] } }, name }`
 - Cached in `reactorAnimations` Map keyed `reactorId`
-- Preload task loads all states' idle + hit frames, decodes images, frees basedata
+- Hit frame delay minimum: 350ms (WZ default 150ms is too fast visually)
+- Preload in `buildMapAssetPreloadTasks` for WZ-defined reactors
+- `syncServerReactors` also registers frames in `metaCache` + calls `requestImageByKey`
 
 ### Reactor Runtime State
 
 - `reactorRuntimeState` Map keyed by reactor entry index
 - Server-synced via `syncServerReactors()` from `map_state` message
 - Tracks: `frameIndex`, `elapsed`, `state`, `hp`, `active`, `destroyed`, `opacity`
-- Hit animation: `hitAnimPlaying`, `hitAnimFrameIndex`, `hitAnimElapsed`
+- Hit animation: `hitAnimPlaying`, `hitAnimState` (pre-hit state), `hitAnimFrameIndex`, `hitAnimElapsed`
+- States with no hit anim (e.g. states 1/2) → `hitAnimPlaying = false` immediately (no fallback)
 - `initReactorRuntimeStates()` — offline fallback, skipped if server already synced
 - `updateReactorAnimations(dt)` — advances idle + hit anims, fade-in/fade-out
+- Cleared at start of `loadMap()` to avoid stale data
 
 ### Reactor Hit Detection
 
 - `findReactorsInRange()` — mirrors `findMobsInRange()`, uses ATTACK_RANGE_X/Y
 - Called in `performAttack()` — sends `hit_reactor { reactor_idx }` to server
-- Server validates range, cooldown, active state; broadcasts result
+- Server validates range (120px X, 60px Y), 600ms cooldown, active state
+
+### Reactor Sounds
+
+- `ReactorHit` — state 0 hit sound from `Sound.wz/Reactor.img.json > 2000 > 0 > Hit`
+- `ReactorBreak` — state 3 hit sound (destruction) from same file `> 3 > Hit`
+- Preloaded in `preloadUISounds()`
 
 ### Reactor Debug
 
