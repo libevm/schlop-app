@@ -3228,7 +3228,7 @@ function tryLootDrop() {
       if (_wsConnected) {
         // Loot ownership: skip if owned by someone else and less than 5s old
         if (drop.ownerId && drop.ownerId !== sessionId) {
-          const age = Date.now() - drop.serverCreatedAt;
+          const age = Date.now() - drop.createdAt;
           if (age < 5000) continue; // not our drop yet — try next
         }
         // Online: ask server to loot — server broadcasts drop_loot to all
@@ -3393,7 +3393,7 @@ function createDropFromServer(dropData, animate) {
     angle: 0,
     bobPhase: 0,
     spawnTime: performance.now(),
-    serverCreatedAt: dropData.created_at || Date.now(),
+    createdAt: Date.now(), // local timestamp for loot protection timing (avoids clock skew)
     ownerId: dropData.owner_id || "",
     pickingUp: false,
     pickupStart: 0,
