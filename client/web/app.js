@@ -1320,14 +1320,14 @@ function handleServerMessage(msg) {
     case "drop_loot": {
       const dropId = msg.drop_id;
       if (msg.looter_id === sessionId) {
-        // We looted it — server confirmed. Add to inventory + animate pickup.
+        // We looted it — server confirmed. Add to inventory + animate toward us.
         const drop = groundDrops.find(d => d.drop_id === dropId);
         if (drop) {
           lootDropLocally(drop);
         }
       } else {
-        // Someone else looted — just animate it disappearing
-        animateDropPickup(dropId);
+        // Someone else looted — animate flying toward them
+        animateDropPickup(dropId, msg.looter_id);
       }
       break;
     }
@@ -2187,9 +2187,11 @@ function updateGroundDrops(dt) {
       // C++ PICKEDUP: vspeed = -4.5, opacity -= 1/48 per tick, fly toward looter
       const elapsed = performance.now() - drop.pickupStart;
       const t = Math.min(1, elapsed / LOOT_ANIM_DURATION);
-      const player = runtime.player;
-      const hdelta = player.x - drop.x;
-      const vdelta = (player.y - 40) - drop.y;
+      // Fly toward the looter (local player or remote player)
+      const tx = drop._lootTargetX ?? runtime.player.x;
+      const ty = drop._lootTargetY ?? (runtime.player.y - 40);
+      const hdelta = tx - drop.x;
+      const vdelta = ty - drop.y;
       drop.x += hdelta * 0.12;
       drop.y += vdelta * 0.12;
       drop.opacity = 1 - t;
@@ -2309,6 +2311,8 @@ function tryLootDrop() {
 function lootDropLocally(drop) {
   drop.pickingUp = true;
   drop.pickupStart = performance.now();
+  drop._lootTargetX = runtime.player.x;
+  drop._lootTargetY = runtime.player.y - 40;
 
   const invType = inventoryTypeById(drop.id) || "ETC";
   const existing = playerInventory.find(e => e.id === drop.id && e.invType === invType);
@@ -2332,12 +2336,22 @@ function lootDropLocally(drop) {
   refreshUIWindows();
 }
 
-/** Start pickup animation on a drop (for remote player looting). */
-function animateDropPickup(dropId) {
+/** Start pickup animation on a drop, flying toward the looter. */
+function animateDropPickup(dropId, looterId) {
   const drop = groundDrops.find(d => d.drop_id === dropId);
   if (drop && !drop.pickingUp) {
     drop.pickingUp = true;
     drop.pickupStart = performance.now();
+    // Fly toward the looter's position
+    const rp = remotePlayers.get(looterId);
+    if (rp) {
+      drop._lootTargetX = rp.renderX;
+      drop._lootTargetY = rp.renderY - 40;
+    } else {
+      // Fallback to local player (shouldn't happen, but safe)
+      drop._lootTargetX = runtime.player.x;
+      drop._lootTargetY = runtime.player.y - 40;
+    }
   }
 }
 
