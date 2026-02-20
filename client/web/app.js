@@ -354,6 +354,7 @@ const runtime = {
     lastTrapHitDamage: 0,
     fallStartY: 0,
     knockbackClimbLockUntil: 0,
+    chairId: 0,  // 0 = no chair, otherwise item ID of active chair
   },
   input: {
     enabled: false,
@@ -689,6 +690,8 @@ function loadItemIcon(itemId) {
   let wzPath;
   if (itemId >= 2000000 && itemId < 3000000) {
     wzPath = `/resources/Item.wz/Consume/${prefix}.img.json`;
+  } else if (itemId >= 3000000 && itemId < 4000000) {
+    wzPath = `/resources/Item.wz/Install/${prefix}.img.json`;
   } else if (itemId >= 4000000 && itemId < 5000000) {
     wzPath = `/resources/Item.wz/Etc/${prefix}.img.json`;
   } else { return key; }
@@ -729,6 +732,9 @@ async function loadItemName(itemId) {
     } else if (itemId >= 2000000 && itemId < 3000000) {
       const json = await fetchJson("/resources/String.wz/Consume.img.json");
       return findStringName(json, idStr);
+    } else if (itemId >= 3000000 && itemId < 4000000) {
+      const json = await fetchJson("/resources/String.wz/Ins.img.json");
+      return findStringName(json, idStr);
     } else if (itemId >= 4000000 && itemId < 5000000) {
       const json = await fetchJson("/resources/String.wz/Etc.img.json");
       return findStringName(json, idStr);
@@ -759,6 +765,7 @@ function initPlayerInventory() {
     { id: 2010000, qty: 10 },
     { id: 4000000, qty: 8 },
     { id: 4000001, qty: 3 },
+    { id: 3010000, qty: 1 },  // The Relaxer (chair)
   ];
   for (const item of starterItems) {
     const iconKey = loadItemIcon(item.id);
@@ -1014,22 +1021,27 @@ function showDuplicateLoginOverlay() {
   overlay.querySelector("#dup-login-retry").addEventListener("click", async () => {
     overlay.remove();
     _duplicateLoginBlocked = false;
+    // Set up the initial map promise BEFORE connecting (same race fix as startup)
+    _awaitingInitialMap = true;
+    const serverMapPromise = new Promise((resolve) => {
+      _initialMapResolve = resolve;
+      setTimeout(() => {
+        if (_awaitingInitialMap) {
+          _awaitingInitialMap = false;
+          _initialMapResolve = null;
+          resolve({ map_id: runtime.mapId || "100000001", spawn_portal: null });
+        }
+      }, 10000);
+    });
     const ok = await connectWebSocketAsync();
     if (ok) {
       // Server will send change_map after auth — wait for it
-      _awaitingInitialMap = true;
-      const serverMap = await new Promise((resolve) => {
-        _initialMapResolve = resolve;
-        setTimeout(() => {
-          if (_awaitingInitialMap) {
-            _awaitingInitialMap = false;
-            _initialMapResolve = null;
-            resolve({ map_id: runtime.mapId || "100000001", spawn_portal: null });
-          }
-        }, 10000);
-      });
+      const serverMap = await serverMapPromise;
       await loadMap(serverMap.map_id, serverMap.spawn_portal || null);
       wsSend({ type: "map_loaded" });
+    } else {
+      _awaitingInitialMap = false;
+      _initialMapResolve = null;
     }
   });
   overlay.querySelector("#dup-login-logout").addEventListener("click", () => {
@@ -1238,6 +1250,7 @@ function createRemotePlayer(id, name, look, x, y, action, facing) {
     faceFrameIndex: 0,
     faceFrameTimer: 0,
     faceExpressionExpires: 0,
+    chairId: 0,
   };
 }
 
@@ -1362,6 +1375,8 @@ function handleServerMessage(msg) {
       remoteTemplateCache.clear();
       for (const p of msg.players || []) {
         const rp = createRemotePlayer(p.id, p.name, p.look, p.x, p.y, p.action, p.facing);
+        rp.chairId = p.chair_id || 0;
+        if (rp.chairId) loadChairSprite(rp.chairId);
         remotePlayers.set(p.id, rp);
         loadRemotePlayerEquipData(rp);
         loadRemotePlayerLookData(rp);
@@ -1377,6 +1392,8 @@ function handleServerMessage(msg) {
     case "player_enter":
       if (!remotePlayers.has(msg.id)) {
         const rp = createRemotePlayer(msg.id, msg.name, msg.look, msg.x, msg.y, msg.action, msg.facing);
+        rp.chairId = msg.chair_id || 0;
+        if (rp.chairId) loadChairSprite(rp.chairId);
         remotePlayers.set(msg.id, rp);
         loadRemotePlayerEquipData(rp);
         loadRemotePlayerLookData(rp);
@@ -1464,7 +1481,11 @@ function handleServerMessage(msg) {
 
     case "player_sit": {
       const rp = remotePlayers.get(msg.id);
-      if (rp) rp.action = msg.active ? "sit" : "stand1";
+      if (rp) {
+        rp.action = msg.active ? "sit" : "stand1";
+        rp.chairId = msg.chair_id || 0;
+        if (rp.chairId) loadChairSprite(rp.chairId);
+      }
       break;
     }
 
@@ -1800,8 +1821,8 @@ function updateRemotePlayers(dt) {
 
       // Use the action/facing from the nearest snapshot at or before renderTime
       const stateSnap = renderTime >= s1.time ? s1 : s0;
-      if (!rp.attacking) {
-        // Only update action from snapshots if not in attack animation
+      if (!rp.attacking && !rp.chairId) {
+        // Only update action from snapshots if not in attack animation or sitting on chair
         const newAction = stateSnap.action;
         if (newAction !== rp.action) {
           rp.action = newAction;
@@ -1819,7 +1840,7 @@ function updateRemotePlayers(dt) {
       // Only one snapshot — just sit at that position
       rp.renderX = snaps[0].x;
       rp.renderY = snaps[0].y;
-      if (!rp.attacking) {
+      if (!rp.attacking && !rp.chairId) {
         rp.action = snaps[0].action;
         rp.facing = snaps[0].facing;
       }
@@ -1934,9 +1955,12 @@ function getRemoteCharacterFrameData(rp) {
   }
 
   // Equipment — use remote player's equip data
+  // Skip weapon when sitting on a chair
+  const rpHidingWeapon = action === "sit";
   const equipDataMap = remoteEquipData.get(rp.id);
   if (equipDataMap) {
     for (const [itemId, equipJson] of equipDataMap) {
+      if (rpHidingWeapon && equipSlotFromId(Number(itemId)) === "Weapon") continue;
       const equipParts = getEquipFrameParts(equipJson, action, frameIndex, `equip:${itemId}`);
       for (const ep of equipParts) frameParts.push(ep);
     }
@@ -1951,6 +1975,26 @@ function drawRemotePlayer(rp) {
   const frameIndex = rp.frameIndex;
   const faceExpression = rp.faceExpression || "default";
   const faceFrameIndex = rp.faceFrameIndex || 0;
+
+  // Draw chair sprite below remote player (flipped to match facing)
+  if (rp.chairId) {
+    const chairSprite = _chairSpriteCache.get(rp.chairId);
+    if (chairSprite?.img) {
+      const sc = worldToScreen(rp.renderX, rp.renderY);
+      const drawY = Math.round(sc.y - chairSprite.height);
+      if (flipped) {
+        ctx.save();
+        const drawX = Math.round(sc.x - (chairSprite.width - chairSprite.originX));
+        ctx.translate(drawX + chairSprite.width, drawY);
+        ctx.scale(-1, 1);
+        ctx.drawImage(chairSprite.img, 0, 0);
+        ctx.restore();
+      } else {
+        const drawX = Math.round(sc.x - chairSprite.originX);
+        ctx.drawImage(chairSprite.img, drawX, drawY);
+      }
+    }
+  }
 
   // Use the same placement template pipeline as the local player.
   // Remote players share body/head/face/hair WZ data with the local player,
@@ -2436,6 +2480,13 @@ function refreshInvGrid() {
         equipItemFromInventory(realIdx);
       });
     }
+    // Double-click on SETUP tab chair → use chair (sit/stand toggle)
+    if (item && currentInvTab === "SETUP" && isChairItem(item.id)) {
+      slotEl.addEventListener("dblclick", () => {
+        clearTimeout(_clickTimer);
+        useChair(item.id);
+      });
+    }
     invGridEl.appendChild(slotEl);
   }
 }
@@ -2851,6 +2902,110 @@ function executeDropOnMap(dropQty) {
     iconKey: dropIconKey,
     category: dropCategory,
   });
+}
+
+// ── Chair system ──
+// Chairs (SETUP items, prefix 301xxxx) let the player sit. Double-click in inventory
+// to use. The chair sprite is drawn at the player's feet. Other players see the chair
+// via the player_sit message which includes chair_id.
+
+const _chairSpriteCache = new Map(); // chairItemId → { img, originX, originY, width, height } or null
+const _chairSpriteLoading = new Set();
+
+async function loadChairSprite(chairId) {
+  if (_chairSpriteCache.has(chairId)) return _chairSpriteCache.get(chairId);
+  if (_chairSpriteLoading.has(chairId)) return null;
+  _chairSpriteLoading.add(chairId);
+
+  try {
+    const prefix = String(chairId).padStart(8, "0").slice(0, 4);
+    const padded = String(chairId).padStart(8, "0");
+    const json = await fetchJson(`/resources/Item.wz/Install/${prefix}.img.json`);
+    const itemNode = (json.$$ ?? []).find(c => c.$imgdir === padded);
+    if (!itemNode) { _chairSpriteCache.set(chairId, null); return null; }
+
+    const effectNode = (itemNode.$$ ?? []).find(c => c.$imgdir === "effect");
+    if (!effectNode) { _chairSpriteCache.set(chairId, null); return null; }
+
+    // Find first canvas frame in effect
+    const frame = (effectNode.$$ ?? []).find(c => c.$canvas !== undefined && c.basedata);
+    if (!frame) { _chairSpriteCache.set(chairId, null); return null; }
+
+    let originX = 0, originY = 0;
+    for (const prop of frame.$$ ?? []) {
+      if (prop.$vector === "origin") {
+        originX = parseInt(prop.x, 10) || 0;
+        originY = parseInt(prop.y, 10) || 0;
+      }
+    }
+
+    const img = await new Promise((resolve) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => resolve(null);
+      image.src = `data:image/png;base64,${frame.basedata}`;
+    });
+
+    if (!img) { _chairSpriteCache.set(chairId, null); return null; }
+
+    const sprite = {
+      img,
+      originX,
+      originY,
+      width: parseInt(frame.width, 10) || img.width,
+      height: parseInt(frame.height, 10) || img.height,
+    };
+    _chairSpriteCache.set(chairId, sprite);
+    return sprite;
+  } catch (e) {
+    rlog(`Chair sprite load failed for ${chairId}: ${e}`);
+    _chairSpriteCache.set(chairId, null);
+    return null;
+  } finally {
+    _chairSpriteLoading.delete(chairId);
+  }
+}
+
+function isChairItem(itemId) {
+  return itemId >= 3010000 && itemId < 3020000;
+}
+
+function useChair(itemId) {
+  const player = runtime.player;
+  if (!player.onGround) return;
+  if (player.climbing) return;
+
+  if (player.chairId === itemId) {
+    // Already sitting on this chair — stand up
+    player.chairId = 0;
+    player.action = "stand1";
+    player.frameIndex = 0;
+    player.frameTimer = 0;
+    wsSend({ type: "sit", active: false, chair_id: 0 });
+    return;
+  }
+
+  // Sit on chair
+  player.chairId = itemId;
+  player.action = "sit";
+  player.frameIndex = 0;
+  player.frameTimer = 0;
+  player.vx = 0;
+  player.vy = 0;
+  loadChairSprite(itemId);
+  wsSend({ type: "sit", active: true, chair_id: itemId });
+  saveCharacter();
+}
+
+function standUpFromChair() {
+  const player = runtime.player;
+  if (player.chairId) {
+    player.chairId = 0;
+    player.action = "stand1";
+    player.frameIndex = 0;
+    player.frameTimer = 0;
+    wsSend({ type: "sit", active: false, chair_id: 0 });
+  }
 }
 
 // ── Ground drop physics + rendering ──
@@ -4743,6 +4898,27 @@ const NPC_SCRIPTS = {
   go_victoria: { greeting: "I'll take you back to Victoria Island!", destinations: VICTORIA_TOWNS },
   // Spinel — World Tour Guide
   world_trip: { greeting: "How about traveling to a new world? I can take you to many places!", destinations: ALL_MAJOR_TOWNS },
+  // Jump quest challenge NPC (Maya on map 100000001)
+  jq_challenge: { pages: [
+    { text: "Cough... cough... Oh, a brave adventurer! You look like you could handle a real challenge. I know of several perilous trials scattered across Victoria Island and beyond..." },
+    { text: "Shumi in Kerning City has been losing his valuables all over the construction site. Think you can navigate those treacherous platforms?",
+      destinations: [
+        { label: "Shumi's Lost Coin", mapId: 103000900 },
+        { label: "Shumi's Lost Bundle of Money", mapId: 103000903 },
+        { label: "Shumi's Lost Sack of Money", mapId: 103000906 },
+      ] },
+    { text: "Old man John tends a garden deep in the Sleepy Dungeon. He needs someone nimble enough to deliver his gifts through those crumbling caves.",
+      destinations: [
+        { label: "John's Pink Flower Basket", mapId: 105040310 },
+        { label: "John's Present", mapId: 105040312 },
+        { label: "John's Last Present", mapId: 105040314 },
+      ] },
+    { text: "And if you truly have nerves of steel... the ancient forests and volcanic depths await. Few who enter ever make it to the end.",
+      destinations: [
+        { label: "The Forest of Patience", mapId: 101000100 },
+        { label: "Breath of Lava", mapId: 280020000 },
+      ] },
+  ]},
   // Jump quest exit NPCs
   subway_out: { greeting: "Had enough? I can send you back if you'd like.", destinations: [{ label: "Back to Mushroom Park", mapId: 100000001 }] },
   flower_out: { greeting: "This obstacle course is no joke. Need a way out?", destinations: [{ label: "Back to Mushroom Park", mapId: 100000001 }] },
@@ -4794,6 +4970,27 @@ async function runNpcMapTransition(npcId, mapId) {
  */
 function buildScriptDialogue(scriptDef, npcId) {
   const lines = [];
+  // Multi-page dialogue: pages[] with text + optional destinations
+  if (scriptDef.pages) {
+    for (const page of scriptDef.pages) {
+      if (page.destinations) {
+        lines.push({
+          text: page.text,
+          options: page.destinations.map((d) => ({
+            label: d.label,
+            action: () => {
+              closeNpcDialogue();
+              runNpcMapTransition(npcId, d.mapId);
+            },
+          })),
+        });
+      } else {
+        lines.push(page.text);
+      }
+    }
+    return lines;
+  }
+  // Single-page dialogue: greeting + destinations
   lines.push({
     text: scriptDef.greeting,
     options: scriptDef.destinations.map((d) => ({
@@ -6284,8 +6481,9 @@ function drawNpcDialogue() {
   const cancelBtnX = boxX + boxW - padding - cancelBtnW;
   drawFooterBtn("Cancel", cancelBtnX, cancelBtnW, -99);
 
-  // Next button (only for text lines, not option-selection lines)
-  if (!isOptionLine) {
+  // Next button — show on text pages always, and on option pages if more pages follow
+  const hasMorePages = d.lineIndex < d.lines.length - 1;
+  if (!isOptionLine || hasMorePages) {
     const pageInfo = d.lines.length > 1 ? `  ${d.lineIndex + 1}/${d.lines.length}` : "";
     const nextLabel = `Next${pageInfo}`;
     ctx.font = 'bold 10px "Dotum", Arial, sans-serif';
@@ -8207,7 +8405,10 @@ function getCharacterFrameData(
   }
 
   // Equipment — iterate currently equipped items (dynamic, not DEFAULT_EQUIPS)
-  for (const [, equipped] of playerEquipped) {
+  // Skip weapon when sitting on a chair
+  const hidingWeapon = action === "sit";
+  for (const [slotType, equipped] of playerEquipped) {
+    if (hidingWeapon && slotType === "Weapon") continue;
     const equipData = runtime.characterEquipData[equipped.id];
     if (!equipData) continue;
     const equipParts = getEquipFrameParts(equipData, action, frameIndex, `equip:${equipped.id}`);
@@ -8850,6 +9051,11 @@ function updatePlayer(dt) {
     : null;
   const prioritizeDownAttach = !!downAttachCandidate && wantsClimbDown && player.onGround;
 
+  // Auto-stand from chair on any movement input
+  if (player.chairId && (move !== 0 || jumpRequested || climbDir !== 0)) {
+    standUpFromChair();
+  }
+
   const crouchRequested = runtime.input.down && player.onGround && !player.climbing && !prioritizeDownAttach;
   const downJumpMovementLocked = player.downJumpControlLock && !player.onGround;
   const npcDialogueLock = runtime.npcDialogue.active;
@@ -9294,7 +9500,7 @@ function updatePlayer(dt) {
       player.action = attackAction;
     }
     player.frameIndex = player.attackFrameIndex;
-  } else {
+  } else if (!player.chairId) {
     const nextAction = player.climbing
       ? climbAction
       : crouchActive
@@ -10644,6 +10850,28 @@ function drawCharacter() {
     runtime.lastCharacterBounds = bounds;
     if (player.action === "stand1") {
       runtime.standardCharacterWidth = Math.max(40, Math.min(120, Math.round(bounds.width)));
+    }
+  }
+
+  // Draw chair sprite below character (z=-1)
+  // The chair's bottom edge aligns with the player's feet (ground level).
+  // Flipped to match the player's facing direction.
+  if (player.chairId) {
+    const chairSprite = _chairSpriteCache.get(player.chairId);
+    if (chairSprite?.img) {
+      const sc = worldToScreen(player.x, player.y);
+      const drawY = Math.round(sc.y - chairSprite.height);
+      if (flipped) {
+        ctx.save();
+        const drawX = Math.round(sc.x - (chairSprite.width - chairSprite.originX));
+        ctx.translate(drawX + chairSprite.width, drawY);
+        ctx.scale(-1, 1);
+        ctx.drawImage(chairSprite.img, 0, 0);
+        ctx.restore();
+      } else {
+        const drawX = Math.round(sc.x - chairSprite.originX);
+        ctx.drawImage(chairSprite.img, drawX, drawY);
+      }
     }
   }
 
@@ -12080,6 +12308,8 @@ async function playMobSfx(mobId, soundType) {
 
 async function loadMap(mapId, spawnPortalName = null, spawnFromPortalTransfer = false) {
   rlog(`loadMap START mapId=${mapId} portal=${spawnPortalName} transfer=${spawnFromPortalTransfer}`);
+  // Stand up from chair on map change
+  runtime.player.chairId = 0;
   // Clear remote players and mob authority on map change
   remotePlayers.clear();
   remoteEquipData.clear();
@@ -12424,8 +12654,6 @@ function bindInput() {
       const npc = findNpcAtScreen(cx, cy);
       if (npc) {
         openNpcDialogue(npc);
-      } else {
-        rlog(`click at screen(${Math.round(cx)},${Math.round(cy)}) world(${Math.round(runtime.mouseWorld.x)},${Math.round(runtime.mouseWorld.y)}) — no hit`);
       }
     }
   });
@@ -13028,13 +13256,11 @@ window.addEventListener("beforeunload", () => {
   // In online mode, connect WebSocket BEFORE loading the map.
   // Server is authoritative over map assignment — wait for change_map message.
   if (window.__MAPLE_ONLINE__) {
-    const wsOk = await connectWebSocketAsync();
-    if (!wsOk) return; // blocked by duplicate login overlay
-
-    // Wait for the server's change_map message to know which map to load.
-    // The server determines the map from the character's saved location.
+    // Set up the initial map promise BEFORE connecting so the change_map
+    // message (which arrives immediately after auth) is captured even if
+    // it arrives before connectWebSocketAsync() resolves.
     _awaitingInitialMap = true;
-    const serverMap = await new Promise((resolve) => {
+    const serverMapPromise = new Promise((resolve) => {
       _initialMapResolve = resolve;
       // Timeout: if server doesn't respond in 10s, fall back to client save
       setTimeout(() => {
@@ -13046,6 +13272,17 @@ window.addEventListener("beforeunload", () => {
         }
       }, 10000);
     });
+
+    const wsOk = await connectWebSocketAsync();
+    if (!wsOk) {
+      _awaitingInitialMap = false;
+      _initialMapResolve = null;
+      return; // blocked by duplicate login overlay
+    }
+
+    // Wait for the server's change_map message to know which map to load.
+    // The server determines the map from the character's saved location.
+    const serverMap = await serverMapPromise;
 
     rlog(`Initial map from server: map=${serverMap.map_id} portal=${serverMap.spawn_portal}`);
     mapIdInputEl.value = serverMap.map_id;

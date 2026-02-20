@@ -409,10 +409,12 @@ Possible reasons:
 { "type": "player_attack", "id": "abc", "stance": "swingO1" }
 ```
 
-### `player_sit` — Player sit state
+### `player_sit` — Player sit state (with chair)
 ```json
-{ "type": "player_sit", "id": "abc", "active": true }
+{ "type": "player_sit", "id": "abc", "active": true, "chair_id": 3010000 }
 ```
+- `chair_id`: item ID of the chair (0 if standing up)
+- Remote clients load chair sprite from `Item.wz/Install` on receive
 
 ### `player_prone` — Player prone state
 ```json

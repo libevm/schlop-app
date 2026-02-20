@@ -627,6 +627,46 @@ Items can be dropped on the map and looted by the player.
 - **Equip slot mapping**: `equipSlotFromId(id)` determines which `playerEquipped` key an item
   occupies (C++ `EquipData::get_eqslot` parity)
 
+## Chair Rendering System
+
+### Chair Sprite Loading
+- `loadChairSprite(itemId)` → async, fetches `Item.wz/Install/{prefix}.img.json`
+- Extracts `effect/0` canvas from the chair's imgdir node
+- Decodes PNG, stores `{ img, originX, originY, width, height }` in `_chairSpriteCache` (Map)
+- `_chairSpriteLoading` Set prevents duplicate concurrent loads
+- Chair items are in SETUP tab, ID range 3010000–3019999 (`isChairItem()`)
+
+### Chair Positioning
+- Chair sprite drawn **below** character (z=-1 parity with C++ `EffectLayer::drawbelow`)
+- Bottom edge of chair aligns with player's feet (ground level):
+  `drawY = screenY - chairSprite.height`
+- Horizontal: origin-based centering `drawX = screenX - chairSprite.originX`
+- Same positioning for both local player and remote players
+
+### Chair Facing / Flip
+- Chair flips to match character facing direction
+- When `flipped` (facing right): `ctx.save()` → translate → `ctx.scale(-1, 1)` → draw → restore
+- Flip mirror X: `drawX = screenX - (width - originX)` to keep origin-anchored
+
+### Sit Action
+- `useChair(itemId)` sets `player.action = "sit"`, `player.chairId = itemId`, zeroes velocity
+- Physics update **skips action override** when `player.chairId` is set
+  (prevents `"sit"` being overwritten to `"stand1"` each frame)
+- `standUpFromChair()` clears `chairId`, resets action to `"stand1"`, broadcasts via WS
+- Called on any movement input, jump, climb, or map change
+
+### Weapon Hidden While Sitting
+- `getCharacterFrameData()` skips "Weapon" slot when `action === "sit"`
+  (local player check via `slotType === "Weapon"`)
+- Remote player check via `equipSlotFromId(Number(itemId)) === "Weapon"`
+- Placement template cache key includes action, so sit/stand templates are distinct
+
+### Remote Player Chair Sync
+- `player_sit` WS message sets `rp.action` and `rp.chairId`, calls `loadChairSprite()`
+- Snapshot interpolation **skips action/facing override** when `rp.chairId` is set
+  (prevents movement snapshots from overwriting "sit" action with "stand1")
+- `map_state` and `player_enter` messages include `chair_id` for late-joining clients
+
 ## WZ Cursor System
 
 - Cursor is an HTML `<img>` overlay (`#wz-cursor`) positioned at `position:fixed; z-index:99999`

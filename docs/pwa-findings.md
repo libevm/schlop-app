@@ -28,6 +28,29 @@ The docs UI includes sidebar navigation for markdown files under `docs/`.
 
 ---
 
+## 2026-02-21 05:26 (GMT+11) — Chair Rendering Fixes + Auth Race Condition
+
+### Summary
+Fixed three chair rendering issues and a critical auth race condition that caused characters to "respawn" on first load.
+
+**Chair fixes:**
+1. **Sit animation not playing** — Physics update was overwriting `player.action = "sit"` to `"stand1"` every frame. Fix: skip action override when `player.chairId` is set.
+2. **Chair not facing with character** — Chair sprite now flips via `ctx.scale(-1,1)` to match player facing direction. Weapon hidden during sit action.
+3. **Chair not rendering for remote players** — Movement snapshot interpolation was overwriting `rp.action = "sit"` back to `"stand1"`. Fix: skip action/facing override when `rp.chairId` is set. Also copied missing WZ directories (Item.wz, String.wz, Reactor.wz) to `resourcesv2/` so chair sprite fetch doesn't 404.
+
+**Auth race condition:**
+- `_awaitingInitialMap` was set AFTER `connectWebSocketAsync()` resolved, but server's `change_map` arrived during the connect (before resolve). This caused the `change_map` to fall through to `handleServerMapChange()` (loading map once), then after timeout the startup code loaded map a second time — causing the "respawn then disappear" bug.
+- Fix: set `_awaitingInitialMap = true` and create `_initialMapResolve` promise BEFORE connecting WS.
+
+### Files changed
+- `client/web/app.js` — Chair flip, weapon hide on sit, physics sit guard, snapshot sit guard, auth race fix
+- `resourcesv2/Item.wz/` — Copied Cash, Consume, Etc, Pet, Special from resources/
+- `resourcesv2/String.wz/` — Copied 13 missing files
+- `resourcesv2/Reactor.wz/` — Copied from resources/
+- `.memory/canvas-rendering.md`, `.memory/client-server.md`, `.memory/shared-schema.md` — Updated
+
+---
+
 ## 2026-02-21 (GMT+11) — Server-Side Inventory/Equipment Persistence
 
 ### Summary

@@ -74,6 +74,8 @@ export interface WSClient {
   lastMoveMs: number;
   /** True once the client has sent at least one valid move on the current map */
   positionConfirmed: boolean;
+  /** Active chair item ID (0 = not sitting on chair) */
+  chairId: number;
   /** Server-tracked inventory (updated by client via save_state) */
   inventory: InventoryItem[];
   /** Server-tracked stats (updated by client via save_state) */
@@ -185,6 +187,7 @@ export class RoomManager {
     client.mapId = "";
     client.pendingMapId = newMapId;
     client.pendingSpawnPortal = spawnPortal;
+    client.chairId = 0;
 
     // Tell client to load the map
     this.sendTo(client, {
@@ -229,6 +232,7 @@ export class RoomManager {
       action: client.action,
       facing: client.facing,
       look: client.look,
+      chair_id: client.chairId,
     }, client.id);
 
     return true;
@@ -268,6 +272,7 @@ export class RoomManager {
       action: client.action,
       facing: client.facing,
       look: client.look,
+      chair_id: client.chairId,
     }, client.id);
   }
 
@@ -290,7 +295,7 @@ export class RoomManager {
 
   getMapState(mapId: string): Array<{
     id: string; name: string; x: number; y: number;
-    action: string; facing: number; look: PlayerLook;
+    action: string; facing: number; look: PlayerLook; chair_id: number;
   }> {
     const room = this.rooms.get(mapId);
     if (!room) return [];
@@ -302,6 +307,7 @@ export class RoomManager {
       action: c.action,
       facing: c.facing,
       look: c.look,
+      chair_id: c.chairId,
     }));
   }
 
@@ -560,10 +566,12 @@ export function handleClientMessage(
 
     case "sit":
       client.action = (msg.active as boolean) ? "sit" : "stand1";
+      client.chairId = (msg.active as boolean) ? (Number(msg.chair_id) || 0) : 0;
       roomManager.broadcastToRoom(client.mapId, {
         type: "player_sit",
         id: client.id,
         active: msg.active,
+        chair_id: client.chairId,
       }, client.id);
       break;
 

@@ -290,15 +290,22 @@ if (window.__MAPLE_ONLINE__) {
 - **JSON wire format (v1).** All messages include a `type` field.
 
 ### Connection Flow (Server-Authoritative)
-1. Client opens `ws://<server>/ws`
-2. Client sends `{ type: "auth", session_id: "<uuid>" }` as first message
-3. Server validates, loads character from DB
-4. Server registers client in `allClients` but does **NOT** join any room yet
-5. Server sends `change_map { map_id, spawn_portal }` with saved location
-6. Client loads the map, sends `map_loaded`
-7. Server adds client to room, sends `map_state`, broadcasts `player_enter`
-8. Client/server exchange `ping`/`pong` every 10s for keepalive
-9. Server disconnects clients with no activity for 30s
+1. Client sets `_awaitingInitialMap = true` and creates `_initialMapResolve` promise **BEFORE** connecting WS
+2. Client opens `ws://<server>/ws`
+3. Client sends `{ type: "auth", session_id: "<uuid>" }` as first message
+4. Server validates, loads character from DB
+5. Server registers client in `allClients` but does **NOT** join any room yet
+6. Server sends `change_map { map_id, spawn_portal }` with saved location
+7. Client receives `change_map` → resolves `_initialMapResolve` (captured because flag was set in step 1)
+8. Client loads the map, sends `map_loaded`
+9. Server adds client to room, sends `map_state`, broadcasts `player_enter`
+10. Client/server exchange `ping`/`pong` every 10s for keepalive
+11. Server disconnects clients with no activity for 30s
+
+**Race condition fix:** `_awaitingInitialMap` must be set BEFORE `connectWebSocketAsync()` because
+the server's `change_map` arrives immediately after auth (often before the async connect resolves).
+If `_awaitingInitialMap` is false when `change_map` arrives, it falls through to
+`handleServerMapChange()` causing a duplicate map load. Same fix applied to duplicate-login retry path.
 
 ### Server Room Model
 ```

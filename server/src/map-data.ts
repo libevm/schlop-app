@@ -109,6 +109,17 @@ export const NPC_SCRIPT_DESTINATIONS: Record<string, NpcDestination[]> = {
   go_victoria: VICTORIA_TOWNS,
   // Spinel — World Tour Guide
   world_trip: ALL_MAJOR_TOWNS,
+  // Jump quest challenge NPC (Maya on map 100000001)
+  jq_challenge: [
+    { label: "Shumi's Lost Coin", mapId: 103000900 },
+    { label: "Shumi's Lost Bundle of Money", mapId: 103000903 },
+    { label: "Shumi's Lost Sack of Money", mapId: 103000906 },
+    { label: "John's Pink Flower Basket", mapId: 105040310 },
+    { label: "John's Present", mapId: 105040312 },
+    { label: "John's Last Present", mapId: 105040314 },
+    { label: "The Forest of Patience", mapId: 101000100 },
+    { label: "Breath of Lava", mapId: 280020000 },
+  ],
   // Jump quest exit NPCs
   subway_out: [{ label: "Leave", mapId: 100000001 }],
   flower_out: [{ label: "Leave", mapId: 100000001 }],

@@ -538,6 +538,7 @@ export function createServer(
               lastActivityMs: Date.now(),
               lastMoveMs: 0,
               positionConfirmed: false,
+              chairId: 0,
               inventory: charData.inventory || [],
               stats: {
                 level: savedStats.level ?? 1,

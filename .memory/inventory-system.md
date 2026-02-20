@@ -253,6 +253,32 @@ Items have a maximum stack size determined by WZ data or category defaults:
 - `getItemSlotMax(itemId)` — returns max stack from WZ cache or defaults
 - `isItemStackable(itemId)` — returns `false` for EQUIP type items
 
+## Chair System (SETUP Tab)
+
+Chairs (item ID range 3010000–3019999) let the player sit with a chair sprite.
+
+### Using a Chair
+- Double-click a chair in the SETUP inventory tab → `useChair(itemId)`
+- Sets `player.chairId`, `player.action = "sit"`, broadcasts `sit { active: true, chair_id }` via WS
+- Double-clicking the same chair again toggles stand-up
+- Any movement input (walk, jump, climb) auto-calls `standUpFromChair()`
+- Map change resets `player.chairId = 0`
+
+### Chair Sprite Loading
+- `loadChairSprite(chairId)` → fetches `Item.wz/Install/{prefix}.img.json`
+- Extracts `effect/0` canvas frame (first frame) with origin vector
+- Cached in `_chairSpriteCache: Map<chairId, { img, originX, originY, width, height }>`
+- Drawn at player feet (below character, z=-1) in `drawCharacter()` and `drawRemotePlayer()`
+
+### Server Support
+- `WSClient.chairId` tracks active chair (0 = none)
+- `sit` message broadcasts `player_sit { chair_id }` to room
+- `map_state` and `player_enter` include `chair_id` for join sync
+- `initiateMapChange()` resets `chairId = 0`
+
+### Default Item
+- New characters receive The Relaxer (3010000) in SETUP slot 0
+
 ## Known Limitations
 
 - No scroll/pagination within a tab (32 slots all visible)

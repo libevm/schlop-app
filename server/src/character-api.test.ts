@@ -53,7 +53,7 @@ describe("character API", () => {
     expect(body.data.identity.gender).toBe(false);
     expect(body.data.stats.level).toBe(1);
     expect(body.data.equipment.length).toBe(4);
-    expect(body.data.inventory.length).toBe(6);
+    expect(body.data.inventory.length).toBe(7);
     expect(body.data.version).toBe(1);
   });
 
