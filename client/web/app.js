@@ -369,6 +369,10 @@ const runtime = {
     inputActive: false,
     history: [],
     maxHistory: 200,
+    sentHistory: [],      // local player's sent messages (most recent last)
+    sentHistoryMax: 50,   // max sent messages to remember
+    recallIndex: -1,      // current position in sentHistory (-1 = not recalling)
+    recallDraft: "",      // the text that was in the input before recalling
   },
   mapBanner: {
     active: false,
@@ -2548,18 +2552,23 @@ function drawRemotePlayerChatBubble(rp) {
 
   const bubbleOffsetY = (rp.action === "prone" || rp.action === "proneStab") ? 40 : 70;
   const anchor = worldToScreen(rp.renderX, rp.renderY - bubbleOffsetY);
-  const fullText = (rp.name || "???") + ": " + rp.chatBubble;
 
   ctx.save();
   ctx.font = "12px 'Dotum', Arial, sans-serif";
 
-  const maxBubbleWidth = 150;
-  const maxTextWidth = Math.max(14, maxBubbleWidth - CHAT_BUBBLE_HORIZONTAL_PADDING * 2);
-  const lines = wrapBubbleTextToWidth(fullText, maxTextWidth);
-
-  const widestLine = Math.max(...lines.map((l) => ctx.measureText(l).width), 0);
-  const width = Math.max(40, Math.min(maxBubbleWidth, Math.ceil(widestLine) + CHAT_BUBBLE_HORIZONTAL_PADDING * 2));
-  const height = Math.max(26, lines.length * CHAT_BUBBLE_LINE_HEIGHT + CHAT_BUBBLE_VERTICAL_PADDING * 2);
+  // Cache bubble layout so it doesn't jitter on stance changes
+  if (!rp._bubbleLayout || rp._bubbleLayoutText !== rp.chatBubble) {
+    const fullText = (rp.name || "???") + ": " + rp.chatBubble;
+    const maxBubbleWidth = 150;
+    const maxTextWidth = Math.max(14, maxBubbleWidth - CHAT_BUBBLE_HORIZONTAL_PADDING * 2);
+    const lines = wrapBubbleTextToWidth(fullText, maxTextWidth);
+    const widestLine = Math.max(...lines.map((l) => ctx.measureText(l).width), 0);
+    const width = Math.max(40, Math.min(maxBubbleWidth, Math.ceil(widestLine) + CHAT_BUBBLE_HORIZONTAL_PADDING * 2));
+    const height = Math.max(26, lines.length * CHAT_BUBBLE_LINE_HEIGHT + CHAT_BUBBLE_VERTICAL_PADDING * 2);
+    rp._bubbleLayout = { lines, width, height };
+    rp._bubbleLayoutText = rp.chatBubble;
+  }
+  const { lines, width, height } = rp._bubbleLayout;
 
   const clampedX = Math.max(6, Math.min(canvasEl.width - width - 6, anchor.x - width / 2));
   const y = anchor.y - height - 16;
@@ -4196,6 +4205,8 @@ function applyStatInputChange() {
 
 function openChatInput() {
   runtime.chat.inputActive = true;
+  runtime.chat.recallIndex = -1;
+  runtime.chat.recallDraft = "";
   chatBarEl?.classList.remove("inactive");
   resetGameplayInput();
   if (chatInputEl) {
@@ -4233,10 +4244,17 @@ function sendChatMessage(text) {
     runtime.chat.history.shift();
   }
 
+  // Track sent messages for up-arrow recall
+  runtime.chat.sentHistory.push(trimmed);
+  if (runtime.chat.sentHistory.length > runtime.chat.sentHistoryMax) {
+    runtime.chat.sentHistory.shift();
+  }
+
   appendChatLogMessage(msg);
 
   runtime.player.bubbleText = trimmed;
   runtime.player.bubbleExpiresAt = performance.now() + 8000;
+  runtime.player._bubbleLayout = null; // recompute on next draw
 
   wsSend({ type: "chat", text: trimmed });
 
@@ -11597,28 +11615,26 @@ function drawChatBubble() {
   const isProne = action === "prone" || action === "proneStab";
   const bubbleOffsetY = isProne ? 40 : 70;
   const anchor = worldToScreen(runtime.player.x, runtime.player.y - bubbleOffsetY);
-  const text = runtime.player.bubbleText;
 
   ctx.save();
   ctx.font = "12px 'Dotum', Arial, sans-serif";
 
-  const playerName = runtime.player.name || "Player";
-  const fullText = playerName + ": " + text;
-
-  const standardWidth = Math.max(1, Math.round(runtime.standardCharacterWidth || DEFAULT_STANDARD_CHARACTER_WIDTH));
-  const maxBubbleWidth = Math.max(40, Math.round(standardWidth * CHAT_BUBBLE_STANDARD_WIDTH_MULTIPLIER));
-  const maxTextWidth = Math.max(14, maxBubbleWidth - CHAT_BUBBLE_HORIZONTAL_PADDING * 2);
-  const lines = wrapBubbleTextToWidth(fullText, maxTextWidth);
-
-  const widestLine = Math.max(...lines.map((line) => ctx.measureText(line).width), 0);
-  const width = Math.max(
-    40,
-    Math.min(maxBubbleWidth, Math.ceil(widestLine) + CHAT_BUBBLE_HORIZONTAL_PADDING * 2),
-  );
-  const height = Math.max(
-    26,
-    lines.length * CHAT_BUBBLE_LINE_HEIGHT + CHAT_BUBBLE_VERTICAL_PADDING * 2,
-  );
+  // Cache bubble layout (lines, width, height) so it doesn't jitter on stance changes
+  let layout = runtime.player._bubbleLayout;
+  if (!layout) {
+    const playerName = runtime.player.name || "Player";
+    const fullText = playerName + ": " + runtime.player.bubbleText;
+    const standardWidth = Math.max(1, Math.round(runtime.standardCharacterWidth || DEFAULT_STANDARD_CHARACTER_WIDTH));
+    const maxBubbleWidth = Math.max(40, Math.round(standardWidth * CHAT_BUBBLE_STANDARD_WIDTH_MULTIPLIER));
+    const maxTextWidth = Math.max(14, maxBubbleWidth - CHAT_BUBBLE_HORIZONTAL_PADDING * 2);
+    const lines = wrapBubbleTextToWidth(fullText, maxTextWidth);
+    const widestLine = Math.max(...lines.map((line) => ctx.measureText(line).width), 0);
+    const width = Math.max(40, Math.min(maxBubbleWidth, Math.ceil(widestLine) + CHAT_BUBBLE_HORIZONTAL_PADDING * 2));
+    const height = Math.max(26, lines.length * CHAT_BUBBLE_LINE_HEIGHT + CHAT_BUBBLE_VERTICAL_PADDING * 2);
+    layout = { lines, width, height };
+    runtime.player._bubbleLayout = layout;
+  }
+  const { lines, width, height } = layout;
 
   const clampedX = Math.max(6, Math.min(canvasEl.width - width - 6, anchor.x - width / 2));
   const y = anchor.y - height - 16;
@@ -13407,6 +13423,38 @@ function bindInput() {
           openChatInput();
           return;
         }
+      }
+    }
+
+    // Chat input: Up/Down arrow to recall sent messages
+    if (runtime.chat.inputActive && chatInputEl) {
+      if (event.code === "ArrowUp") {
+        event.preventDefault();
+        const sent = runtime.chat.sentHistory;
+        if (sent.length === 0) return;
+        if (runtime.chat.recallIndex === -1) {
+          runtime.chat.recallDraft = chatInputEl.value;
+          runtime.chat.recallIndex = sent.length - 1;
+        } else if (runtime.chat.recallIndex > 0) {
+          runtime.chat.recallIndex--;
+        }
+        chatInputEl.value = sent[runtime.chat.recallIndex] || "";
+        chatInputEl.setSelectionRange(chatInputEl.value.length, chatInputEl.value.length);
+        return;
+      }
+      if (event.code === "ArrowDown") {
+        event.preventDefault();
+        const sent = runtime.chat.sentHistory;
+        if (runtime.chat.recallIndex === -1) return;
+        if (runtime.chat.recallIndex < sent.length - 1) {
+          runtime.chat.recallIndex++;
+          chatInputEl.value = sent[runtime.chat.recallIndex] || "";
+        } else {
+          runtime.chat.recallIndex = -1;
+          chatInputEl.value = runtime.chat.recallDraft;
+        }
+        chatInputEl.setSelectionRange(chatInputEl.value.length, chatInputEl.value.length);
+        return;
       }
     }
 
