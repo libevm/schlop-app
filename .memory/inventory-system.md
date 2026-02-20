@@ -216,6 +216,40 @@ Inventory is saved/loaded via `buildCharacterSave()` / `applyCharacterSave()`:
 - Save triggers: portal transition, equip/unequip, level up, 30s timer, beforeunload
 - localStorage key: `mapleweb.character.v1`
 
+## Item Stacking (slotMax)
+
+Items have a maximum stack size determined by WZ data or category defaults:
+
+| Source         | slotMax                                  |
+|----------------|------------------------------------------|
+| Equipment      | Always 1 (unique per slot, never stack)  |
+| WZ `info.slotMax` | Read from `_itemWzInfoCache[id].info.slotMax` |
+| Consume default | 100 (if WZ slotMax absent)              |
+| Etc/Setup default | 100 (WZ values: 1, 100, 200, 1000)   |
+
+### Stack-aware loot (`lootDropLocally`)
+1. If stackable, scan existing inventory slots for same item ID
+2. Add to each existing slot up to `slotMax - currentQty`
+3. Remaining qty goes into new slots (each capped at `slotMax`)
+4. If tab full, partial pickup succeeds (what fits), rest discarded with log
+
+### Stack-aware drop (quantity modal)
+- Equipment items: always drop immediately (qty=1)
+- Stackable items with qty > 1: HUD-styled modal asks "How many to drop?"
+  - Number input (min 1, max current qty), OK/Cancel, Enter/Escape keys
+  - Partial drop → reduces source inventory item qty
+  - Full drop → removes item from inventory entirely
+- Stackable items with qty=1: drop immediately (no modal)
+
+### WZ info pre-caching
+- `initPlayerInventory()` and `applyCharacterSave()` both eagerly call
+  `loadItemWzInfo(itemId)` for stackable items to populate `_itemWzInfoCache`
+- `lootDropLocally()` also pre-caches on pickup
+
+### Helpers
+- `getItemSlotMax(itemId)` — returns max stack from WZ cache or defaults
+- `isItemStackable(itemId)` — returns `false` for EQUIP type items
+
 ## Known Limitations
 
 - No scroll/pagination within a tab (32 slots all visible)
@@ -223,5 +257,4 @@ Inventory is saved/loaded via `buildCharacterSave()` / `applyCharacterSave()`:
 - No item use (double-click USE items does nothing yet)
 - No meso display
 - No item tooltips with stat details (only name/qty/ID)
-- No stack splitting when dropping partial quantities
 - No cross-tab item dragging
