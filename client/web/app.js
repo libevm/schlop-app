@@ -1032,6 +1032,8 @@ let _wsConnected = false;
 let _wsPingInterval = null;
 let _wsReconnectTimer = null;
 let _lastPosSendTime = 0;
+let _wsPingSentAt = 0;
+let _wsPingMs = -1; // -1 = no measurement yet
 
 /** sessionId → RemotePlayer */
 const remotePlayers = new Map();
@@ -1067,7 +1069,7 @@ function connectWebSocket() {
   _ws.onopen = () => {
     _ws.send(JSON.stringify({ type: "auth", session_id: sessionId }));
     _wsConnected = true;
-    _wsPingInterval = setInterval(() => wsSend({ type: "ping" }), 10_000);
+    _wsPingInterval = setInterval(() => { _wsPingSentAt = performance.now(); wsSend({ type: "ping" }); }, 10_000);
     rlog("WS connected");
   };
 
@@ -1080,6 +1082,7 @@ function connectWebSocket() {
 
   _ws.onclose = (event) => {
     _wsConnected = false;
+    _wsPingMs = -1;
     if (_wsPingInterval) { clearInterval(_wsPingInterval); _wsPingInterval = null; }
     remotePlayers.clear();
     remoteEquipData.clear();
@@ -1115,7 +1118,9 @@ function wsSendEquipChange() {
 
 function handleServerMessage(msg) {
   switch (msg.type) {
-    case "pong": break;
+    case "pong":
+      if (_wsPingSentAt > 0) { _wsPingMs = Math.round(performance.now() - _wsPingSentAt); _wsPingSentAt = 0; }
+      break;
 
     case "map_state":
       remotePlayers.clear();
@@ -10003,23 +10008,29 @@ function drawFpsCounter() {
 
   const fps = estimatedFps();
   const loopMs = Number.isFinite(runtime.perf.loopIntervalMs) ? runtime.perf.loopIntervalMs : 0;
-  const text = fps > 0 ? `${fps} FPS` : "FPS --";
-  const detail = loopMs > 0 ? `${loopMs.toFixed(1)}ms` : "--.-ms";
+  const fpsText = fps > 0 ? `${fps} FPS` : "FPS --";
+  const msText = loopMs > 0 ? `${loopMs.toFixed(1)}ms` : "--.-ms";
+  const hasPing = _wsConnected && _wsPingMs >= 0;
+  const pingText = hasPing ? `${_wsPingMs}ms ping` : "";
 
   ctx.save();
   ctx.font = "bold 11px 'Dotum', Arial, sans-serif";
   ctx.textAlign = "right";
   ctx.textBaseline = "top";
 
-  const textWidth = Math.max(ctx.measureText(text).width, ctx.measureText(detail).width);
+  const lines = [fpsText, msText];
+  if (hasPing) lines.push(pingText);
+  const lineHeight = 13;
+
+  const maxLineWidth = Math.max(...lines.map(l => ctx.measureText(l).width));
   const padX = 8;
-  const boxW = Math.ceil(textWidth) + padX * 2;
-  const boxH = 32;
+  const boxW = Math.ceil(maxLineWidth) + padX * 2;
+  const boxH = lines.length * lineHeight + 6;
 
   const buttonsBlockLeftX = canvasEl.width - 88;
   const boxRight = buttonsBlockLeftX - 8;
   const boxX = Math.max(10, Math.round(boxRight - boxW));
-  const boxY = 10;
+  const boxY = 42;
 
   // Frosted glass background
   roundRect(ctx, boxX, boxY, boxW, boxH, 5);
@@ -10032,13 +10043,23 @@ function drawFpsCounter() {
   ctx.shadowColor = "rgba(0, 0, 0, 0.6)";
   ctx.shadowOffsetY = 1;
   ctx.shadowBlur = 2;
-  ctx.fillStyle = fps >= 58 ? "#22c55e" : fps >= 45 ? "#fbbf24" : "#ef4444";
-  ctx.fillText(text, boxX + boxW - padX, boxY + 4);
-  ctx.fillStyle = "#8899b0";
-  ctx.font = "10px 'Dotum', Arial, sans-serif";
-  ctx.fillText(detail, boxX + boxW - padX, boxY + 17);
-  ctx.shadowColor = "transparent";
 
+  // FPS line
+  ctx.fillStyle = fps >= 58 ? "#22c55e" : fps >= 45 ? "#fbbf24" : "#ef4444";
+  ctx.fillText(fpsText, boxX + boxW - padX, boxY + 3);
+
+  // Frame time line
+  ctx.font = "10px 'Dotum', Arial, sans-serif";
+  ctx.fillStyle = "#8899b0";
+  ctx.fillText(msText, boxX + boxW - padX, boxY + 3 + lineHeight);
+
+  // Ping line
+  if (hasPing) {
+    ctx.fillStyle = _wsPingMs <= 80 ? "#22c55e" : _wsPingMs <= 200 ? "#fbbf24" : "#ef4444";
+    ctx.fillText(pingText, boxX + boxW - padX, boxY + 3 + lineHeight * 2);
+  }
+
+  ctx.shadowColor = "transparent";
   ctx.restore();
 }
 
