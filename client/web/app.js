@@ -2179,7 +2179,7 @@ function sendChatMessage(text) {
   const trimmed = text.trim();
 
   const msg = {
-    name: "Player",
+    name: runtime.player.name || "Player",
     text: trimmed,
     timestamp: Date.now(),
     type: "normal",
