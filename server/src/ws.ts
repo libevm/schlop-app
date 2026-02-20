@@ -10,6 +10,7 @@ import type { Database } from "bun:sqlite";
 // ─── Types ──────────────────────────────────────────────────────────
 
 export interface PlayerLook {
+  gender: boolean;     // false = male, true = female
   face_id: number;
   hair_id: number;
   skin: number;

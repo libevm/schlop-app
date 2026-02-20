@@ -490,7 +490,7 @@ export function createServer(
             }
 
             const charData = loadCharacterData(db, sessionId) as {
-              identity: { name: string; face_id: number; hair_id: number; skin: number };
+              identity: { name: string; gender: boolean; face_id: number; hair_id: number; skin: number };
               location: { map_id: string };
               equipment: Array<{ slot_type: string; item_id: number }>;
             } | null;
@@ -516,6 +516,7 @@ export function createServer(
               action: "stand1",
               facing: -1,
               look: {
+                gender: charData.identity.gender ?? false,
                 face_id: charData.identity.face_id,
                 hair_id: charData.identity.hair_id,
                 skin: charData.identity.skin,

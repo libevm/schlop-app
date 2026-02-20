@@ -1195,7 +1195,7 @@ function createRemotePlayer(id, name, look, x, y, action, facing) {
     action: action || "stand1",
     facing: facing || -1,
     frameIndex: 0, frameTimer: 0,
-    look: look || { face_id: 20000, hair_id: 30000, skin: 0, equipment: [] },
+    look: look || { gender: false, face_id: 20000, hair_id: 30000, skin: 0, equipment: [] },
     chatBubble: null, chatBubbleExpires: 0,
     attacking: false, attackStance: "",
     climbing: false,
@@ -1634,17 +1634,11 @@ async function loadRemotePlayerEquipData(rp) {
   remoteTemplateCache.delete(rp.id); // invalidate placement cache
 }
 
-/** Load face and hair WZ data for a remote player (gender-specific). */
+/** Load face and hair WZ data for a remote player (always per-player, never local fallback). */
 async function loadRemotePlayerLookData(rp) {
   const look = rp.look || {};
   const faceId = look.face_id || 20000;
   const hairId = look.hair_id || 30000;
-
-  // Skip if this player uses the same face/hair as local player
-  if (faceId === runtime.player.face_id && hairId === runtime.player.hair_id) {
-    remoteLookData.delete(rp.id);
-    return;
-  }
 
   const entry = { faceData: null, hairData: null, faceId, hairId };
   try {
@@ -1830,20 +1824,22 @@ function getRemoteCharacterFrameData(rp) {
   const headMeta = getHeadFrameMeta(action, frameIndex);
   if (headMeta) frameParts.push({ name: "head", meta: headMeta });
 
-  // Face/Hair — use per-player data if different from local player
+  // Face/Hair — always use per-player data (never local player's)
   const lookData = remoteLookData.get(rp.id);
-  const rpFaceData = lookData?.faceData || runtime.characterFaceData;
-  const rpHairData = lookData?.hairData || runtime.characterHairData;
+  const rpFaceData = lookData?.faceData ?? null;
+  const rpHairData = lookData?.hairData ?? null;
 
-  // Face — skip during climbing
-  if (!CLIMBING_STANCES.has(action)) {
+  // Face — skip during climbing, skip if face data not loaded yet
+  if (!CLIMBING_STANCES.has(action) && rpFaceData) {
     const faceMeta = getFaceFrameMeta(frameLeaf, faceExpression, faceFrameIndex, rpFaceData);
     if (faceMeta) frameParts.push({ name: `face:${faceExpression}:${faceFrameIndex}`, meta: faceMeta });
   }
 
-  // Hair
-  const hairParts = getHairFrameParts(action, frameIndex, rpHairData);
-  for (const hp of hairParts) frameParts.push(hp);
+  // Hair — skip if hair data not loaded yet
+  if (rpHairData) {
+    const hairParts = getHairFrameParts(action, frameIndex, rpHairData);
+    for (const hp of hairParts) frameParts.push(hp);
+  }
 
   // Equipment — use remote player's equip data
   const equipDataMap = remoteEquipData.get(rp.id);
