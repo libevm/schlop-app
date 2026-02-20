@@ -6712,7 +6712,7 @@ async function loadReactorAnimation(reactorId) {
                   }
                   hit.push({ key, width: meta.width, height: meta.height,
                     originX: hRec.originX ?? 0, originY: hRec.originY ?? 0,
-                    delay: Math.max(hRec.delay ?? 120, 350), basedata: meta.basedata });
+                    delay: Math.max(hRec.delay ?? 120, 200), basedata: meta.basedata });
                 }
               }
             }

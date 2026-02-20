@@ -156,13 +156,15 @@ export interface ReactorPlacement {
 /** Map ID → array of reactor placements */
 const MAP_REACTORS: Record<string, ReactorPlacement[]> = {
   "100000001": [
-    // 4 on the grass ground (foothold y=274, sprite origin y=17, bottom=y+17 → y=257 for bottom at 274)
-    { reactor_id: "0002000", x: -400, y: 257 },
-    { reactor_id: "0002000", x: 200,  y: 257 },
-    { reactor_id: "0002000", x: 600,  y: 257 },
-    { reactor_id: "0002000", x: 1000, y: 257 },
-    // 1 next to Maya NPC (platform foothold y=38 → y=21)
-    { reactor_id: "0002000", x: 60,   y: 21 },
+    // Reactor 0002001: 64×45 wooden box, origin(33,23), 2 shake frames + 7 break frames
+    // y = footholdY - (height - originY) = foothold - (45 - 23) = foothold - 22
+    // 4 on the grass ground (foothold y=274 → y=252)
+    { reactor_id: "0002001", x: -400, y: 252 },
+    { reactor_id: "0002001", x: 200,  y: 252 },
+    { reactor_id: "0002001", x: 600,  y: 252 },
+    { reactor_id: "0002001", x: 1000, y: 252 },
+    // 1 next to Maya NPC (platform foothold y=38 → y=16)
+    { reactor_id: "0002001", x: 60,   y: 16 },
   ],
 };
 
