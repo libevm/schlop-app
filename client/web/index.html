@@ -53,6 +53,17 @@
       </div>
     </div>
 
+    <!-- PoW spinner overlay (shown while solving proof-of-work) -->
+    <div id="pow-overlay" class="pow-overlay hidden">
+      <div class="pow-spinner-container">
+        <svg class="pow-ring" viewBox="0 0 100 100">
+          <circle class="pow-ring-track" cx="50" cy="50" r="42" />
+          <circle class="pow-ring-fill" cx="50" cy="50" r="42" />
+        </svg>
+        <div class="pow-label">Connecting…</div>
+      </div>
+    </div>
+
     <!-- Character Creation / Login Overlay -->
     <div id="character-create-overlay" class="character-create-overlay hidden">
       <div class="character-create-panel">

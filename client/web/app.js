@@ -267,14 +267,26 @@ async function solvePoW(challenge, difficulty) {
  * Obtain a session ID from the server via proof-of-work.
  * Only needed when no session exists in localStorage.
  */
+const _powOverlay = document.getElementById("pow-overlay");
+const _powLabel = _powOverlay?.querySelector(".pow-label");
+
+function _showPow(msg) {
+  if (_powLabel) _powLabel.textContent = msg || "Connecting…";
+  _powOverlay?.classList.remove("hidden");
+}
+function _hidePow() { _powOverlay?.classList.add("hidden"); }
+
 async function obtainSessionViaPow() {
   console.log("[pow] Requesting challenge…");
+  _showPow("Connecting…");
   const chResp = await fetch("/api/pow/challenge");
   const chData = await chResp.json();
-  if (!chData.ok) throw new Error("Failed to get PoW challenge: " + (chData.error || "unknown"));
+  if (!chData.ok) { _hidePow(); throw new Error("Failed to get PoW challenge: " + (chData.error || "unknown")); }
 
+  _showPow("Establishing session…");
   const nonce = await solvePoW(chData.challenge, chData.difficulty);
 
+  _showPow("Verifying…");
   console.log("[pow] Submitting solution…");
   const vResp = await fetch("/api/pow/verify", {
     method: "POST",
@@ -282,9 +294,10 @@ async function obtainSessionViaPow() {
     body: JSON.stringify({ challenge: chData.challenge, nonce }),
   });
   const vData = await vResp.json();
-  if (!vData.ok) throw new Error("PoW verification failed: " + (vData.error || "unknown"));
+  if (!vData.ok) { _hidePow(); throw new Error("PoW verification failed: " + (vData.error || "unknown")); }
 
   console.log("[pow] Session obtained: " + vData.session_id.slice(0, 8) + "…");
+  _hidePow();
   return vData.session_id;
 }
 

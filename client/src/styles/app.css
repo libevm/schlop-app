@@ -768,6 +768,59 @@ body:has(.canvas-wrapper.fixed-res) {
 }
 
 /* ── Character Creation Overlay ────────────────────────────────── */
+/* ── PoW spinner overlay ─────────────────────────────────────────── */
+.pow-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 8, 18, 0.96);
+}
+.pow-overlay.hidden { display: none; }
+
+.pow-spinner-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+
+.pow-ring {
+  width: 80px;
+  height: 80px;
+  transform: rotate(-90deg);
+}
+.pow-ring-track {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 6;
+}
+.pow-ring-fill {
+  fill: none;
+  stroke: #6ec6ff;
+  stroke-width: 6;
+  stroke-linecap: round;
+  stroke-dasharray: 264;       /* 2π × 42 ≈ 264 */
+  stroke-dashoffset: 198;      /* start at 25% visible */
+  animation: pow-spin 1.2s linear infinite;
+}
+@keyframes pow-spin {
+  0%   { stroke-dashoffset: 198; transform: rotate(0deg); }
+  50%  { stroke-dashoffset: 66;  }
+  100% { stroke-dashoffset: 198; transform: rotate(360deg); }
+}
+
+.pow-label {
+  font-family: "Pretendard Variable", sans-serif;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.55);
+  letter-spacing: 0.02em;
+  text-align: center;
+}
+
+/* ── Character creation overlay ──────────────────────────────────── */
 .character-create-overlay {
   position: fixed;
   inset: 0;
