@@ -210,12 +210,12 @@ const STATUSBAR_BAR_HEIGHT = 14;
 const STATUSBAR_PADDING_H = 10;
 
 // ─── Persistence Keys ─────────────────────────────────────────────────────────
-const SETTINGS_CACHE_KEY = "schlop.settings.v1";
-const CHAT_LOG_HEIGHT_CACHE_KEY = "schlop.debug.chatLogHeight.v1";
-const CHAT_LOG_COLLAPSED_KEY = "schlop.chatLogCollapsed.v1";
-const KEYBINDS_STORAGE_KEY = "schlop.keybinds.v1";
-const SESSION_KEY = "schlop.session";
-const CHARACTER_SAVE_KEY = "schlop.character.v1";
+const SETTINGS_CACHE_KEY = "shlop.settings.v1";
+const CHAT_LOG_HEIGHT_CACHE_KEY = "shlop.debug.chatLogHeight.v1";
+const CHAT_LOG_COLLAPSED_KEY = "shlop.chatLogCollapsed.v1";
+const KEYBINDS_STORAGE_KEY = "shlop.keybinds.v1";
+const SESSION_KEY = "shlop.session";
+const CHARACTER_SAVE_KEY = "shlop.character.v1";
 
 // ─── Session ID (server-issued via proof-of-work) ─────────────────────────────
 let sessionId = localStorage.getItem(SESSION_KEY) || "";
@@ -1290,9 +1290,9 @@ function showDuplicateLoginOverlay() {
     localStorage.removeItem(SESSION_KEY);
     localStorage.removeItem(CHARACTER_SAVE_KEY);
     localStorage.removeItem("maple_session_id"); // legacy key
-    localStorage.removeItem("schlop.save.v1");
-    localStorage.removeItem("schlop.settings.v1");
-    localStorage.removeItem("schlop.keybinds.v1");
+    localStorage.removeItem("shlop.save.v1");
+    localStorage.removeItem("shlop.settings.v1");
+    localStorage.removeItem("shlop.keybinds.v1");
     window.location.reload();
   });
 }
@@ -14415,7 +14415,7 @@ settingsDownloadLogsBtn?.addEventListener("click", () => {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `schlop-debug-${Date.now()}.txt`;
+  a.download = `shlop-debug-${Date.now()}.txt`;
   a.click();
   URL.revokeObjectURL(url);
 });

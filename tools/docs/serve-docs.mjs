@@ -135,7 +135,7 @@ function manifest() {
 
 function serviceWorker() {
   const script = `
-const CACHE = 'schlop-docs-v1';
+const CACHE = 'shlop-docs-v1';
 const PRELOAD = ['/', '/manifest.webmanifest'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(PRELOAD)));
