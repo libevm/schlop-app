@@ -13047,6 +13047,7 @@ function drawGmOverlays() {
   ctx.restore();
 }
 
+let _renderLogOnce = false;
 function render() {
   resetFramePerfCounters();
 
@@ -13056,6 +13057,7 @@ function render() {
 
   const rs = `loading=${runtime.loading.active},map=${!!runtime.map},warp=${runtime.portalWarpInProgress},trans=${runtime.transition.alpha.toFixed(1)}`;
   if (rs !== _lastRenderState) {
+    console.log(`[render] state change: ${rs} | canvas=${canvasEl.width}x${canvasEl.height} | camera=${Math.round(runtime.camera.x)},${Math.round(runtime.camera.y)} | player=${Math.round(runtime.player.x)},${Math.round(runtime.player.y)}`);
     rlog(`render state: ${rs}`);
     _lastRenderState = rs;
   }
@@ -13068,6 +13070,37 @@ function render() {
   if (!runtime.map) {
     drawTransitionOverlay();
     return;
+  }
+
+  if (!_renderLogOnce) {
+    _renderLogOnce = true;
+    const m = runtime.map;
+    console.log(`[render] First map render: mapId=${runtime.mapId} layers=${m.layers?.length ?? 0} footholds=${m.footholds?.length ?? 0} bg=${m.backgrounds?.length ?? 0} portals=${m.portalEntries?.length ?? 0}`);
+    console.log(`[render] Map bounds: VR=${JSON.stringify(m.info?.VRLeft != null ? {l:m.info.VRLeft,r:m.info.VRRight,t:m.info.VRTop,b:m.info.VRBottom} : 'none')} bgCount=${m.backgrounds?.length ?? 0}`);
+    console.log(`[render] Player pos: ${runtime.player.x},${runtime.player.y} fh=${runtime.player.footholdId} action=${runtime.player.action}`);
+
+    // Check if any tile/obj images are actually loaded
+    let tileCount = 0, objCount = 0;
+    for (const layer of (m.layers ?? [])) {
+      tileCount += layer.tiles?.length ?? 0;
+      objCount += layer.objects?.length ?? 0;
+    }
+    console.log(`[render] Asset counts: tiles=${tileCount} objs=${objCount} imageCache=${imageCache.size} metaCache=${metaCache.size} jsonCache=${jsonCache.size}`);
+    // Sample a few tile/obj keys to see if their images exist
+    for (const layer of (m.layers ?? [])) {
+      for (const tile of (layer.tiles ?? []).slice(0, 3)) {
+        const key = tile.key;
+        const hasMeta = metaCache.has(key);
+        const hasImg = imageCache.has(key);
+        console.log(`[render]   tile key=${key} hasMeta=${hasMeta} hasImg=${hasImg}`);
+      }
+      for (const obj of (layer.objects ?? []).slice(0, 3)) {
+        const key = obj.key ?? obj.frames?.[0]?.key;
+        const hasMeta = metaCache.has(key);
+        const hasImg = imageCache.has(key);
+        console.log(`[render]   obj key=${key} hasMeta=${hasMeta} hasImg=${hasImg}`);
+      }
+    }
   }
 
   drawBackgroundLayer(0);
