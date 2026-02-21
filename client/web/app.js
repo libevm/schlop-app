@@ -4243,7 +4243,6 @@ function openChatInput() {
   chatBarEl?.classList.remove("inactive");
   resetGameplayInput();
   if (chatInputEl) {
-    chatInputEl.value = "";
     chatInputEl.focus();
   }
 }
@@ -4251,7 +4250,6 @@ function openChatInput() {
 function closeChatInput() {
   runtime.chat.inputActive = false;
   chatBarEl?.classList.add("inactive");
-  if (chatInputEl) chatInputEl.value = "";
   resetGameplayInput();
   canvasEl.focus();
 }
@@ -13857,6 +13855,7 @@ function bindInput() {
         const text = chatInputEl?.value ?? "";
         if (text.trim()) {
           sendChatMessage(text);
+          if (chatInputEl) chatInputEl.value = "";
         }
         closeChatInput();
         return;
