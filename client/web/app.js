@@ -13626,6 +13626,9 @@ function bindInput() {
   });
 
   window.addEventListener("keydown", (event) => {
+    // Track Ctrl for GM mousefly (must be before any early returns)
+    if (event.key === "Control") runtime.input.ctrlHeld = true;
+
     // Keybind configurator intercepts when listening
     if (activeKeybindBtn && handleKeybindKey(event)) return;
 
@@ -13794,8 +13797,6 @@ function bindInput() {
       performAttack();
     }
 
-    // Track Ctrl for GM mousefly
-    if (event.key === "Control") runtime.input.ctrlHeld = true;
   });
 
   window.addEventListener("keyup", (event) => {
