@@ -2786,11 +2786,11 @@ function drawRemotePlayerChatBubble(rp) {
   ctx.stroke();
 
   ctx.fillStyle = "#1a1a2e";
-  ctx.textBaseline = "top";
+  ctx.textBaseline = "middle";
   const textBlockHeight = lines.length * CHAT_BUBBLE_LINE_HEIGHT;
   const textOffsetY = (height - textBlockHeight) / 2;
   for (let i = 0; i < lines.length; i++) {
-    ctx.fillText(lines[i], clampedX + CHAT_BUBBLE_HORIZONTAL_PADDING, y + textOffsetY + i * CHAT_BUBBLE_LINE_HEIGHT);
+    ctx.fillText(lines[i], clampedX + CHAT_BUBBLE_HORIZONTAL_PADDING, y + textOffsetY + i * CHAT_BUBBLE_LINE_HEIGHT + CHAT_BUBBLE_LINE_HEIGHT / 2);
   }
 
   // Tail
@@ -6549,9 +6549,9 @@ function drawNpcAmbientBubble(screenX, topY, text, expiresAt) {
   // Text
   ctx.fillStyle = "#2a2a3e";
   ctx.textAlign = "left";
-  ctx.textBaseline = "top";
+  ctx.textBaseline = "middle";
   for (let i = 0; i < lines.length; i++) {
-    ctx.fillText(lines[i], boxX + padX, boxY + padY + i * lineH);
+    ctx.fillText(lines[i], boxX + padX, boxY + padY + i * lineH + lineH / 2);
   }
 
   ctx.restore();
@@ -11998,11 +11998,11 @@ function drawChatBubble() {
   ctx.stroke();
 
   ctx.fillStyle = "#1a1a2e";
-  ctx.textBaseline = "top";
+  ctx.textBaseline = "middle";
   const textBlockHeight = lines.length * CHAT_BUBBLE_LINE_HEIGHT;
   const textOffsetY = (height - textBlockHeight) / 2;
   for (let index = 0; index < lines.length; index += 1) {
-    const lineY = y + textOffsetY + index * CHAT_BUBBLE_LINE_HEIGHT;
+    const lineY = y + textOffsetY + index * CHAT_BUBBLE_LINE_HEIGHT + CHAT_BUBBLE_LINE_HEIGHT / 2;
     ctx.fillText(lines[index], clampedX + CHAT_BUBBLE_HORIZONTAL_PADDING, lineY);
   }
 
