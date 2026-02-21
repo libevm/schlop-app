@@ -458,8 +458,11 @@ export function createServer(
 
         // WebSocket upgrade
         if (url.pathname === "/ws") {
+          // Capture IP at upgrade time (X-Forwarded-For from reverse proxy, or direct)
+          const fwdFor = request.headers.get("x-forwarded-for");
+          const clientIp = fwdFor ? fwdFor.split(",")[0].trim() : (server.requestIP(request)?.address ?? "");
           const upgraded = server.upgrade(request, {
-            data: { authenticated: false, client: null } as WSClientData,
+            data: { authenticated: false, client: null, ip: clientIp } as WSClientData,
           });
           if (upgraded) return undefined as unknown as Response;
           return new Response("WebSocket upgrade failed", { status: 400 });
@@ -583,6 +586,7 @@ export function createServer(
               pendingMapId: "",           // will be set by initiateMapChange
               pendingSpawnPortal: "",
               ws,
+              ip: data.ip || "",
               x: 0,
               y: 0,
               action: "stand1",
@@ -624,7 +628,7 @@ export function createServer(
             roomManager.registerClient(client);
             roomManager.initiateMapChange(sessionId, savedMapId, "");
 
-            if (db) appendLog(db, client.name, "connected");
+            if (db) appendLog(db, client.name, "connected", client.ip);
 
             if (cfg.debug) {
               console.log(`[WS] ${client.name} (${client.id.slice(0, 8)}) connected → change_map ${savedMapId}`);
@@ -644,7 +648,7 @@ export function createServer(
           if (data?.client) {
             // Persist character state to DB before removing from rooms
             persistClientState(data.client, db);
-            if (db) appendLog(db, data.client.name, "disconnected");
+            if (db) appendLog(db, data.client.name, "disconnected", data.client.ip);
             if (cfg.debug) {
               console.log(`[WS] ${data.client.name} (${data.client.id.slice(0, 8)}) disconnected (state saved)`);
             }

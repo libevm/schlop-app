@@ -391,7 +391,7 @@ const runtime = {
     attackFrameIndex: 0,
     attackFrameTimer: 0,
     attackCooldownUntil: 0,
-    name: "Schlop",
+    name: "Shlop",
     gender: false,
     face_id: 20000,
     hair_id: 30000,
@@ -1103,7 +1103,7 @@ function buildCharacterSave() {
 function applyCharacterSave(save) {
   const p = runtime.player;
   // Identity
-  p.name = save.identity?.name || save.name || p.name || "Schlop";
+  p.name = save.identity?.name || save.name || p.name || "Shlop";
   p.gender = save.identity.gender ?? false;
   p.face_id = save.identity.face_id || (p.gender ? 21000 : 20000);
   p.hair_id = save.identity.hair_id || (p.gender ? 31000 : 30000);
@@ -1306,7 +1306,7 @@ function showCharacterCreateOverlay() {
     const femaleBtn = document.getElementById("gender-female");
     const submitBtn = document.getElementById("character-create-submit");
     if (!overlay || !nameInput || !submitBtn) {
-      resolve({ name: "Schlop", gender: false, loggedIn: false });
+      resolve({ name: "Shlop", gender: false, loggedIn: false });
       return;
     }
 
@@ -14401,7 +14401,7 @@ claimConfirmBtn?.addEventListener("click", async () => {
 const settingsDownloadLogsBtn = document.getElementById("settings-download-logs");
 settingsDownloadLogsBtn?.addEventListener("click", () => {
   const header = [
-    `Schlop Debug Log`,
+    `Shlop Debug Log`,
     `Exported: ${new Date().toISOString()}`,
     `UserAgent: ${navigator.userAgent}`,
     `Screen: ${screen.width}x${screen.height} Canvas: ${canvasEl?.width}x${canvasEl?.height}`,

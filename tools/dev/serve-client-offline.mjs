@@ -146,6 +146,6 @@ function startServer(startPort, attempts = 10) {
 }
 
 const server = startServer(requestedPort);
-console.log(`🍄 Schlop OFFLINE client running at http://${host}:${server.port}`);
+console.log(`🍄 Shlop OFFLINE client running at http://${host}:${server.port}`);
 console.log("   Mode: offline (no server, all state local)");
 console.log("   Default map: /?mapId=100000001");

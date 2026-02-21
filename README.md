@@ -1,4 +1,4 @@
-# Schlop
+# Shlop
 
 This repository is the active implementation workspace for the MapleStory web-port completion effort.
 
@@ -51,7 +51,7 @@ docs/
 
 ```bash
 git clone <repo-url>
-cd schlop-app
+cd shlop-app
 ```
 
 2. Install workspace dependencies:

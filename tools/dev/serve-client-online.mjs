@@ -495,7 +495,7 @@ function startServer(startPort, attempts = 10) {
 }
 
 const server = startServer(requestedPort);
-console.log(`🍄 Schlop ONLINE client running at http://${host}:${server.port}`);
+console.log(`🍄 Shlop ONLINE client running at http://${host}:${server.port}`);
 console.log(`   Mode: online${isProd ? " (PRODUCTION — minified + gzip)" : ""} (game server: ${gameServerUrl})`);
 console.log("   API proxy: /api/* → game server");
 console.log(`   WebSocket proxy: /ws → ${gameServerUrl.replace(/^http/, "ws")}/ws`);

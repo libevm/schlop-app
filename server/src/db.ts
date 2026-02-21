@@ -121,9 +121,17 @@ export function initDatabase(dbPath: string = "./data/maple.db"): Database {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT NOT NULL COLLATE NOCASE,
       timestamp TEXT NOT NULL DEFAULT (datetime('now')),
-      action TEXT NOT NULL
+      action TEXT NOT NULL,
+      ip TEXT NOT NULL DEFAULT ''
     )
   `);
+
+  // Migration: add ip column if missing (existing DBs)
+  try {
+    db.exec("ALTER TABLE logs ADD COLUMN ip TEXT NOT NULL DEFAULT ''");
+  } catch {
+    // Column already exists — ignore
+  }
 
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_logs_username
@@ -367,12 +375,13 @@ export function getAllJqLeaderboards(
  * @param username Character name performing the action
  * @param action   Freeform action description (e.g. "entered map 100000001",
  *                 "dropped Red Potion x5", "completed Shumi's Lost Coin")
+ * @param ip       IP address of the client (empty string if unknown)
  */
-export function appendLog(db: Database, username: string, action: string): void {
+export function appendLog(db: Database, username: string, action: string, ip: string = ""): void {
   try {
     db.prepare(
-      "INSERT INTO logs (username, timestamp, action) VALUES (?, datetime('now'), ?)"
-    ).run(username, action);
+      "INSERT INTO logs (username, timestamp, action, ip) VALUES (?, datetime('now'), ?, ?)"
+    ).run(username, action, ip);
   } catch (e) {
     // Never let logging failures crash the server
     console.error(`[logs] Failed to append log for ${username}: ${e}`);

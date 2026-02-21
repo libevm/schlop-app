@@ -15,7 +15,7 @@ const { start } = createServer(provider, {
   dbPath: "./data/maple.db",
 });
 const server = start();
-console.log(`🍄 Schlop game server on http://localhost:${server.port}`);
+console.log(`🍄 Shlop game server on http://localhost:${server.port}`);
 console.log(`   Character API: /api/character/*`);
 console.log(`   WebSocket:     ws://localhost:${server.port}/ws`);
 console.log(`   Health:        /health`);

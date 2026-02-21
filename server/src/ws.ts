@@ -74,6 +74,8 @@ export interface WSClient {
   /** Portal name to spawn at on pending map */
   pendingSpawnPortal: string;
   ws: ServerWebSocket<WSClientData>;
+  /** Client IP address (from X-Forwarded-For or direct connection) */
+  ip: string;
   x: number;
   y: number;
   action: string;
@@ -99,6 +101,8 @@ export interface WSClient {
 export interface WSClientData {
   authenticated: boolean;
   client: WSClient | null;
+  /** IP address captured at WebSocket upgrade time */
+  ip: string;
 }
 
 /** How long drops persist on the map before expiring (ms). MapleStory standard ~180s. */
@@ -253,7 +257,7 @@ export class RoomManager {
     }, client.id);
 
     // Log map entry
-    if (_moduleDb) appendLog(_moduleDb, client.name, `entered map ${newMapId}`);
+    if (_moduleDb) appendLog(_moduleDb, client.name, `entered map ${newMapId}`, client.ip);
 
     return true;
   }
@@ -635,7 +639,7 @@ export function handleClientMessage(
         name: client.name,
         text: msg.text,
       });
-      if (_moduleDb) appendLog(_moduleDb, client.name, `chat: ${String(msg.text ?? "").slice(0, 200)}`);
+      if (_moduleDb) appendLog(_moduleDb, client.name, `chat: ${String(msg.text ?? "").slice(0, 200)}`, client.ip);
       break;
 
     case "face":
@@ -693,7 +697,7 @@ export function handleClientMessage(
       }, client.id);
       if (_moduleDb) {
         const equipStr = client.look.equipment.map(e => `${e.slot_type}:${e.item_id}`).join(", ");
-        appendLog(_moduleDb, client.name, `equip_change: ${equipStr}`);
+        appendLog(_moduleDb, client.name, `equip_change: ${equipStr}`, client.ip);
       }
       break;
     }
@@ -835,7 +839,7 @@ export function handleClientMessage(
       }
 
       // All checks passed — initiate the map change
-      if (_moduleDb) appendLog(_moduleDb, client.name, `used portal "${portalName}" on map ${client.mapId} → map ${targetMapId}`);
+      if (_moduleDb) appendLog(_moduleDb, client.name, `used portal "${portalName}" on map ${client.mapId} → map ${targetMapId}`, client.ip);
       roomManager.initiateMapChange(client.id, String(targetMapId), targetPortalName);
       break;
     }
@@ -881,7 +885,7 @@ export function handleClientMessage(
       }
 
       // All checks passed
-      if (_moduleDb) appendLog(_moduleDb, client.name, `npc_warp via npc#${npcId} to map ${targetMapId}`);
+      if (_moduleDb) appendLog(_moduleDb, client.name, `npc_warp via npc#${npcId} to map ${targetMapId}`, client.ip);
       roomManager.initiateMapChange(client.id, String(targetMapId), "");
       break;
     }
@@ -975,9 +979,9 @@ export function handleClientMessage(
 
       // Log JQ completion + reward
       if (_moduleDb) {
-        appendLog(_moduleDb, client.name, `completed "${jqInfo.questName}" (#${jqQuests[achKey]}), received ${itemName} x${reward.qty} (${reward.category})`);
+        appendLog(_moduleDb, client.name, `completed "${jqInfo.questName}" (#${jqQuests[achKey]}), received ${itemName} x${reward.qty} (${reward.category})`, client.ip);
         if (bonusItemId) {
-          appendLog(_moduleDb, client.name, `bonus reward: ${bonusItemName} (Zakum Helmet)`);
+          appendLog(_moduleDb, client.name, `bonus reward: ${bonusItemName} (Zakum Helmet)`, client.ip);
         }
       }
 
@@ -1024,7 +1028,7 @@ export function handleClientMessage(
       }
       const cmd = String(msg.command ?? "").trim();
       const args = (msg.args as string[]) || [];
-      if (_moduleDb) appendLog(_moduleDb, client.name, `gm_command: /${cmd} ${args.join(" ")}`.trim());
+      if (_moduleDb) appendLog(_moduleDb, client.name, `gm_command: /${cmd} ${args.join(" ")}`.trim(), client.ip);
       handleGmCommand(client, cmd, args, roomManager, _db);
       break;
     }
@@ -1051,7 +1055,7 @@ export function handleClientMessage(
           level,
         });
       }
-      if (_moduleDb) appendLog(_moduleDb, client.name, `level_up to ${level}`);
+      if (_moduleDb) appendLog(_moduleDb, client.name, `level_up to ${level}`, client.ip);
       break;
     }
 
@@ -1069,7 +1073,7 @@ export function handleClientMessage(
         type: "player_die",
         id: client.id,
       }, client.id);
-      if (_moduleDb) appendLog(_moduleDb, client.name, `died on map ${client.mapId}`);
+      if (_moduleDb) appendLog(_moduleDb, client.name, `died on map ${client.mapId}`, client.ip);
       break;
 
     case "respawn":
@@ -1101,7 +1105,7 @@ export function handleClientMessage(
         type: "drop_spawn",
         drop,
       });
-      if (_moduleDb) appendLog(_moduleDb, client.name, `dropped ${dropName || `item#${dropItemId}`} x${dropQty} on map ${client.mapId}`);
+      if (_moduleDb) appendLog(_moduleDb, client.name, `dropped ${dropName || `item#${dropItemId}`} x${dropQty} on map ${client.mapId}`, client.ip);
       break;
     }
 
@@ -1170,7 +1174,7 @@ export function handleClientMessage(
         category: looted.category,
         iconKey: looted.iconKey,
       });
-      if (_moduleDb) appendLog(_moduleDb, client.name, `looted ${looted.name || `item#${looted.item_id}`} x${looted.qty} on map ${client.mapId}`);
+      if (_moduleDb) appendLog(_moduleDb, client.name, `looted ${looted.name || `item#${looted.item_id}`} x${looted.qty} on map ${client.mapId}`, client.ip);
       break;
     }
 
@@ -1188,7 +1192,7 @@ export function handleClientMessage(
           type: "reactor_destroy",
           reactor_idx: reactorIdx,
         });
-        if (_moduleDb) appendLog(_moduleDb, client.name, `destroyed reactor #${reactorIdx} on map ${client.mapId}`);
+        if (_moduleDb) appendLog(_moduleDb, client.name, `destroyed reactor #${reactorIdx} on map ${client.mapId}`, client.ip);
 
         // Roll loot and spawn as a server drop
         const loot = rollReactorLoot();

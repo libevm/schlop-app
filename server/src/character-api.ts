@@ -37,6 +37,11 @@ function jsonResponse(data: unknown, status: number = 200): Response {
   });
 }
 
+function extractClientIp(request: Request): string {
+  const fwdFor = request.headers.get("x-forwarded-for");
+  return fwdFor ? fwdFor.split(",")[0].trim() : "";
+}
+
 function extractSessionId(request: Request, url: URL): string | null {
   const auth = request.headers.get("Authorization");
   if (auth) {
@@ -186,7 +191,7 @@ async function handleCreate(
   const save = createDefaultCharacter(db, sessionId, name, gender) as Record<string, any>;
   // Inject name into response identity (not stored in data blob)
   if (save.identity) save.identity.name = name;
-  appendLog(db, name, `character created (gender: ${gender ? "female" : "male"})`);
+  appendLog(db, name, `character created (gender: ${gender ? "female" : "male"})`, extractClientIp(request));
   return jsonResponse({ ok: true, data: save, name }, 201);
 }
 
@@ -291,7 +296,7 @@ async function handleClaim(request: Request, db: Database, characterName: string
       409,
     );
   }
-  appendLog(db, characterName, "claimed account (set password)");
+  appendLog(db, characterName, "claimed account (set password)", extractClientIp(request));
   return jsonResponse({ ok: true });
 }
 
@@ -321,12 +326,12 @@ async function handleLogin(request: Request, db: Database): Promise<Response> {
     const msg = result.reason === "not_claimed"
       ? "This account has not been claimed yet"
       : "Invalid username or password";
-    appendLog(db, name, `login failed (${result.reason})`);
+    appendLog(db, name, `login failed (${result.reason})`, extractClientIp(request));
     return jsonResponse(
       { ok: false, error: { code: "INVALID_CREDENTIALS", message: msg } },
       401,
     );
   }
-  appendLog(db, name, "logged in");
+  appendLog(db, name, "logged in", extractClientIp(request));
   return jsonResponse({ ok: true, session_id: result.session_id });
 }
