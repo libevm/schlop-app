@@ -109,9 +109,7 @@
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" stroke="currentColor" stroke-width="1.5"/><path d="M16.2 12.2a1.3 1.3 0 00.26 1.43l.05.05a1.58 1.58 0 11-2.23 2.23l-.05-.05a1.3 1.3 0 00-1.43-.26 1.3 1.3 0 00-.79 1.19v.14a1.58 1.58 0 11-3.15 0v-.07a1.3 1.3 0 00-.86-1.19 1.3 1.3 0 00-1.43.26l-.05.05a1.58 1.58 0 11-2.23-2.23l.05-.05a1.3 1.3 0 00.26-1.43 1.3 1.3 0 00-1.19-.79h-.14a1.58 1.58 0 110-3.15h.07a1.3 1.3 0 001.19-.86 1.3 1.3 0 00-.26-1.43l-.05-.05a1.58 1.58 0 112.23-2.23l.05.05a1.3 1.3 0 001.43.26h.06a1.3 1.3 0 00.79-1.19v-.14a1.58 1.58 0 113.15 0v.07a1.3 1.3 0 00.79 1.19 1.3 1.3 0 001.43-.26l.05-.05a1.58 1.58 0 112.23 2.23l-.05.05a1.3 1.3 0 00-.26 1.43v.06a1.3 1.3 0 001.19.79h.14a1.58 1.58 0 110 3.15h-.07a1.3 1.3 0 00-1.19.79z" stroke="currentColor" stroke-width="1.5"/></svg>
       </button>
 
-      <button id="debug-toggle" class="hud-button hud-hidden" style="right:10px" type="button" data-tooltip="Debug Panel">
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect y="3" width="20" height="2" rx="1" fill="currentColor"/><rect y="9" width="20" height="2" rx="1" fill="currentColor"/><rect y="15" width="20" height="2" rx="1" fill="currentColor"/></svg>
-      </button>
+
 
       <div id="hud-tooltip" class="hud-tooltip"></div>
 
@@ -160,99 +158,7 @@
         </div>
       </div>
 
-      <aside id="debug-panel" class="debug-panel hidden">
-        <header class="debug-panel-header">
-          <h2>Debug Panel</h2>
-          <button id="debug-close" class="debug-close" type="button" title="Close">&times;</button>
-        </header>
 
-        <div id="debug-panel-scroll">
-          <section class="debug-section">
-            <h3>Map</h3>
-            <form id="map-form" class="panel-form">
-              <label class="field-row" for="map-id-input">
-                <span>Map ID</span>
-                <input id="map-id-input" name="mapId" value="104040000" />
-              </label>
-              <div class="panel-actions">
-                <button type="submit">Load Map</button>
-              </div>
-            </form>
-          </section>
-
-          <section class="debug-section">
-            <h3>Teleport</h3>
-            <form id="teleport-form" class="panel-form" method="post">
-              <div class="coord-row">
-                <label class="field-row" for="teleport-x-input">
-                  <span>X</span>
-                  <input id="teleport-x-input" type="number" step="1" value="0" />
-                </label>
-                <label class="field-row" for="teleport-y-input">
-                  <span>Y</span>
-                  <input id="teleport-y-input" type="number" step="1" value="0" />
-                </label>
-              </div>
-              <div class="panel-actions">
-                <button id="teleport-button" type="button">Teleport to Coordinates</button>
-              </div>
-            </form>
-          </section>
-
-          <section class="debug-section">
-            <h3>Player Stats</h3>
-            <div class="coord-row">
-              <label class="field-row" for="stat-speed-input">
-                <span>Speed</span>
-                <input id="stat-speed-input" type="number" step="1" min="0" max="250" />
-              </label>
-              <label class="field-row" for="stat-jump-input">
-                <span>Jump</span>
-                <input id="stat-jump-input" type="number" step="1" min="0" max="250" />
-              </label>
-            </div>
-          </section>
-
-          <section class="debug-section">
-            <h3>Logs</h3>
-            <p id="status">Ready. Click or hover the canvas to enable controls.</p>
-          </section>
-
-          <section class="debug-section">
-            <h3>Overlays</h3>
-            <div class="debug-toggles">
-              <label><input id="debug-overlay-toggle" type="checkbox" checked /> Enable overlay</label>
-              <label><input id="debug-ropes-toggle" type="checkbox" checked /> Ropes</label>
-              <label><input id="debug-footholds-toggle" type="checkbox" checked /> Footholds</label>
-              <label><input id="debug-tiles-toggle" type="checkbox" /> Tiles</label>
-              <label><input id="debug-life-toggle" type="checkbox" checked /> Life markers</label>
-              <label><input id="debug-hitboxes-toggle" type="checkbox" /> Draw hitboxes</label>
-              <label><input id="debug-uislots-toggle" type="checkbox" /> UI slot debug</label>
-
-              <label><input id="debug-mousefly-toggle" type="checkbox" /> MouseFly <kbd>Ctrl+Space</kbd></label>
-            </div>
-          </section>
-
-          <section class="debug-section debug-log-section">
-            <div class="debug-section-heading">
-              <h3>Runtime Logs</h3>
-              <div class="debug-section-actions">
-                <button id="copy-runtime-logs-button" class="ghost-button" type="button">Copy</button>
-                <button id="clear-runtime-logs-button" class="ghost-button" type="button">Clear</button>
-              </div>
-            </div>
-            <pre id="runtime-logs" tabindex="0"></pre>
-          </section>
-
-          <section class="debug-section debug-log-section">
-            <div class="debug-section-heading">
-              <h3>Runtime Summary</h3>
-              <button id="copy-summary-button" class="ghost-button" type="button">Copy</button>
-            </div>
-            <pre id="map-summary" tabindex="0"></pre>
-          </section>
-        </div>
-      </aside>
 
       <!-- In-game UI windows -->
       <div id="equip-window" class="game-window hidden" style="top:80px;left:50px">

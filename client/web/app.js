@@ -1,37 +1,9 @@
-const statusEl = document.getElementById("status");
-const summaryEl = document.getElementById("map-summary");
-const copySummaryButtonEl = document.getElementById("copy-summary-button");
-const mapFormEl = document.getElementById("map-form");
-const mapIdInputEl = document.getElementById("map-id-input");
-const teleportFormEl = document.getElementById("teleport-form");
-const teleportXInputEl = document.getElementById("teleport-x-input");
-const teleportYInputEl = document.getElementById("teleport-y-input");
-const teleportButtonEl = document.getElementById("teleport-button");
 const chatBarEl = document.getElementById("chat-bar");
 const chatInputEl = document.getElementById("chat-input");
 const chatLogEl = document.getElementById("chat-log");
 const chatLogMessagesEl = document.getElementById("chat-log-messages");
 const chatLogHandleEl = document.getElementById("chat-log-handle");
 const pickupJournalEl = document.getElementById("pickup-journal");
-const debugOverlayToggleEl = document.getElementById("debug-overlay-toggle");
-const debugRopesToggleEl = document.getElementById("debug-ropes-toggle");
-const debugFootholdsToggleEl = document.getElementById("debug-footholds-toggle");
-const debugLifeToggleEl = document.getElementById("debug-life-toggle");
-const debugTilesToggleEl = document.getElementById("debug-tiles-toggle");
-const debugHitboxesToggleEl = document.getElementById("debug-hitboxes-toggle");
-const debugUISlotsToggleEl = document.getElementById("debug-uislots-toggle");
-
-const debugMouseFlyToggleEl = document.getElementById("debug-mousefly-toggle");
-const statSpeedInputEl = document.getElementById("stat-speed-input");
-const statJumpInputEl = document.getElementById("stat-jump-input");
-
-const runtimeLogsEl = document.getElementById("runtime-logs");
-const clearRuntimeLogsEl = document.getElementById("clear-runtime-logs-button");
-const copyRuntimeLogsEl = document.getElementById("copy-runtime-logs-button");
-
-const debugToggleEl = document.getElementById("debug-toggle");
-const debugPanelEl = document.getElementById("debug-panel");
-const debugCloseEl = document.getElementById("debug-close");
 const settingsButtonEl = document.getElementById("settings-button");
 const settingsModalEl = document.getElementById("settings-modal");
 const keybindsButtonEl = document.getElementById("keybinds-button");
@@ -87,27 +59,7 @@ function dlog(category, msg) {
 /** Convenience: keeps old rlog(msg) signature working → routes to dlog("info", msg) */
 function rlog(msg) { dlog("info", msg); }
 
-// Flush debug log to the debug panel runtime logs element (throttled, called from render)
-let _lastLogFlush = 0;
-function flushDebugLogToPanel() {
-  if (!_debugLogDirty || !runtimeLogsEl) return;
-  const now = performance.now();
-  if (now - _lastLogFlush < 500) return; // throttle to 2Hz
-  _lastLogFlush = now;
-  _debugLogDirty = false;
-  // Show last 200 lines in the debug panel
-  const tail = _debugLogBuffer.slice(-200);
-  runtimeLogsEl.textContent = tail.join("\n");
-  runtimeLogsEl.scrollTop = runtimeLogsEl.scrollHeight;
-}
 
-if (clearRuntimeLogsEl) {
-  clearRuntimeLogsEl.addEventListener("click", () => {
-    _debugLogBuffer.length = 0;
-    _debugLogDirty = false;
-    if (runtimeLogsEl) runtimeLogsEl.textContent = "";
-  });
-}
 
 // ── Capture global errors/warnings/rejections ──
 window.addEventListener("error", (e) => {
@@ -118,15 +70,7 @@ window.addEventListener("unhandledrejection", (e) => {
   const reason = e.reason instanceof Error ? `${e.reason.message}\n${e.reason.stack}` : String(e.reason);
   dlog("error", `Unhandled rejection: ${reason}`);
 });
-if (copyRuntimeLogsEl) {
-  copyRuntimeLogsEl.addEventListener("click", () => {
-    const text = runtimeLogs.join("\n");
-    navigator.clipboard.writeText(text).then(() => {
-      copyRuntimeLogsEl.textContent = "Copied!";
-      setTimeout(() => { copyRuntimeLogsEl.textContent = "Copy"; }, 1500);
-    }).catch(() => {});
-  });
-}
+
 
 // ── V2 resource routing ──
 // When active, /resources/ paths are rewritten to /resourcesv2/
@@ -259,9 +203,7 @@ const STATUSBAR_BAR_HEIGHT = 14;
 const STATUSBAR_PADDING_H = 10;
 
 // ─── Persistence Keys ─────────────────────────────────────────────────────────
-const TELEPORT_PRESET_CACHE_KEY = "mapleweb.debug.teleportPreset.v1";
 const SETTINGS_CACHE_KEY = "mapleweb.settings.v1";
-const STAT_CACHE_KEY = "mapleweb.debug.playerStats.v1";
 const CHAT_LOG_HEIGHT_CACHE_KEY = "mapleweb.debug.chatLogHeight.v1";
 const CHAT_LOG_COLLAPSED_KEY = "mapleweb.chatLogCollapsed.v1";
 const KEYBINDS_STORAGE_KEY = "mapleweb.keybinds.v1";
@@ -416,17 +358,7 @@ const runtime = {
     showUntil: 0,
     fadeStartAt: 0,
   },
-  debug: {
-    overlayEnabled: true,
-    showRopes: true,
-    showFootholds: true,
-    showTiles: false,
-    showLifeMarkers: true,
-    showHitboxes: false,
 
-
-    mouseFly: false,
-  },
   settings: {
     bgmEnabled: true,
     sfxEnabled: true,
@@ -2118,7 +2050,7 @@ function handleServerMessage(msg) {
       // Server rejected a portal/warp request
       const reason = msg.reason || "Denied";
       rlog(`[WS] portal_denied: ${reason}`);
-      setStatus(`Portal denied: ${reason}`);
+      rlog(`Portal denied: ${reason}`);
       if (_pendingMapChangeReject) {
         const r = _pendingMapChangeReject;
         _pendingMapChangeResolve = null;
@@ -4257,69 +4189,11 @@ function buildKeybindsUI() {
 }
 
 let canvasResizeObserver = null;
-let runtimeSummaryPointerSelecting = false;
-let lastRenderedSummaryText = "";
-const SUMMARY_UPDATE_INTERVAL_MS = 200;
-let summaryUpdateAccumulatorMs = SUMMARY_UPDATE_INTERVAL_MS;
+
+
 const characterPlacementTemplateCache = new Map();
 
-function syncDebugTogglesFromUi() {
-  if (debugOverlayToggleEl) {
-    runtime.debug.overlayEnabled = !!debugOverlayToggleEl.checked;
-  }
 
-  if (debugRopesToggleEl) {
-    runtime.debug.showRopes = !!debugRopesToggleEl.checked;
-    debugRopesToggleEl.disabled = !runtime.debug.overlayEnabled;
-  }
-
-  if (debugFootholdsToggleEl) {
-    runtime.debug.showFootholds = !!debugFootholdsToggleEl.checked;
-    debugFootholdsToggleEl.disabled = !runtime.debug.overlayEnabled;
-  }
-
-  if (debugTilesToggleEl) {
-    runtime.debug.showTiles = !!debugTilesToggleEl.checked;
-    debugTilesToggleEl.disabled = !runtime.debug.overlayEnabled;
-  }
-
-  if (debugLifeToggleEl) {
-    runtime.debug.showLifeMarkers = !!debugLifeToggleEl.checked;
-    debugLifeToggleEl.disabled = !runtime.debug.overlayEnabled;
-  }
-
-  if (debugHitboxesToggleEl) {
-    runtime.debug.showHitboxes = !!debugHitboxesToggleEl.checked;
-    debugHitboxesToggleEl.disabled = !runtime.debug.overlayEnabled;
-  }
-
-  if (debugUISlotsToggleEl) {
-    const show = !!debugUISlotsToggleEl.checked;
-    for (const el of [equipWindowEl, inventoryWindowEl, keybindsWindowEl]) {
-      el?.classList.toggle("debug-slots", show);
-    }
-  }
-
-
-
-  if (debugMouseFlyToggleEl) {
-    runtime.debug.mouseFly = !!debugMouseFlyToggleEl.checked;
-  }
-
-}
-
-function setMouseFly(enabled) {
-  runtime.debug.mouseFly = enabled;
-  if (debugMouseFlyToggleEl) {
-    debugMouseFlyToggleEl.checked = enabled;
-  }
-}
-
-syncDebugTogglesFromUi();
-
-function setStatus(text) {
-  statusEl.textContent = text;
-}
 
 function resetFramePerfCounters() {
   runtime.perf.drawCalls = 0;
@@ -4346,166 +4220,7 @@ function perfPercentile(p) {
   return values[idx] ?? 0;
 }
 
-function isRuntimeSummaryInteractionActive() {
-  if (runtimeSummaryPointerSelecting) {
-    return true;
-  }
 
-  if (document.activeElement === summaryEl) {
-    return true;
-  }
-
-  const selection = window.getSelection?.();
-  if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
-    return false;
-  }
-
-  const anchor = selection.anchorNode;
-  const focus = selection.focusNode;
-  return (
-    (!!anchor && summaryEl.contains(anchor)) ||
-    (!!focus && summaryEl.contains(focus))
-  );
-}
-
-async function copyRuntimeSummaryToClipboard() {
-  const text = summaryEl?.textContent ?? "";
-  if (!text.trim()) {
-    setStatus("Runtime summary is empty.");
-    return;
-  }
-
-  try {
-    await navigator.clipboard.writeText(text);
-    setStatus("Runtime summary copied to clipboard.");
-    return;
-  } catch {
-    // Fallback for restricted clipboard environments
-  }
-
-  try {
-    const textarea = document.createElement("textarea");
-    textarea.value = text;
-    textarea.setAttribute("readonly", "");
-    textarea.style.position = "fixed";
-    textarea.style.left = "-9999px";
-    document.body.appendChild(textarea);
-    textarea.select();
-    const copied = document.execCommand("copy");
-    document.body.removeChild(textarea);
-
-    if (copied) {
-      setStatus("Runtime summary copied to clipboard.");
-    } else {
-      setStatus("Unable to copy summary automatically. Select and copy manually.");
-    }
-  } catch {
-    setStatus("Unable to copy summary automatically. Select and copy manually.");
-  }
-}
-
-function loadCachedTeleportPreset() {
-  const parsed = loadJsonFromStorage(TELEPORT_PRESET_CACHE_KEY);
-  if (!parsed) return null;
-  const x = Number(parsed.x), y = Number(parsed.y);
-  return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
-}
-
-function saveCachedTeleportPreset(x, y) {
-  saveJsonToStorage(TELEPORT_PRESET_CACHE_KEY, { x, y });
-}
-
-function applyManualTeleport(x, y) {
-  if (!runtime.map) {
-    setStatus("Cannot teleport: no map loaded yet.");
-    return false;
-  }
-
-  const player = runtime.player;
-  player.x = x;
-  player.y = y;
-  player.prevX = x;
-  player.prevY = y;
-  player.vx = 0;
-  player.vy = 0;
-  player.climbing = false;
-  player.swimming = false;
-  player.climbRope = null;
-  player.climbCooldownUntil = 0;
-  player.climbAttachTime = 0;
-  player.reattachLockUntil = 0;
-  player.reattachLockRopeKey = null;
-  player.fallStartY = y;
-  player.downJumpIgnoreFootholdId = null;
-  player.downJumpIgnoreUntil = 0;
-  player.downJumpControlLock = false;
-  player.downJumpTargetFootholdId = null;
-
-  const footholdNear = findFootholdAtXNearY(runtime.map, x, y, 2.5);
-  if (footholdNear) {
-    player.y = footholdNear.y;
-    player.onGround = true;
-    player.footholdId = footholdNear.line.id;
-    player.footholdLayer = footholdNear.line.layer;
-  } else {
-    player.onGround = false;
-    player.footholdId = null;
-  }
-
-  runtime.camera.x = clampCameraXToMapBounds(runtime.map, player.x);
-  runtime.camera.y = clampCameraYToMapBounds(runtime.map, player.y - cameraHeightBias());
-  runtime.portalScroll.active = false;
-
-  setStatus(`Teleported to x=${Math.round(player.x)}, y=${Math.round(player.y)}.`);
-  return true;
-}
-
-function initializeTeleportPresetInputs() {
-  if (!teleportXInputEl || !teleportYInputEl) return;
-
-  const cached = loadCachedTeleportPreset();
-  if (!cached) return;
-
-  teleportXInputEl.value = String(Math.round(cached.x));
-  teleportYInputEl.value = String(Math.round(cached.y));
-}
-
-
-function loadCachedPlayerStats() {
-  const parsed = loadJsonFromStorage(STAT_CACHE_KEY);
-  if (!parsed) return null;
-  const speed = Number(parsed.speed), jump = Number(parsed.jump);
-  return Number.isFinite(speed) && Number.isFinite(jump) ? { speed, jump } : null;
-}
-
-function saveCachedPlayerStats(speed, jump) {
-  saveJsonToStorage(STAT_CACHE_KEY, { speed, jump });
-}
-
-function initializeStatInputs() {
-  const cached = loadCachedPlayerStats();
-  const speed = cached?.speed ?? PHYS_DEFAULT_SPEED_STAT;
-  const jump = cached?.jump ?? PHYS_DEFAULT_JUMP_STAT;
-
-  runtime.player.stats.speed = speed;
-  runtime.player.stats.jump = jump;
-
-  if (statSpeedInputEl) statSpeedInputEl.value = String(speed);
-  if (statJumpInputEl) statJumpInputEl.value = String(jump);
-}
-
-function applyStatInputChange() {
-  const speed = Number(statSpeedInputEl?.value ?? PHYS_DEFAULT_SPEED_STAT);
-  const jump = Number(statJumpInputEl?.value ?? PHYS_DEFAULT_JUMP_STAT);
-
-  const clampedSpeed = Number.isFinite(speed) ? Math.max(0, Math.min(250, Math.round(speed))) : PHYS_DEFAULT_SPEED_STAT;
-  const clampedJump = Number.isFinite(jump) ? Math.max(0, Math.min(250, Math.round(jump))) : PHYS_DEFAULT_JUMP_STAT;
-
-  runtime.player.stats.speed = clampedSpeed;
-  runtime.player.stats.jump = clampedJump;
-
-  saveCachedPlayerStats(clampedSpeed, clampedJump);
-}
 
 function openChatInput() {
   runtime.chat.inputActive = true;
@@ -5889,7 +5604,7 @@ async function runNpcMapTransition(npcId, mapId) {
     }
   } catch (err) {
     rlog(`npcMapTransition ERROR: ${err?.message ?? err}`);
-    setStatus(`Travel failed: ${err?.message ?? err}`);
+    rlog(`Travel failed: ${err?.message ?? err}`);
   } finally {
     runtime.portalWarpInProgress = false;
     runtime.transition.alpha = 1;
@@ -7978,27 +7693,6 @@ function findReactorsInRange() {
   return candidates;
 }
 
-function drawReactorMarkers() {
-  if (!runtime.map) return;
-
-  ctx.save();
-  ctx.font = "bold 10px monospace";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "bottom";
-
-  for (const [idx, rs] of reactorRuntimeState) {
-    const reactor = runtime.map.reactorEntries[idx];
-    if (!reactor) continue;
-    const sp = worldToScreen(reactor.x, reactor.y);
-    ctx.fillStyle = rs.active ? "rgba(255, 100, 255, 0.7)" : "rgba(100, 100, 100, 0.5)";
-    ctx.fillRect(sp.x - 4, sp.y - 4, 8, 8);
-    ctx.fillStyle = rs.active ? "#ff64ff" : "#888";
-    ctx.fillText(`R:${reactor.id} HP:${rs.hp ?? "?"}/${4} S:${rs.state}`, sp.x, sp.y - 6);
-  }
-
-  ctx.restore();
-}
-
 function spatialCellCoord(value) {
   return Math.floor(value / SPATIAL_BUCKET_SIZE);
 }
@@ -9094,7 +8788,7 @@ async function tryUsePortal(force = false) {
         return;
       }
 
-      setStatus(`Portal ${portal.name || portal.id} has no local destination in map ${runtime.mapId}.`);
+      rlog(`Portal ${portal.name || portal.id} has no local destination in map ${runtime.mapId}.`);
       return;
     }
 
@@ -10373,17 +10067,6 @@ function updatePlayer(dt) {
   player.prevX = player.x;
   player.prevY = player.y;
 
-  if (runtime.debug.mouseFly) {
-    player.x = runtime.mouseWorld.x;
-    player.y = runtime.mouseWorld.y;
-    player.vx = 0;
-    player.vy = 0;
-    player.onGround = false;
-    player.onRope = false;
-    player.action = "stand1";
-    return;
-  }
-
   // C++ Player::can_attack blocks movement while attacking — freeze all input
   const isAttacking = player.attacking;
   const move = isAttacking ? 0 : (runtime.input.left ? -1 : 0) + (runtime.input.right ? 1 : 0);
@@ -11403,7 +11086,6 @@ function mobFrameWorldBounds(life, state, anim) {
 
 function updateMobTouchCollisions() {
   if (!runtime.map) return;
-  if (runtime.debug.mouseFly) return;
 
   const player = runtime.player;
   const nowMs = performance.now();
@@ -11431,7 +11113,6 @@ function updateMobTouchCollisions() {
 
 function updateTrapHazardCollisions() {
   if (!runtime.map) return;
-  if (runtime.debug.mouseFly) return;
 
   const player = runtime.player;
   const nowMs = performance.now();
@@ -11624,279 +11305,6 @@ function drawMapLayersWithCharacter() {
   }
 }
 
-function drawRopeGuides() {
-  if (!runtime.map) return;
-
-  ctx.save();
-  ctx.strokeStyle = "rgba(251, 191, 36, 0.85)";
-  ctx.lineWidth = 2;
-
-  for (const rope of runtime.map.ladderRopes ?? []) {
-    const a = worldToScreen(rope.x, rope.y1);
-    const b = worldToScreen(rope.x, rope.y2);
-
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.stroke();
-  }
-
-  ctx.restore();
-}
-
-function drawPortals() {
-  if (!runtime.map) return;
-
-  const anim = runtime.portalAnimation;
-
-  for (const portal of runtime.map.portalEntries) {
-    const visibilityMode = portalVisibilityMode(portal);
-    if (visibilityMode === "none") continue;
-
-    ensurePortalFramesRequested(portal);
-
-    let portalAlpha = 1;
-    if (visibilityMode === "touched") {
-      portalAlpha = getHiddenPortalAlpha(portal);
-      if (portalAlpha <= 0) continue;
-    }
-
-    const frameCount = portalFrameCount(portal);
-    const frameNo = frameCount === 7
-      ? anim.hiddenFrameIndex % frameCount
-      : anim.regularFrameIndex % frameCount;
-    const key = portalMetaKey(portal, frameNo);
-    if (!key) continue;
-
-    let image = getImageByKey(key);
-    let meta = getMetaByKey(key);
-    if (!meta) {
-      requestPortalMeta(portal, frameNo);
-      continue;
-    }
-    if (!image) continue;
-
-    const origin = meta.vectors.origin ?? { x: Math.floor(image.width / 2), y: image.height };
-    const worldX = portal.x - origin.x;
-    const worldY = portal.y - origin.y;
-    const width = Math.max(1, image.width || meta.width || 1);
-    const height = Math.max(1, image.height || meta.height || 1);
-    if (!isWorldRectVisible(worldX, worldY, width, height)) {
-      runtime.perf.culledSprites += 1;
-      continue;
-    }
-
-    runtime.perf.portalsDrawn += 1;
-    if (portalAlpha < 1) {
-      ctx.save();
-      ctx.globalAlpha = portalAlpha;
-      drawWorldImage(image, worldX, worldY);
-      ctx.restore();
-    } else {
-      drawWorldImage(image, worldX, worldY);
-    }
-  }
-}
-
-function drawFootholdOverlay() {
-  if (!runtime.map) return;
-
-  ctx.save();
-  ctx.strokeStyle = "rgba(34, 197, 94, 0.65)";
-  ctx.lineWidth = 1.5;
-  ctx.font = "bold 10px monospace";
-  ctx.textBaseline = "top";
-  ctx.shadowColor = "rgba(0, 0, 0, 0.9)";
-  ctx.shadowBlur = 3;
-
-  const cw = gameViewWidth();
-  const ch = gameViewHeight();
-
-  for (const line of runtime.map.footholdLines) {
-    const a = worldToScreen(line.x1, line.y1);
-    const b = worldToScreen(line.x2, line.y2);
-
-    // Rough culling: skip if both endpoints are far off-screen
-    if ((a.x < -200 && b.x < -200) || (a.x > cw + 200 && b.x > cw + 200)) continue;
-    if ((a.y < -200 && b.y < -200) || (a.y > ch + 200 && b.y > ch + 200)) continue;
-
-    // Draw the line (no shadow for lines)
-    ctx.shadowBlur = 0;
-    ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
-    ctx.stroke();
-
-    // Re-enable shadow for text
-    ctx.shadowBlur = 3;
-
-    // Draw coordinate labels at endpoints
-    ctx.fillStyle = "#4ade80";
-    const labelA = `${line.x1},${line.y1}`;
-    const labelB = `${line.x2},${line.y2}`;
-    ctx.fillText(labelA, a.x + 3, a.y + 3);
-    // Only draw second label if it's far enough from first to avoid overlap
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    if (dx * dx + dy * dy > 2500) {
-      ctx.fillText(labelB, b.x + 3, b.y + 3);
-    }
-
-    // Draw foothold ID at midpoint
-    ctx.fillStyle = "rgba(134, 239, 172, 0.8)";
-    const mx = (a.x + b.x) / 2;
-    const my = (a.y + b.y) / 2;
-    ctx.fillText(`fh:${line.id}`, mx + 3, my - 12);
-  }
-
-  ctx.restore();
-}
-
-function drawTileOverlay() {
-  if (!runtime.map) return;
-
-  ctx.save();
-  ctx.font = "bold 10px monospace";
-  ctx.textBaseline = "bottom";
-  ctx.lineWidth = 1;
-  ctx.shadowColor = "rgba(0, 0, 0, 0.9)";
-  ctx.shadowBlur = 3;
-
-  for (const layer of runtime.map.layers ?? []) {
-    for (const tile of layer.tiles ?? []) {
-      if (!tile.key) continue;
-
-      const meta = getMetaByKey(tile.key);
-      const image = getImageByKey(tile.key);
-      const origin = meta?.vectors?.origin ?? { x: 0, y: 0 };
-      const w = image?.width || meta?.width || 16;
-      const h = image?.height || meta?.height || 16;
-      const worldX = tile.x - origin.x;
-      const worldY = tile.y - origin.y;
-
-      // Cull off-screen tiles
-      if (!isWorldRectVisible(worldX, worldY, w, h, 32)) continue;
-
-      const tl = worldToScreen(worldX, worldY);
-      const br = worldToScreen(worldX + w, worldY + h);
-      const sx = Math.round(tl.x);
-      const sy = Math.round(tl.y);
-      const sw = Math.max(1, Math.round(br.x - tl.x));
-      const sh = Math.max(1, Math.round(br.y - tl.y));
-
-      // Draw bounding box (no shadow for box strokes)
-      ctx.shadowBlur = 0;
-      ctx.strokeStyle = "rgba(56, 189, 248, 0.5)";
-      ctx.strokeRect(sx, sy, sw, sh);
-
-      // Draw dot at tile origin (x,y)
-      ctx.fillStyle = "#38bdf8";
-      ctx.beginPath();
-      ctx.arc(worldToScreen(tile.x, tile.y).x, worldToScreen(tile.x, tile.y).y, 2.5, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Re-enable shadow for text
-      ctx.shadowBlur = 3;
-
-      // Label: name (u:no)
-      ctx.fillStyle = "#7dd3fc";
-      ctx.fillText(`${tile.u}:${tile.no}`, sx + 2, sy - 2);
-
-      // Position label
-      ctx.textBaseline = "top";
-      ctx.fillStyle = "#38bdf8";
-      ctx.fillText(`${tile.x},${tile.y}`, sx + 2, sy + 2);
-      ctx.textBaseline = "bottom";
-    }
-  }
-
-  ctx.restore();
-}
-
-function drawLifeMarkers() {
-  if (!runtime.map) return;
-
-  ctx.save();
-
-  for (const life of runtime.map.lifeEntries) {
-    const p = worldToScreen(life.x, life.y);
-    ctx.fillStyle = life.type === "m" ? "#fb7185" : "#a78bfa";
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  ctx.restore();
-}
-
-function drawWorldDebugRect(rect, strokeStyle, fillStyle = null) {
-  if (!rect) return false;
-
-  const width = Math.max(1, rect.right - rect.left);
-  const height = Math.max(1, rect.bottom - rect.top);
-  if (!isWorldRectVisible(rect.left, rect.top, width, height, 64)) {
-    return false;
-  }
-
-  const a = worldToScreen(rect.left, rect.top);
-  const b = worldToScreen(rect.right, rect.bottom);
-  const x = Math.round(Math.min(a.x, b.x));
-  const y = Math.round(Math.min(a.y, b.y));
-  const w = Math.max(1, Math.round(Math.abs(b.x - a.x)));
-  const h = Math.max(1, Math.round(Math.abs(b.y - a.y)));
-
-  if (fillStyle) {
-    ctx.fillStyle = fillStyle;
-    ctx.fillRect(x, y, w, h);
-  }
-
-  ctx.strokeStyle = strokeStyle;
-  ctx.strokeRect(x, y, w, h);
-  return true;
-}
-
-function drawHitboxOverlay() {
-  if (!runtime.map) return;
-
-  const nowMs = performance.now();
-
-  ctx.save();
-  ctx.lineWidth = 1;
-
-  drawWorldDebugRect(playerTouchBounds(runtime.player), "rgba(56, 189, 248, 0.95)", "rgba(56, 189, 248, 0.08)");
-
-  for (const portal of runtime.map.portalEntries ?? []) {
-    drawWorldDebugRect(portalWorldBounds(portal), "rgba(167, 139, 250, 0.9)", "rgba(167, 139, 250, 0.06)");
-  }
-
-  for (const hazard of runtime.map.trapHazards ?? []) {
-    const meta = currentObjectFrameMeta(hazard.layerIndex, hazard.obj);
-    if (!isDamagingTrapMeta(meta)) continue;
-    const bounds = trapWorldBounds(hazard.obj, meta, nowMs);
-    drawWorldDebugRect(bounds, "rgba(250, 204, 21, 0.95)", "rgba(250, 204, 21, 0.08)");
-  }
-
-  for (const [idx, state] of lifeRuntimeState) {
-    const life = runtime.map.lifeEntries[idx];
-    if (!life || life.type !== "m") continue;
-    if (state.dead || state.dying) continue;
-
-    const anim = lifeAnimations.get(`m:${life.id}`);
-    if (!anim) continue;
-
-    const bounds = mobFrameWorldBounds(life, state, anim);
-    if (!bounds) continue;
-
-    const touchEnabled = !!anim.touchDamageEnabled;
-    drawWorldDebugRect(
-      bounds,
-      touchEnabled ? "rgba(239, 68, 68, 0.95)" : "rgba(248, 113, 113, 0.65)",
-      touchEnabled ? "rgba(239, 68, 68, 0.07)" : null,
-    );
-  }
-
-  ctx.restore();
-}
 
 function zOrderForPart(partName, meta) {
   const candidates = [meta?.zName, partName].filter((value) => typeof value === "string" && value.length > 0);
@@ -13205,7 +12613,6 @@ function drawTransitionOverlay() {
 let _lastRenderState = "";
 function render() {
   resetFramePerfCounters();
-  flushDebugLogToPanel();
 
   ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
   ctx.fillStyle = "#000";
@@ -13231,23 +12638,7 @@ function render() {
   drawMapLayersWithCharacter();
   drawReactors();
   drawDamageNumbers();
-  if (runtime.debug.overlayEnabled && runtime.debug.showRopes) {
-    drawRopeGuides();
-  }
   drawPortals();
-  if (runtime.debug.overlayEnabled && runtime.debug.showFootholds) {
-    drawFootholdOverlay();
-  }
-  if (runtime.debug.overlayEnabled && runtime.debug.showTiles) {
-    drawTileOverlay();
-  }
-  if (runtime.debug.overlayEnabled && runtime.debug.showLifeMarkers) {
-    drawLifeMarkers();
-    drawReactorMarkers();
-  }
-  if (runtime.debug.overlayEnabled && runtime.debug.showHitboxes) {
-    drawHitboxOverlay();
-  }
   drawBackgroundLayer(1);
   drawGroundDrops();
   drawVRBoundsOverflowMask();
@@ -13265,132 +12656,7 @@ function render() {
   drawWZCursor();
 }
 
-function isDebugPanelVisible() {
-  return !!debugPanelEl && !debugPanelEl.classList.contains("hidden");
-}
 
-function updateSummary() {
-  if (!summaryEl) return;
-  if (!isDebugPanelVisible() && !isRuntimeSummaryInteractionActive()) return;
-
-  if (!runtime.map) {
-    const emptyText = "No map loaded";
-    if (!isRuntimeSummaryInteractionActive() && lastRenderedSummaryText !== emptyText) {
-      summaryEl.textContent = emptyText;
-      lastRenderedSummaryText = emptyText;
-    }
-    return;
-  }
-
-  const mobCount = runtime.map.lifeEntries.filter((life) => life.type === "m").length;
-  const npcCount = runtime.map.lifeEntries.filter((life) => life.type === "n").length;
-  const reactorCount = runtime.map.reactorEntries?.length ?? 0;
-  const trapHazardCount = runtime.map.trapHazards?.length ?? 0;
-  const canvasRect = canvasEl.getBoundingClientRect();
-
-  const summary = {
-    mapId: runtime.mapId,
-    mapMark: runtime.map.info.mapMark ?? "",
-    bgm: runtime.map.info.bgm ?? "",
-    bounds: runtime.map.bounds,
-    footholdBounds: runtime.map.footholdBounds,
-    viewport: {
-      renderWidth: canvasEl.width,
-      renderHeight: canvasEl.height,
-      displayWidth: Math.round(canvasRect.width),
-      displayHeight: Math.round(canvasRect.height),
-      aspect: Number((canvasEl.width / Math.max(1, canvasEl.height)).toFixed(3)),
-      fixedRes: runtime.settings.fixedRes,
-    },
-    backgrounds: runtime.map.backgrounds.length,
-    footholds: runtime.map.footholdLines.length,
-    ropes: runtime.map.ladderRopes.length,
-    walls: runtime.map.wallLines.length,
-    portals: runtime.map.portalEntries.length,
-    life: runtime.map.lifeEntries.length,
-    mobCount,
-    npcCount,
-    reactorCount,
-    trapHazards: trapHazardCount,
-    player: {
-      x: Number(runtime.player.x.toFixed(2)),
-      y: Number(runtime.player.y.toFixed(2)),
-      onGround: runtime.player.onGround,
-      swimming: runtime.player.swimming,
-      facing: runtime.player.facing,
-      action: runtime.player.action,
-      footholdLayer: runtime.player.footholdLayer,
-      renderLayer: currentPlayerRenderLayer(),
-      downJumpControlLock: runtime.player.downJumpControlLock,
-      downJumpTargetFootholdId: runtime.player.downJumpTargetFootholdId,
-      trapInvincibleMs: Math.max(0, Math.round(runtime.player.trapInvincibleUntil - performance.now())),
-      lastTrapHitDamage: runtime.player.lastTrapHitDamage,
-      stats: {
-        speed: runtime.player.stats.speed,
-        jump: runtime.player.stats.jump,
-        walkforce: Number(playerWalkforce().toFixed(4)),
-        jumpforce: Number(playerJumpforce().toFixed(4)),
-        climbforce: Number(playerClimbforce().toFixed(4)),
-      },
-    },
-    audio: {
-      bgmEnabled: runtime.settings.bgmEnabled,
-      sfxEnabled: runtime.settings.sfxEnabled,
-      currentBgm: runtime.audioDebug.lastBgm,
-      lastSfx: runtime.audioDebug.lastSfx,
-      lastSfxAgeMs: runtime.audioDebug.lastSfxAtMs
-        ? Math.max(0, Math.round(performance.now() - runtime.audioDebug.lastSfxAtMs))
-        : null,
-      sfxPlayCount: runtime.audioDebug.sfxPlayCount,
-    },
-    loading: {
-      active: runtime.loading.active,
-      loaded: runtime.loading.loaded,
-      total: runtime.loading.total,
-      progress: Number((runtime.loading.progress * 100).toFixed(1)),
-    },
-    debug: {
-      overlayEnabled: runtime.debug.overlayEnabled,
-      showRopes: runtime.debug.showRopes,
-      showFootholds: runtime.debug.showFootholds,
-      showTiles: runtime.debug.showTiles,
-      showLifeMarkers: runtime.debug.showLifeMarkers,
-      showHitboxes: runtime.debug.showHitboxes,
-      transitionAlpha: Number(runtime.transition.alpha.toFixed(3)),
-      portalWarpInProgress: runtime.portalWarpInProgress,
-      npcDialogue: runtime.npcDialogue.active ? `${runtime.npcDialogue.npcName} (${runtime.npcDialogue.lineIndex + 1}/${runtime.npcDialogue.lines.length})` : "none",
-      portalScrollActive: runtime.portalScroll.active,
-      portalScrollProgress: runtime.portalScroll.active && runtime.portalScroll.durationMs > 0
-        ? Number(Math.min(1, runtime.portalScroll.elapsedMs / runtime.portalScroll.durationMs).toFixed(3))
-        : 0,
-    },
-    perf: {
-      updateMs: Number(runtime.perf.updateMs.toFixed(3)),
-      renderMs: Number(runtime.perf.renderMs.toFixed(3)),
-      frameMs: Number(runtime.perf.frameMs.toFixed(3)),
-      loopIntervalMs: Number(runtime.perf.loopIntervalMs.toFixed(3)),
-      p50FrameMs: Number(perfPercentile(0.5).toFixed(3)),
-      p95FrameMs: Number(perfPercentile(0.95).toFixed(3)),
-      drawCalls: runtime.perf.drawCalls,
-      culledSprites: runtime.perf.culledSprites,
-      objectsDrawn: runtime.perf.objectsDrawn,
-      tilesDrawn: runtime.perf.tilesDrawn,
-      lifeDrawn: runtime.perf.lifeDrawn,
-      portalsDrawn: runtime.perf.portalsDrawn,
-      reactorsDrawn: runtime.perf.reactorsDrawn,
-    },
-  };
-
-  const nextSummaryText = JSON.stringify(summary, null, 2);
-  if (isRuntimeSummaryInteractionActive()) {
-    return;
-  }
-
-  if (nextSummaryText !== lastRenderedSummaryText) {
-    summaryEl.textContent = nextSummaryText;
-    lastRenderedSummaryText = nextSummaryText;
-  }
-}
 
 function update(dt) {
   tryUsePortal();
@@ -13432,11 +12698,7 @@ function update(dt) {
     }
   }
 
-  summaryUpdateAccumulatorMs += dt * 1000;
-  if (summaryUpdateAccumulatorMs >= SUMMARY_UPDATE_INTERVAL_MS) {
-    summaryUpdateAccumulatorMs = 0;
-    updateSummary();
-  }
+
 }
 
 const FIXED_STEP_MS = 1000 / 60;
@@ -13806,7 +13068,7 @@ async function loadMap(mapId, spawnPortalName = null, spawnFromPortalTransfer = 
       addSystemChatMessage(`[Info] Map ${requestedMapId} is unavailable in this build. Redirected to ${resolvedMapId}.`);
     }
 
-    setStatus(`Loading map ${resolvedMapId}...`);
+    rlog(`Loading map ${resolvedMapId}...`);
 
     const path = mapPathFromId(resolvedMapId);
     rlog(`loadMap fetchJson ${path}`);
@@ -13921,7 +13183,7 @@ async function loadMap(mapId, spawnPortalName = null, spawnFromPortalTransfer = 
     // Show map name banner
     showMapBanner(runtime.mapId);
 
-    setStatus(`Loaded map ${runtime.mapId}. Click/hover canvas to control. Controls: ←/→ move, Space jump, ↑ grab rope, ↑/↓ climb, ↓ crouch, Enter to chat.`);
+    rlog(`Loaded map ${runtime.mapId}. Click/hover canvas to control. Controls: ←/→ move, Space jump, ↑ grab rope, ↑/↓ climb, ↓ crouch, Enter to chat.`);
     const _welcomePhrases = [
       "May the Maple Goddess watch over you! 🍁",
       "Another adventurer arrives in Maple World!",
@@ -13966,7 +13228,7 @@ async function loadMap(mapId, spawnPortalName = null, spawnFromPortalTransfer = 
     if (chatBarEl) chatBarEl.style.display = "";
     if (chatLogEl) chatLogEl.style.display = "";
 
-    setStatus(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    rlog(`Error: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -14234,12 +13496,6 @@ function bindInput() {
       }
     }
 
-    if (event.code === "Space" && event.ctrlKey) {
-      event.preventDefault();
-      setMouseFly(!runtime.debug.mouseFly);
-      return;
-    }
-
     if (runtime.chat.inputActive) return;
 
     const active = document.activeElement;
@@ -14341,47 +13597,6 @@ function bindInput() {
   });
 }
 
-mapFormEl.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const mapId = mapIdInputEl.value.trim();
-  if (!mapId) return;
-
-  if (_wsConnected) {
-    // Online: server-authoritative — send admin_warp, wait for change_map
-    try {
-      const result = await requestServerMapChange({ type: "admin_warp", map_id: mapId });
-      await loadMap(result.map_id, result.spawn_portal || null);
-      saveCharacter();
-      wsSend({ type: "map_loaded" });
-    } catch (err) {
-      rlog(`admin_warp failed: ${err?.message ?? err}`);
-      setStatus(`Warp failed: ${err?.message ?? err}`);
-    }
-  } else {
-    // Offline: direct load
-    loadMap(mapId);
-  }
-});
-
-teleportFormEl?.addEventListener("submit", (event) => {
-  event.preventDefault();
-
-  const x = Number(teleportXInputEl?.value ?? "");
-  const y = Number(teleportYInputEl?.value ?? "");
-
-  if (!Number.isFinite(x) || !Number.isFinite(y)) {
-    setStatus("Teleport failed: enter valid numeric X/Y values.");
-    return;
-  }
-
-  saveCachedTeleportPreset(x, y);
-  applyManualTeleport(x, y);
-});
-
-teleportButtonEl?.addEventListener("click", () => {
-  teleportFormEl?.requestSubmit();
-});
-
 chatInputEl?.addEventListener("blur", () => {
   if (runtime.chat.inputActive) {
     closeChatInput();
@@ -14395,33 +13610,7 @@ chatInputEl?.addEventListener("mousedown", (e) => {
   }
 });
 
-for (const toggle of [debugOverlayToggleEl, debugRopesToggleEl, debugFootholdsToggleEl, debugTilesToggleEl, debugLifeToggleEl, debugHitboxesToggleEl, debugUISlotsToggleEl, debugMouseFlyToggleEl]) {
-  if (!toggle) continue;
-  toggle.addEventListener("change", () => {
-    syncDebugTogglesFromUi();
-  });
-}
 
-copySummaryButtonEl?.addEventListener("click", () => {
-  void copyRuntimeSummaryToClipboard();
-});
-
-statSpeedInputEl?.addEventListener("change", () => applyStatInputChange());
-statJumpInputEl?.addEventListener("change", () => applyStatInputChange());
-statSpeedInputEl?.addEventListener("input", () => applyStatInputChange());
-statJumpInputEl?.addEventListener("input", () => applyStatInputChange());
-
-summaryEl?.addEventListener("pointerdown", () => {
-  runtimeSummaryPointerSelecting = true;
-});
-
-window.addEventListener("pointerup", () => {
-  runtimeSummaryPointerSelecting = false;
-});
-
-summaryEl?.addEventListener("blur", () => {
-  runtimeSummaryPointerSelecting = false;
-});
 
 loadSettings();
 syncSettingsToUI();
@@ -14440,8 +13629,7 @@ for (const btn of document.querySelectorAll("#inv-tabs .inv-tab")) {
 }
 
 void loadCursorAssets();
-initializeTeleportPresetInputs();
-initializeStatInputs();
+
 initChatLogResize();
 bindCanvasResizeHandling();
 
@@ -14471,14 +13659,7 @@ function showHudButtons() {
   updateClaimUI();
 }
 
-debugToggleEl?.addEventListener("click", () => {
-  debugPanelEl?.classList.toggle("hidden");
-});
 
-debugCloseEl?.addEventListener("click", () => {
-  debugPanelEl?.classList.add("hidden");
-  canvasEl.focus();
-});
 
 // ── Settings modal ──
 settingsButtonEl?.addEventListener("click", () => {
@@ -14775,8 +13956,6 @@ window.addEventListener("beforeunload", () => {
     saveCharacter();
   }
 
-  mapIdInputEl.value = startMapId;
-
   // In online mode, connect WebSocket BEFORE loading the map.
   // Server is authoritative over map assignment — wait for change_map message.
   if (window.__MAPLE_ONLINE__) {
@@ -14809,7 +13988,6 @@ window.addEventListener("beforeunload", () => {
     const serverMap = await serverMapPromise;
 
     rlog(`Initial map from server: map=${serverMap.map_id} portal=${serverMap.spawn_portal}`);
-    mapIdInputEl.value = serverMap.map_id;
     await loadMap(serverMap.map_id, serverMap.spawn_portal || null);
     // Tell server we finished loading so it adds us to the room
     wsSend({ type: "map_loaded" });
