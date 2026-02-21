@@ -85,6 +85,22 @@ export function initDatabase(dbPath: string = "./data/maple.db"): Database {
     )
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS jq_leaderboard (
+      session_id TEXT NOT NULL,
+      quest_name TEXT NOT NULL,
+      completions INTEGER NOT NULL DEFAULT 0,
+      best_at TEXT DEFAULT (datetime('now')),
+      PRIMARY KEY (session_id, quest_name)
+    )
+  `);
+
+  // Index for fast leaderboard queries per quest
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_jq_leaderboard_quest
+    ON jq_leaderboard (quest_name, completions DESC)
+  `);
+
   return db;
 }
 
@@ -181,6 +197,66 @@ export function createDefaultCharacter(
   insertCharacterData(db, sessionId, JSON.stringify(save));
   reserveName(db, sessionId, name);
   return save;
+}
+
+// ─── JQ Leaderboard ─────────────────────────────────────────────────
+
+/**
+ * Increment a player's JQ leaderboard entry.
+ * Upserts: creates row if first completion, otherwise increments.
+ */
+export function incrementJqLeaderboard(db: Database, sessionId: string, questName: string): void {
+  db.prepare(`
+    INSERT INTO jq_leaderboard (session_id, quest_name, completions, best_at)
+    VALUES (?, ?, 1, datetime('now'))
+    ON CONFLICT (session_id, quest_name)
+    DO UPDATE SET completions = completions + 1, best_at = datetime('now')
+  `).run(sessionId, questName);
+}
+
+/**
+ * Get the leaderboard for a specific quest.
+ * Returns top N players sorted by completions descending.
+ */
+export function getJqLeaderboard(
+  db: Database,
+  questName: string,
+  limit: number = 50,
+): Array<{ name: string; completions: number }> {
+  const rows = db.prepare(`
+    SELECT n.name, j.completions
+    FROM jq_leaderboard j
+    JOIN names n ON n.session_id = j.session_id
+    WHERE j.quest_name = ?
+    ORDER BY j.completions DESC, j.best_at ASC
+    LIMIT ?
+  `).all(questName, limit) as Array<{ name: string; completions: number }>;
+  return rows;
+}
+
+/**
+ * Get all leaderboard entries (all quests), top N per quest.
+ * Returns a map of quest_name → [{name, completions}].
+ */
+export function getAllJqLeaderboards(
+  db: Database,
+  limitPerQuest: number = 50,
+): Record<string, Array<{ name: string; completions: number }>> {
+  const rows = db.prepare(`
+    SELECT j.quest_name, n.name, j.completions
+    FROM jq_leaderboard j
+    JOIN names n ON n.session_id = j.session_id
+    ORDER BY j.quest_name, j.completions DESC, j.best_at ASC
+  `).all() as Array<{ quest_name: string; name: string; completions: number }>;
+
+  const result: Record<string, Array<{ name: string; completions: number }>> = {};
+  for (const row of rows) {
+    if (!result[row.quest_name]) result[row.quest_name] = [];
+    if (result[row.quest_name].length < limitPerQuest) {
+      result[row.quest_name].push({ name: row.name, completions: row.completions });
+    }
+  }
+  return result;
 }
 
 // ─── Account claim / login ──────────────────────────────────────────

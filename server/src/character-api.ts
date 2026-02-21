@@ -18,6 +18,8 @@ import {
   claimAccount,
   loginAccount,
   releaseUnclaimedName,
+  getJqLeaderboard,
+  getAllJqLeaderboards,
 } from "./db.ts";
 
 // ─── Helpers ────────────────────────────────────────────────────────

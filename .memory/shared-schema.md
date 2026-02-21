@@ -84,6 +84,13 @@ Used by `POST /api/character/save`, `GET /api/character/load`, and localStorage.
 
 ## REST API
 
+### `GET /api/jq/leaderboard`
+- **No auth required**
+- **Query:** `?quest=Breath%20of%20Lava` (optional — omit for all quests)
+- **200 (single quest):** `{ "ok": true, "quest": "Breath of Lava", "entries": [{ "name": "Player1", "completions": 3 }] }`
+- **200 (all quests):** `{ "ok": true, "leaderboards": { "Breath of Lava": [...], "Shumi's Lost Coin": [...] } }`
+
+
 ### `POST /api/character/create`
 - **Header:** `Authorization: Bearer <session_id>`
 - **Body:** `{ "name": "string", "gender": boolean }`

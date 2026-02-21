@@ -6,7 +6,7 @@
  */
 import type { ServerWebSocket } from "bun";
 import type { Database } from "bun:sqlite";
-import { saveCharacterData } from "./db.ts";
+import { saveCharacterData, incrementJqLeaderboard } from "./db.ts";
 import {
   getMapPortalData,
   getMapData,
@@ -884,6 +884,11 @@ export function handleClientMessage(
       }
       const jqQuests = client.achievements.jq_quests as Record<string, number>;
       jqQuests[achKey] = (jqQuests[achKey] || 0) + 1;
+
+      // Update JQ leaderboard
+      if (_moduleDb) {
+        incrementJqLeaderboard(_moduleDb, client.id, achKey);
+      }
 
       // Bonus drop: Zakum Helmet (25% chance on Breath of Lava completion)
       let bonusItemId = 0;

@@ -15,7 +15,7 @@
  * - Metrics collection
  */
 
-import { initDatabase, loadCharacterData } from "./db.ts";
+import { initDatabase, loadCharacterData, getJqLeaderboard, getAllJqLeaderboards } from "./db.ts";
 import { handleCharacterRequest } from "./character-api.ts";
 import { RoomManager, handleClientMessage, setDebugMode, setDatabase, persistClientState } from "./ws.ts";
 import type { WSClient, WSClientData } from "./ws.ts";
@@ -325,6 +325,25 @@ function routeRequest(
       if (resp) return resp;
       return errorResponse("NOT_FOUND", `Route not found: ${method} ${path}`, 404, ctx.correlationId);
     });
+  }
+
+  // JQ Leaderboard API
+  if (db && path === "/api/jq/leaderboard") {
+    if (method === "GET") {
+      const quest = url.searchParams.get("quest");
+      if (quest) {
+        const entries = getJqLeaderboard(db, quest, 50);
+        return new Response(JSON.stringify({ ok: true, quest, entries }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      } else {
+        const all = getAllJqLeaderboards(db, 50);
+        return new Response(JSON.stringify({ ok: true, leaderboards: all }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
+    return new Response(JSON.stringify({ ok: false, error: "Method not allowed" }), { status: 405, headers: { "Content-Type": "application/json" } });
   }
 
   // Health endpoints

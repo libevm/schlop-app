@@ -622,6 +622,14 @@ Cap, FaceAcc, EyeAcc, Earrings, Pendant, Cape, Coat, Longcoat, Shield, Glove, Pa
 - REST save preserves server-side `jq_quests` (character-api.ts merge logic)
 - Character info modal displays only `jq_quests` entries with count > 0
 
+### JQ Leaderboard Table
+- `jq_leaderboard`: `(session_id, quest_name)` → `completions`, `best_at`
+- Updated via `incrementJqLeaderboard()` on each JQ completion (alongside achievement)
+- Indexed by `(quest_name, completions DESC)` for fast per-quest queries
+- REST: `GET /api/jq/leaderboard` → all quests; `GET /api/jq/leaderboard?quest=X` → single quest
+- Returns `[{ name, completions }]` sorted by completions DESC, best_at ASC
+- Backfilled from existing character achievements on table creation
+
 ### Chat Message Types
 - `type: "system"` — grey text (#9ca3af), italic
 - `type: "system", subtype: "welcome"` — yellow (#fbbf24), italic
