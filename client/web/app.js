@@ -2416,11 +2416,9 @@ function getRemotePlayerPlacementTemplate(rp, action, frameIndex, flipped, faceE
     })
     .filter((part) => !!part.image && !!part.meta);
 
-  // Same face-part readiness check as local player
-  const expectedFacePart = frame.parts.find((part) => typeof part.name === "string" && part.name.startsWith("face:"));
-  if (expectedFacePart && !partAssets.some((part) => part.name === expectedFacePart.name)) {
-    return null;
-  }
+  // If the expected face expression image isn't ready yet, don't hide the whole character —
+  // just proceed without the face part (avoids blink on expression change).
+  // The pre-warm in player_face will decode it and subsequent frames will include it.
 
   const body = partAssets.find((part) => part.name === "body");
   if (!body) return null;
