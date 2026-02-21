@@ -4542,6 +4542,40 @@ function resetGameplayInput() {
   runtime.input.jumpQueued = false;
 }
 
+/**
+ * Reset player to idle state when the window/tab loses focus.
+ * Cancels attacks, movement animations, and clears all held keys
+ * so the character doesn't keep acting while the user is away.
+ */
+function resetPlayerToIdle() {
+  resetGameplayInput();
+  const p = runtime.player;
+  // Cancel attack animation
+  if (p.attacking) {
+    p.attacking = false;
+    p.attackFrameIndex = 0;
+    p.attackFrameTimer = 0;
+  }
+  // Reset to standing (unless climbing, sitting on chair, or swimming)
+  if (!p.climbing && !p.chairId && p.action !== "swim") {
+    p.action = "stand1";
+    p.frameIndex = 0;
+    p.frameTimer = 0;
+  }
+}
+
+// Reset player state when the tab/window loses focus
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden && runtime.map) {
+    resetPlayerToIdle();
+  }
+});
+window.addEventListener("blur", () => {
+  if (runtime.map) {
+    resetPlayerToIdle();
+  }
+});
+
 function safeNumber(value, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
