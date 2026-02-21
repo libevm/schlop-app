@@ -12210,9 +12210,7 @@ function drawCharacter() {
   // Draw set effect behind character (e.g. Zakum Helmet glow)
   const localEquipIds = [...playerEquipped.values()].map(e => e.id);
   const localSetEff = findActiveSetEffect(localEquipIds);
-  if (!_setEffDebugLogged && localEquipIds.length > 0) {
-    rlog(`[SetEff] equips=${JSON.stringify(localEquipIds)} setLoaded=${_setEffectsLoaded} dataSize=${_setEffectData.size} match=${!!localSetEff}`);
-  }
+
   if (localSetEff && !_localSetEffect.active) {
     _localSetEffect.active = true;
     _localSetEffect.frameIndex = 0;
@@ -12305,16 +12303,16 @@ async function loadSetEffects() {
           decodePromises.push(new Promise((resolve) => {
             const img = new Image();
             img.onload = () => { imageCache.set(key, img); decoded++; resolve(true); };
-            img.onerror = () => { failed++; rlog(`[SetEff] decode fail: ${key}`); resolve(false); };
+            img.onerror = () => { failed++; resolve(false); };
             img.src = "data:image/png;base64," + frame.basedata;
           }));
         }
       }
     }
     await Promise.all(decodePromises);
-    rlog(`[SetEff] Loaded ${_setEffectData.size} sets, decoded ${decoded} frames, failed ${failed}`);
+    console.log(`[SetEff] Loaded ${_setEffectData.size} sets, decoded ${decoded} frames, failed ${failed}`);
   } catch (e) {
-    rlog(`[SetEff] Failed to load: ${e.message}`);
+    console.warn(`[SetEff] Failed to load: ${e.message}`);
   }
 }
 
@@ -12361,16 +12359,11 @@ function updateSetEffectAnimations(dtMs) {
   }
 }
 
-let _setEffDebugLogged = false;
 function drawSetEffect(worldX, worldY, setEff, state) {
   if (!setEff || !state.active) return;
   const frame = setEff.frames[state.frameIndex % setEff.frames.length];
   if (!frame) return;
   const img = imageCache.get(frame.key);
-  if (!_setEffDebugLogged) {
-    _setEffDebugLogged = true;
-    rlog(`[SetEff] draw: key=${frame.key} img=${!!img} cacheSize=${imageCache.size} frameIdx=${state.frameIndex} wx=${worldX} wy=${worldY} ox=${frame.originX} oy=${frame.originY}`);
-  }
   if (!img) return;
   // Draw at character position, offset by origin
   const drawX = worldX - frame.originX;
@@ -14373,7 +14366,7 @@ chatInputEl?.addEventListener("mousedown", (e) => {
   }
 });
 
-for (const toggle of [debugOverlayToggleEl, debugRopesToggleEl, debugFootholdsToggleEl, debugTilesToggleEl, debugLifeToggleEl, debugHitboxesToggleEl, debugUISlotsToggleEl, debugFpsToggleEl, debugMouseFlyToggleEl]) {
+for (const toggle of [debugOverlayToggleEl, debugRopesToggleEl, debugFootholdsToggleEl, debugTilesToggleEl, debugLifeToggleEl, debugHitboxesToggleEl, debugUISlotsToggleEl, debugMouseFlyToggleEl]) {
   if (!toggle) continue;
   toggle.addEventListener("change", () => {
     syncDebugTogglesFromUi();
