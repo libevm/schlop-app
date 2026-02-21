@@ -1455,7 +1455,8 @@ function connectWebSocket() {
   if (!window.__MAPLE_ONLINE__) return;
   if (_ws && (_ws.readyState === WebSocket.CONNECTING || _ws.readyState === WebSocket.OPEN)) return;
 
-  const wsUrl = window.__MAPLE_SERVER_URL__.replace(/^http/, "ws") + "/ws";
+  const serverBase = window.__MAPLE_SERVER_URL__ || window.location.origin;
+  const wsUrl = serverBase.replace(/^http/, "ws") + "/ws";
   _ws = new WebSocket(wsUrl);
 
   _ws.onopen = () => {

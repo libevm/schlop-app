@@ -243,7 +243,7 @@ function handleRequest(request) {
     let html = readFileSync(htmlPath, "utf-8");
     html = html.replace(
       "</head>",
-      `<script>window.__MAPLE_ONLINE__ = true; window.__MAPLE_SERVER_URL__ = "${gameServerUrl}";</script>\n</head>`
+      `<script>window.__MAPLE_ONLINE__ = true; window.__MAPLE_SERVER_URL__ = "";</script>\n</head>`
     );
 
     const headers = new Headers({
@@ -302,15 +302,16 @@ function startServer(startPort, attempts = 10) {
         hostname: host,
         port,
         fetch(request, server) {
-          // WebSocket — client connects directly to game server, not through this proxy
           const url = new URL(request.url);
+
+          // WebSocket proxy — upgrade and relay to game server
           if (url.pathname === "/ws") {
+            if (server.upgrade(request, { data: {} })) {
+              return undefined;
+            }
             const headers = new Headers({ "content-type": "text/plain" });
             applySecurityHeaders(headers);
-            return new Response("WebSocket connections go directly to the game server", {
-              status: 426,
-              headers,
-            });
+            return new Response("WebSocket upgrade failed", { status: 400, headers });
           }
 
           try {
@@ -318,6 +319,51 @@ function startServer(startPort, attempts = 10) {
           } catch {
             return badRequest();
           }
+        },
+        websocket: {
+          open(ws) {
+            // Connect to game server WS
+            const target = gameServerUrl.replace(/^http/, "ws") + "/ws";
+            const upstream = new WebSocket(target);
+            ws.data.upstream = upstream;
+            ws.data.buffered = [];
+
+            upstream.addEventListener("open", () => {
+              // Flush any messages buffered while connecting
+              for (const msg of ws.data.buffered) {
+                upstream.send(msg);
+              }
+              ws.data.buffered = null;
+            });
+            upstream.addEventListener("message", (event) => {
+              try { ws.send(event.data); } catch {}
+            });
+            upstream.addEventListener("close", (event) => {
+              // Only forward valid close codes (1000, 3000-4999); otherwise use 1000
+              const code = (event.code === 1000 || (event.code >= 3000 && event.code <= 4999)) ? event.code : 1000;
+              try { ws.close(code, event.reason || undefined); } catch {}
+            });
+            upstream.addEventListener("error", () => {
+              try { ws.close(1011, "upstream error"); } catch {}
+            });
+          },
+          message(ws, message) {
+            const upstream = ws.data.upstream;
+            if (!upstream) return;
+            if (ws.data.buffered) {
+              // Upstream still connecting — buffer
+              ws.data.buffered.push(typeof message === "string" ? message : new TextDecoder().decode(message));
+            } else if (upstream.readyState === WebSocket.OPEN) {
+              upstream.send(typeof message === "string" ? message : new TextDecoder().decode(message));
+            }
+          },
+          close(ws, code, reason) {
+            const upstream = ws.data.upstream;
+            if (upstream && upstream.readyState === WebSocket.OPEN) {
+              const safeCode = (code === 1000 || (code >= 3000 && code <= 4999)) ? code : 1000;
+              try { upstream.close(safeCode, reason || undefined); } catch {}
+            }
+          },
         },
       });
     } catch (error) {
@@ -340,7 +386,7 @@ const server = startServer(requestedPort);
 console.log(`🍄 Schlop ONLINE client running at http://${host}:${server.port}`);
 console.log(`   Mode: online (game server: ${gameServerUrl})`);
 console.log("   API proxy: /api/* → game server");
-console.log(`   WebSocket: client connects directly to ${gameServerUrl.replace(/^http/, "ws")}/ws`);
+console.log(`   WebSocket proxy: /ws → ${gameServerUrl.replace(/^http/, "ws")}/ws`);
 console.log(`   Proxy timeout: ${proxyTimeoutMs}ms`);
 console.log(`   CORS origin: ${allowedOrigin || "(reflect request origin)"}`);
 console.log("   Expects: reverse proxy (Caddy) for TLS + compression");

@@ -66,9 +66,19 @@ website.domain {
         header_up X-Forwarded-For {remote}
         header_up X-Forwarded-Proto {scheme}
         header_up X-Forwarded-Host {host}
+        # WebSocket support (required for /ws game connection)
+        header_up Connection {http.request.header.Connection}
+        header_up Upgrade {http.request.header.Upgrade}
     }
 }
 ```
+
+> **Note:** Caddy handles WebSocket upgrades automatically when it sees the
+> `Upgrade: websocket` header. The `Connection` and `Upgrade` header forwards
+> are included for clarity but Caddy passes them by default. All traffic
+> (static files, `/api/*`, and `/ws`) routes through the single reverse proxy
+> to the client server on port 5173, which proxies API and WebSocket requests
+> to the game server on port 5200.
 
 ## Tests
 
