@@ -24,7 +24,7 @@ import type { Database } from "bun:sqlite";
 /** Number of leading zero bits required in SHA-256(challenge || nonce).
  *  Each +1 bit doubles solve time. ~22 bits ≈ 3s in a browser.
  *  Adjustable via POW_DIFFICULTY env var. */
-const DIFFICULTY = Number(process.env.POW_DIFFICULTY ?? "22");
+const DIFFICULTY = Number(process.env.POW_DIFFICULTY ?? "20");
 
 /** How long a challenge stays valid (ms) */
 const CHALLENGE_TTL_MS = 60_000;
