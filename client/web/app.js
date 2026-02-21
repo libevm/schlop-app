@@ -5665,7 +5665,127 @@ const NPC_SCRIPTS = {
   flower_out: { greeting: "This obstacle course is no joke. Need a way out?", destinations: [{ label: "Back to Mushroom Park", mapId: 100000001 }] },
   herb_out: { greeting: "Want to head back?", destinations: [{ label: "Back to Mushroom Park", mapId: 100000001 }] },
   Zakum06: { greeting: "This place is dangerous. I can get you out of here.", destinations: [{ label: "Back to Mushroom Park", mapId: 100000001 }] },
+  // Leaderboard NPC
+  jq_leaderboard: { leaderboard: true },
 };
+
+// ─── Leaderboard fetch + display ─────────────────────────────────────
+
+const JQ_DISPLAY_NAMES = [
+  "Shumi's Lost Coin", "Shumi's Lost Bundle of Money", "Shumi's Lost Sack of Money",
+  "John's Pink Flower Basket", "John's Present", "John's Last Present",
+  "The Forest of Patience", "Breath of Lava",
+];
+
+async function fetchJqLeaderboard() {
+  try {
+    const resp = await fetch("/api/jq/leaderboard");
+    const body = await resp.json();
+    if (!body.ok || !body.leaderboards) {
+      replaceDialogueWithLeaderboard(null);
+      return;
+    }
+    replaceDialogueWithLeaderboard(body.leaderboards);
+  } catch {
+    replaceDialogueWithLeaderboard(null);
+  }
+}
+
+function replaceDialogueWithLeaderboard(leaderboards) {
+  if (!runtime.npcDialogue.active) return;
+  const lines = [];
+
+  if (!leaderboards || Object.keys(leaderboards).length === 0) {
+    lines.push("No jump quest completions recorded yet. Be the first to conquer a challenge!");
+    runtime.npcDialogue.lines = lines;
+    runtime.npcDialogue.lineIndex = 0;
+    return;
+  }
+
+  // Build one page per quest that has entries, top 5 each
+  for (const questName of JQ_DISPLAY_NAMES) {
+    const entries = leaderboards[questName];
+    if (!entries || entries.length === 0) continue;
+    const top5 = entries.slice(0, 5);
+    let text = `◆ ${questName}\n\n`;
+    for (let i = 0; i < top5.length; i++) {
+      const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`;
+      text += `${medal}  ${top5[i].name}  —  ${top5[i].completions} clear${top5[i].completions !== 1 ? "s" : ""}\n`;
+    }
+    lines.push(text.trimEnd());
+  }
+
+  if (lines.length === 0) {
+    lines.push("No jump quest completions recorded yet. Be the first to conquer a challenge!");
+  }
+
+  runtime.npcDialogue.lines = lines;
+  runtime.npcDialogue.lineIndex = 0;
+}
+
+// ─── NPC Ambient Chat Bubbles ────────────────────────────────────────
+
+const NPC_AMBIENT_MESSAGES = {
+  "1012101": [ // Maya — JQ challenge NPC
+    "Think you've got what it takes? Try a Jump Quest!",
+    "The bravest adventurers test themselves in the Jump Quests...",
+    "Shumi lost his valuables again... someone should help!",
+    "Cough... cough... I've seen many try, but few succeed...",
+    "The construction site in Kerning City hides great treasures!",
+    "Old man John's garden is full of surprises... and danger.",
+    "Have you braved the Breath of Lava? Only legends survive it.",
+    "The Forest of Patience... it's called that for a reason.",
+    "I hear there's a rare Zakum Helmet waiting at the end of the lava...",
+    "Jump Quests reward the persistent. Are you up for it?",
+    "Many adventurers have come and gone... will you be different?",
+    "The deeper you go in Kerning's construction site, the better the loot!",
+    "John's flowers are beautiful, but the climb is treacherous...",
+    "Come talk to me if you're looking for a real challenge!",
+  ],
+  "9040011": [ // Leaderboard — Bulletin Board
+    "Check the leaderboard! Who's the top Jump Quest champion?",
+    "Click me to see who conquered the most Jump Quests!",
+    "New records are being set every day. Are you on the board?",
+    "The leaderboard awaits! See how you stack up against others.",
+    "Who holds the record for Breath of Lava? Find out here!",
+    "Shumi's construction site has claimed many... see who survived!",
+    "Think you're the best? The leaderboard tells the truth.",
+    "Legends are written here. Click to see the top adventurers!",
+    "Jump Quest champions are immortalized on this board!",
+    "The top 5 for each quest... is your name there?",
+    "Every completion counts. Check your ranking!",
+    "Forest of Patience? More like Forest of Champions. See them here!",
+  ],
+};
+
+/** Per-NPC-ID ambient bubble state: { text, expiresAt, nextAt } */
+const _npcAmbientBubbles = new Map();
+const NPC_AMBIENT_INTERVAL_MIN = 6000;  // 6s min between bubbles
+const NPC_AMBIENT_INTERVAL_MAX = 14000; // 14s max
+const NPC_AMBIENT_DURATION = 4500;      // bubble visible for 4.5s
+
+function updateNpcAmbientBubbles(now) {
+  for (const [idx, state] of lifeRuntimeState) {
+    const life = runtime.map?.lifeEntries?.[idx];
+    if (!life || life.type !== "n") continue;
+    const messages = NPC_AMBIENT_MESSAGES[life.id];
+    if (!messages || messages.length === 0) continue;
+
+    let bubble = _npcAmbientBubbles.get(idx);
+    if (!bubble) {
+      // Initialize with a random first delay
+      bubble = { text: "", expiresAt: 0, nextAt: now + Math.random() * NPC_AMBIENT_INTERVAL_MAX };
+      _npcAmbientBubbles.set(idx, bubble);
+    }
+
+    if (now >= bubble.nextAt && now >= bubble.expiresAt) {
+      // Pick a random message
+      bubble.text = messages[Math.floor(Math.random() * messages.length)];
+      bubble.expiresAt = now + NPC_AMBIENT_DURATION;
+      bubble.nextAt = bubble.expiresAt + NPC_AMBIENT_INTERVAL_MIN + Math.random() * (NPC_AMBIENT_INTERVAL_MAX - NPC_AMBIENT_INTERVAL_MIN);
+    }
+  }
+}
 
 /**
  * Trigger a map transition from an NPC dialogue action.
@@ -5737,6 +5857,13 @@ async function requestJqReward() {
  */
 function buildScriptDialogue(scriptDef, npcId, npcWorldX, npcWorldY) {
   const lines = [];
+  // Leaderboard NPC: show async fetch loading, then replace with data
+  if (scriptDef.leaderboard) {
+    lines.push("Loading leaderboard data...");
+    // Kick off async fetch — will replace dialogue lines when ready
+    fetchJqLeaderboard();
+    return lines;
+  }
   // JQ reward NPC: check platform proximity first if required
   if (scriptDef.jqReward) {
     // Client-side proximity check (server validates authoritatively too)
@@ -6099,6 +6226,7 @@ function mobPhysicsUpdate(map, phobj, isSwimMap, dtSec) {
 
 function initLifeRuntimeStates() {
   lifeRuntimeState.clear();
+  _npcAmbientBubbles.clear();
   if (!runtime.map) return;
 
   const map = runtime.map;
@@ -6425,7 +6553,85 @@ function drawLifeSprites(filterLayer, lifeEntriesForLayer = null) {
       ctx.fillText(anim.name, screenX, screenY + 4);
       ctx.restore();
     }
+
+    // Draw ambient chat bubble above NPC
+    if (life.type === "n") {
+      const bubble = _npcAmbientBubbles.get(idx);
+      if (bubble && bubble.text && performance.now() < bubble.expiresAt) {
+        drawNpcAmbientBubble(screenX, screenY - frame.originY, bubble.text, bubble.expiresAt);
+      }
+    }
   }
+}
+
+function drawNpcAmbientBubble(screenX, topY, text, expiresAt) {
+  const now = performance.now();
+  const remaining = expiresAt - now;
+
+  // Fade in during first 300ms, fade out during last 600ms
+  let alpha = 1;
+  const age = NPC_AMBIENT_DURATION - remaining;
+  if (age < 300) alpha = age / 300;
+  else if (remaining < 600) alpha = remaining / 600;
+  if (alpha <= 0) return;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.font = '11px "Dotum", Arial, sans-serif';
+  ctx.textAlign = "center";
+  ctx.textBaseline = "bottom";
+
+  // Wrap text to max width
+  const maxW = 140;
+  const words = text.split(" ");
+  const lines = [];
+  let cur = "";
+  for (const w of words) {
+    const test = cur ? cur + " " + w : w;
+    if (ctx.measureText(test).width > maxW && cur) {
+      lines.push(cur);
+      cur = w;
+    } else {
+      cur = test;
+    }
+  }
+  if (cur) lines.push(cur);
+
+  const lineH = 14;
+  const padX = 8, padY = 6;
+  const widest = Math.max(...lines.map(l => ctx.measureText(l).width));
+  const boxW = Math.ceil(widest) + padX * 2;
+  const boxH = lines.length * lineH + padY * 2;
+  const boxX = Math.round(screenX - boxW / 2);
+  const boxY = Math.round(topY - boxH - 12);
+
+  // Bubble background
+  roundRect(ctx, boxX, boxY, boxW, boxH, 5);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.92)";
+  ctx.fill();
+  ctx.strokeStyle = "rgba(80, 100, 140, 0.35)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Tail
+  const tailX = screenX;
+  ctx.beginPath();
+  ctx.moveTo(tailX - 4, boxY + boxH);
+  ctx.lineTo(tailX + 4, boxY + boxH);
+  ctx.lineTo(tailX, boxY + boxH + 5);
+  ctx.closePath();
+  ctx.fillStyle = "rgba(255, 255, 255, 0.92)";
+  ctx.fill();
+
+  // Text
+  ctx.fillStyle = "#2a2a3e";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  for (let i = 0; i < lines.length; i++) {
+    ctx.fillText(lines[i], boxX + padX, boxY + padY + i * lineH);
+  }
+
+  ctx.restore();
 }
 
 // ─── Damage Numbers ──────────────────────────────────────────────────────────
@@ -13198,6 +13404,7 @@ function update(dt) {
   updateBackgroundAnimations(dt * 1000);
   updateGroundDrops(dt);
   updateSetEffectAnimations(dt * 1000);
+  updateNpcAmbientBubbles(performance.now());
   updateCamera(dt);
 
   // Multiplayer: update remote players + send position
