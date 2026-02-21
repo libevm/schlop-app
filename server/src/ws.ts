@@ -1006,7 +1006,7 @@ export function handleClientMessage(
       }
       const cmd = String(msg.command ?? "").trim();
       const args = (msg.args as string[]) || [];
-      handleGmCommand(client, cmd, args, roomManager, db);
+      handleGmCommand(client, cmd, args, roomManager, _db);
       break;
     }
 
