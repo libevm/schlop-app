@@ -5533,7 +5533,7 @@ const NPC_SCRIPTS = {
   // Forest of Patience JQ reward NPCs
   viola_pink: { greeting: "Oh! You found me all the way up here! These pink flowers are for John. Please, take this basket as a thank-you for your incredible climb!", jqReward: true, requirePlatform: true },
   viola_blue: { greeting: "Amazing! You made it through those treacherous vines! John will be so happy. Here — take this present as a reward for your perseverance!", jqReward: true, requirePlatform: true },
-  bush1: { greeting: "You've conquered the deepest depths of the forest! John's last present is yours. You truly are a master of patience!", jqReward: true, requirePlatform: true },
+  bush1: { greeting: "You've conquered the deepest depths of the forest! John's last present is yours. You truly are a master of patience!", jqReward: true, requirePlatform: true, proximityRange: 500 },
   // Jump quest exit NPCs
   subway_out: { greeting: "Had enough? I can send you back if you'd like.", destinations: [{ label: "Back to Mushroom Park", mapId: 100000001 }] },
   flower_out: { greeting: "This obstacle course is no joke. Need a way out?", destinations: [{ label: "Back to Mushroom Park", mapId: 100000001 }] },
@@ -5618,7 +5618,8 @@ function buildScriptDialogue(scriptDef, npcId, npcWorldX, npcWorldY) {
       const dx = runtime.player.x - (typeof npcWorldX === "number" ? npcWorldX : runtime.player.x);
       const dy = runtime.player.y - npcWorldY;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist > 200) {
+      const range = scriptDef.proximityRange || 200;
+      if (dist > range) {
         const PROXIMITY_PHRASES = [
           "Come closer... I can barely see you from way over there!",
           "Hey! You need to come up here if you want your reward!",

@@ -832,7 +832,7 @@ export function handleClientMessage(
         "103000909": { npcId: "1052010", questName: "Shumi's Lost Sack of Money", requirePlatform: false },
         "105040311": { npcId: "1063000", questName: "John's Pink Flower Basket", requirePlatform: true },
         "105040313": { npcId: "1063001", questName: "John's Present", requirePlatform: true },
-        "105040315": { npcId: "1043000", questName: "John's Last Present", requirePlatform: true },
+        "105040315": { npcId: "1043000", questName: "John's Last Present", requirePlatform: true, proximityRange: 500 },
       };
 
       const jqInfo = JQ_TREASURE_CHESTS[client.mapId];
@@ -845,12 +845,13 @@ export function handleClientMessage(
         break;
       }
 
-      // Proximity check — player must be within 200px of the NPC
+      // Proximity check — player must be within range of the NPC
       if (jqInfo.requirePlatform) {
         const npc = getNpcOnMap(client.mapId, jqInfo.npcId);
+        const range = (jqInfo as any).proximityRange ?? 200;
         if (npc) {
           const dist = distance(client.x, client.y, npc.x, npc.cy);
-          if (dist > 200) {
+          if (dist > range) {
             sendDirect(client, { type: "jq_proximity", npc_id: jqInfo.npcId });
             break;
           }
