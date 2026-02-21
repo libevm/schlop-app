@@ -219,12 +219,29 @@ On success → server sends `change_map`. On failure → server sends `portal_de
 Sent after client receives `change_map` and completes `loadMap()`.
 Server then adds client to the room, sends `map_state`, broadcasts `player_enter`.
 
-### `admin_warp` — Debug panel teleport request (debug mode only)
+### `admin_warp` — Debug panel teleport request (debug mode only, legacy)
 ```json
 { "type": "admin_warp", "map_id": "103000900" }
 ```
 **Only allowed when server `debug` config is `true`.** Denied with `portal_denied` otherwise.
 Server validates the map exists, then sends `change_map`. No proximity check.
+*Note: Debug panel was removed. This handler remains but is never sent by current client.*
+
+### `gm_command` — GM slash command (requires `characters.gm = 1`)
+```json
+{ "type": "gm_command", "command": "map", "args": ["100000000"] }
+{ "type": "gm_command", "command": "teleport", "args": ["Alice", "100000000"] }
+```
+Server validates `client.gm === true`, then executes command.
+Commands: `map` (warp self), `teleport` (warp other online player).
+Response: `gm_response` message.
+
+### `gm_response` — Server response to GM command
+```json
+{ "type": "gm_response", "ok": true, "text": "Warping to map 100000000..." }
+{ "type": "gm_response", "ok": false, "text": "Player 'Alice' is not online." }
+```
+Displayed as grey system chat message on client. `ok` = false shown as error subtype.
 
 ### `npc_warp` — NPC travel / taxi map transition (server validates NPC + destination)
 ```json
@@ -319,12 +336,13 @@ Every message has a `type` string field.
 
 ### `change_map` — Server instructs client to load a map
 ```json
-{ "type": "change_map", "map_id": "100000000", "spawn_portal": "out00" }
+{ "type": "change_map", "map_id": "100000000", "spawn_portal": "out00", "gm": true }
 ```
+- `gm` field included (truthy) only when client has GM privileges; client stores in `runtime.gm`
 Sent:
 - After auth (initial map from character save)
 - After successful `use_portal` validation
-- After `admin_warp` validation
+- After `admin_warp` / `gm_command` validation
 - Server-initiated (e.g., kicked to town)
 
 Client must respond with `map_loaded` after completing `loadMap()`.

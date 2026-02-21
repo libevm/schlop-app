@@ -81,6 +81,7 @@ CREATE TABLE characters (
   name TEXT PRIMARY KEY COLLATE NOCASE,
   data TEXT NOT NULL,
   version INTEGER DEFAULT 1,
+  gm INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT DEFAULT (datetime('now'))
 );
 ```
@@ -655,7 +656,7 @@ Cap, FaceAcc, EyeAcc, Earrings, Pendant, Cape, Coat, Longcoat, Shield, Glove, Pa
 - Categories: `info`, `warn`, `error` — each line timestamped `[HH:MM:SS.mmm] [category]`
 - Global captures: `window.onerror` and `unhandledrejection` → auto-logged as `[error]`
 - All `console.log/warn/error/info` removed from client — zero console output
-- Debug panel "Runtime Logs" shows last 200 lines (throttled 2Hz via `flushDebugLogToPanel()`)
+- Debug panel removed; logs only accessible via Settings > Download
 - Settings > Diagnostics > "Download Debug Logs" exports full buffer as `.txt` with header
   (timestamp, user agent, screen size, connection/ping status, map, player, line count)
 
@@ -666,6 +667,29 @@ Cap, FaceAcc, EyeAcc, Earrings, Pendant, Cape, Coat, Longcoat, Shield, Glove, Pa
 - States: "Offline" (grey), "Initializing..." (grey), "{N} ms" (green/yellow/red)
 - Ping interval: 5s with immediate first ping on WS connect
 - Closing × unchecks setting and saves
+
+### GM System
+- `characters.gm` column: `INTEGER NOT NULL DEFAULT 0` (auto-migrated on existing DBs)
+- Toggle via CLI: `bun run make-gm <username> [--db <path>]`
+- DB helpers: `isGm(db, name)`, `setGm(db, name, gm)`
+- `WSClient.gm: boolean` loaded from DB on auth, sent to client via `change_map.gm`
+- GM slash commands typed in chat (prefixed `/`), intercepted client-side before `wsSend`
+- Slash commands are NOT displayed in world chat or bubbles
+
+**Client-side commands** (no server round-trip):
+- `/mousefly` — toggle Ctrl+click fly mode (`runtime.gmMouseFly`)
+- `/overlay` — toggle debug overlays (`runtime.gmOverlay`): footholds, ropes, tiles, life markers, hitboxes, portals, reactors, HUD info
+- `/help` — list all commands
+
+**Server-side commands** (sent as `gm_command` WS message):
+- `/map <map_id>` — warp self to map (server validates map exists)
+- `/teleport <username> <map_id>` — warp another online player (server validates both)
+
+**WS messages**:
+- `{ type: "gm_command", command: "map"|"teleport", args: string[] }` — client → server
+- `{ type: "gm_response", ok: boolean, text: string }` — server → client (shown as grey system chat)
+
+**GM overlay includes**: footholds (green, coords, IDs), ropes (yellow, range, ladder flag), tiles (blue boxes, u:no, origin), NPCs (purple, name, script, pos), mobs (red, name, HP, action, facing, dead/dying), portals (purple boxes, type, destination), reactors (pink, HP, state), player/mob/trap hitboxes, top-left HUD (map ID, player coords, action, camera, counts).
 
 ### Chat Message Types
 - `type: "system"` — grey text (#9ca3af), italic
