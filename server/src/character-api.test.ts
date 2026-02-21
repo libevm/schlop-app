@@ -109,14 +109,30 @@ describe("character API", () => {
     expect(res.status).toBe(201);
   });
 
-  test("POST /api/character/create allows same session to re-create", async () => {
+  test("POST /api/character/create rejects if session already has a character", async () => {
     const res = await fetch(`${baseUrl}/api/character/create`, {
       method: "POST",
       headers: authHeaders(session1),
       body: JSON.stringify({ name: "TestPlayer2", gender: true }),
     });
-    // Same session re-reserving same name should succeed
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.ok).toBe(false);
+    expect(body.error.code).toBe("ALREADY_EXISTS");
+  });
+
+  test("POST /api/character/create rejects case-insensitive duplicate name", async () => {
+    // session2 owns "TestPlayer" (claimed) — "testplayer" should also be rejected
+    const session3 = "test-session-3";
+    const res = await fetch(`${baseUrl}/api/character/create`, {
+      method: "POST",
+      headers: authHeaders(session3),
+      body: JSON.stringify({ name: "testplayer", gender: false }),
+    });
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.ok).toBe(false);
+    expect(body.error.code).toBe("NAME_TAKEN");
   });
 
   // ── Load ──

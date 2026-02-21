@@ -146,7 +146,7 @@ export function reserveName(
     return { ok: false, reason: "invalid_name" };
   }
 
-  const existing = db.prepare("SELECT session_id FROM names WHERE name = ?").get(trimmed) as { session_id: string } | null;
+  const existing = db.prepare("SELECT session_id FROM names WHERE name COLLATE NOCASE = ?").get(trimmed) as { session_id: string } | null;
   if (existing) {
     if (existing.session_id === sessionId) {
       return { ok: true }; // re-reserving own name
@@ -170,7 +170,7 @@ export function releaseUnclaimedName(
   name: string,
   roomManager?: { getClient(id: string): unknown },
 ): boolean {
-  const nameRow = db.prepare("SELECT session_id FROM names WHERE name = ?").get(name) as { session_id: string } | null;
+  const nameRow = db.prepare("SELECT session_id FROM names WHERE name COLLATE NOCASE = ?").get(name) as { session_id: string } | null;
   if (!nameRow) return false; // name doesn't exist
 
   const holderId = nameRow.session_id;
@@ -290,7 +290,7 @@ export async function loginAccount(
   name: string,
   password: string,
 ): Promise<{ ok: true; session_id: string } | { ok: false; reason: string }> {
-  const nameRow = db.prepare("SELECT session_id FROM names WHERE name = ?").get(name) as { session_id: string } | null;
+  const nameRow = db.prepare("SELECT session_id FROM names WHERE name COLLATE NOCASE = ?").get(name) as { session_id: string } | null;
   if (!nameRow) {
     return { ok: false, reason: "invalid_credentials" };
   }

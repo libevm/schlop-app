@@ -154,10 +154,10 @@ describe("WebSocket server", () => {
   });
 
   test("authenticates: receives change_map then map_state after map_loaded", async () => {
-    await createCharacter(sessionA, "Alice2");
+    await createCharacter("auth-test-a", "Alice2");
 
     const client = await openWS(wsUrl);
-    const { changeMap, mapState } = await authAndJoin(client, sessionA);
+    const { changeMap, mapState } = await authAndJoin(client, "auth-test-a");
 
     expect(changeMap.map_id).toBe("100000001"); // default start map
     expect(Array.isArray(mapState.players)).toBe(true);

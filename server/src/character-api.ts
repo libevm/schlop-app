@@ -113,6 +113,15 @@ export async function handleCharacterRequest(
       );
     }
 
+    // Reject if this session already has a character (use /api/character/save to update)
+    const existingChar = loadCharacterData(db, sessionId);
+    if (existingChar) {
+      return jsonResponse(
+        { ok: false, error: { code: "ALREADY_EXISTS", message: "Character already exists for this session" } },
+        409,
+      );
+    }
+
     // Check if name is available — if taken by an unclaimed + offline session, reclaim it
     let nameResult = reserveName(db, sessionId, name);
     if (!nameResult.ok) {
