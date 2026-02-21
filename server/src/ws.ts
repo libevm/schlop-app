@@ -834,6 +834,7 @@ export function handleClientMessage(
         "105040313": { npcId: "1063001", questName: "John's Present", requirePlatform: true },
         "105040315": { npcId: "1043000", questName: "John's Last Present", requirePlatform: true, proximityRange: 500 },
         "101000101": { npcId: "1043000", questName: "The Forest of Patience", requirePlatform: true, proximityRange: 200 },
+        "280020001": { npcId: "2032003", questName: "Breath of Lava", requirePlatform: true, proximityRange: 500 },
       };
 
       const jqInfo = JQ_TREASURE_CHESTS[client.mapId];
