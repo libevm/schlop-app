@@ -13692,6 +13692,9 @@ async function loadMap(mapId, spawnPortalName = null, spawnFromPortalTransfer = 
     rlog(`loadMap COMPLETE mapId=${runtime.mapId}`);
   } catch (error) {
     console.error(`[loadMap] ERROR:`, error);
+    if (error instanceof SyntaxError && error.message?.includes('"version ht"')) {
+      console.error(`[loadMap] ⚠️  Git LFS pointer detected! Run "git lfs pull" on the server to download actual resource files.`);
+    }
     console.error(`[loadMap] Stack:`, error instanceof Error ? error.stack : "N/A");
     rlog(`loadMap ERROR: ${error instanceof Error ? error.message : String(error)}`);
     rlog(`loadMap ERROR stack: ${error instanceof Error ? error.stack : "N/A"}`);
