@@ -649,6 +649,24 @@ Cap, FaceAcc, EyeAcc, Earrings, Pendant, Cape, Coat, Longcoat, Shield, Glove, Pa
 - Returns `[{ name, completions }]` sorted by completions DESC, best_at ASC
 - Backfilled from existing character achievements on table creation
 
+### Debug Log System
+- `dlog(category, msg)` — internal ring buffer, 5000-line max, no console output
+- `rlog(msg)` — convenience wrapper, routes to `dlog("info", msg)`
+- Categories: `info`, `warn`, `error` — each line timestamped `[HH:MM:SS.mmm] [category]`
+- Global captures: `window.onerror` and `unhandledrejection` → auto-logged as `[error]`
+- All `console.log/warn/error/info` removed from client — zero console output
+- Debug panel "Runtime Logs" shows last 200 lines (throttled 2Hz via `flushDebugLogToPanel()`)
+- Settings > Diagnostics > "Download Debug Logs" exports full buffer as `.txt` with header
+  (timestamp, user agent, screen size, connection/ping status, map, player, line count)
+
+### Ping HUD
+- Settings > Display > "Show Ping" checkbox (`showPing` in `runtime.settings`, persisted)
+- Draggable `game-window` element (`#ping-window`)
+- Updated on `pong` response (5s interval) and disconnect
+- States: "Offline" (grey), "Initializing..." (grey), "{N} ms" (green/yellow/red)
+- Ping interval: 5s with immediate first ping on WS connect
+- Closing × unchecks setting and saves
+
 ### Chat Message Types
 - `type: "system"` — grey text (#9ca3af), italic
 - `type: "system", subtype: "welcome"` — yellow (#fbbf24), italic

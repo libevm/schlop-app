@@ -51,8 +51,7 @@ tick(timestampMs)                ← requestAnimationFrame
 17. drawMapBanner()             ← map name fades in on map entry
 18. drawMinimap()               ← collapsible panel with player/portal/mob/NPC/reactor dots
 19. drawNpcDialogue()           ← NPC dialogue box with portrait + options
-20. drawFpsCounter()            ← top bar FPS/frametime badge (left of settings/debug buttons, debug-toggleable)
-21. drawTransitionOverlay()     ← fade-in/out black overlay
+20. drawTransitionOverlay()     ← fade-in/out black overlay
 ```
 
 **Note:** `drawLifeSprites(filterLayer)` is called **inside** `drawMapLayersWithCharacter()`
@@ -433,7 +432,7 @@ tryUsePortal()
 - "Loading map assets" title (white 85% opacity, 15px system font)
 - Progress bar: flat pill shape (full rounded corners), white 8% bg, white 70% fill
 - Verbose status label + percentage: `"Loading assets 12/48 — 25%"` (white 45% opacity)
-- FPS counter still renders in loading/no-map states when enabled
+
 
 ### Animated Orange Mushroom
 - Sprites preloaded from `resourcesv2/mob/orange-mushroom/` (manifest.json + 6 PNGs)
@@ -578,14 +577,16 @@ tryUsePortal()
 - Uses `isWorldRectVisible()` for viewport culling
 - Color: `rgba(56, 189, 248, ...)` (sky blue / cyan)
 
-## FPS Counter (Debug)
+## Ping HUD
 
-- Toggle via debug panel checkbox (`debug-fps-toggle`)
-- Renders canvas badge in the top bar, positioned left of the settings/debug buttons
-- Badge shows:
-  - estimated FPS (from rolling p50 loop interval)
-  - current loop interval ms (`runtime.perf.loopIntervalMs`)
-- Drawn in normal gameplay and loading/no-map states
+- Toggle via Settings > Display > "Show Ping" checkbox (`settings-ping-toggle`)
+- Draggable `game-window` HTML element (`#ping-window`), not canvas-drawn
+- Shows colored indicator dot + ping value in ms
+  - Green (≤80ms), Yellow (≤200ms), Red (>200ms), Grey (offline/initializing)
+- Three states: "Offline", "Initializing...", "{N} ms"
+- Updated on every `pong` WS response (5s interval) and on disconnect
+- Closing via × unchecks the setting and saves
+- Setting persisted in localStorage with other settings
 
 ## NPC Dialogue System
 
@@ -781,7 +782,6 @@ Items can be dropped on the map and looted by the player.
   - Centered horizontally at 12% screen height. Triggered by `showMapBanner(mapId)`.
 - **Player name label** (`drawPlayerNameLabel()`): dark rounded tag with subtle blue border tint,
   white text with shadow, Dotum font. Positioned at player feet.
-- **FPS counter** (`drawFpsCounter()`): frosted glass rounded rect with text shadow.
 - **Minimap** (`drawMinimap()`): dark frosted glass panel, gold map name title, subtle blue borders.
 - **Loading screen** (`drawLoadingScreen()`): gold title, gold gradient progress bar with gloss highlight.
 - **HUD style**: All canvas-drawn HUD uses Dotum font with Arial fallback. Frosted glass
