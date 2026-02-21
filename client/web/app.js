@@ -5533,7 +5533,7 @@ const NPC_SCRIPTS = {
   // Forest of Patience JQ reward NPCs
   viola_pink: { greeting: "Oh! You found me all the way up here! These pink flowers are for John. Please, take this basket as a thank-you for your incredible climb!", jqReward: true, requirePlatform: true },
   viola_blue: { greeting: "Amazing! You made it through those treacherous vines! John will be so happy. Here — take this present as a reward for your perseverance!", jqReward: true, requirePlatform: true },
-  bush1: { greeting: "You've conquered the deepest depths of the forest! John's last present is yours. You truly are a master of patience!", jqReward: true, requirePlatform: true, proximityRange: 500 },
+  bush1: { greeting: "Incredible! You've made it to the very top! These flowers have been waiting for someone as determined as you. Take this reward — you've earned it!", jqReward: true, requirePlatform: true, proximityRange: 500 },
   // Jump quest exit NPCs
   subway_out: { greeting: "Had enough? I can send you back if you'd like.", destinations: [{ label: "Back to Mushroom Park", mapId: 100000001 }] },
   flower_out: { greeting: "This obstacle course is no joke. Need a way out?", destinations: [{ label: "Back to Mushroom Park", mapId: 100000001 }] },
