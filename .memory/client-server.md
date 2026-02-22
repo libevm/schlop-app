@@ -770,17 +770,21 @@ Cap, FaceAcc, EyeAcc, Earrings, Pendant, Cape, Coat, Longcoat, Shield, Glove, Pa
   - Server uses `getNpcOnMap()` + `distance()` from `map-data.ts`
   - Client pre-checks in `buildScriptDialogue()` before showing reward option
   - Rejection sends `jq_proximity` message → client shows random "come closer" phrase
+- **Inventory capacity check**: before rolling reward, server checks `hasInventorySpace(client, "EQUIP")` and `hasInventorySpace(client, "CASH")`. If both tabs are full, sends `jq_inventory_full` and does NOT warp. Player stays on map and can drop items to make room.
+- After capacity check passes, also checks the specific reward tab (EQUIP or CASH) has room.
 - `rollJqReward()` (reactor-system.ts): 50/50 regular equip or cash equip (equipable items with `cash=1` in WZ info), qty 1. `CASH_EQUIP_DROPS` pool built during `loadDropPools()` by scanning Character.wz equip dirs for items with `cash=1`.
 - Adds item to `client.inventory`, increments `client.achievements.jq_quests[questName]`
 - Persists immediately via `persistClientState()`
 - Sends `{ type: "jq_reward", quest_name, item_id, item_name, item_qty, item_category, completions }`
 - Then calls `roomManager.initiateMapChange()` → warps player to `100000001`
+- Zakum Helmet bonus (25% on Breath of Lava): only awarded if EQUIP tab has room (`hasInventorySpace`)
 
 ### Client (`app.js`)
 - NPC scripts: `subway_get1/2/3` → "Open Chest", `viola_pink`/`viola_blue`/`bush1` → "Claim Reward"
 - `requirePlatform` scripts also do client-side Y distance check (>60px → show proximity phrase in NPC dialogue)
 - `requestJqReward()`: online sends `{ type: "jq_reward" }`, offline just warps home
 - WS `jq_reward` handler: adds item to `playerInventory`, updates `runtime.player.achievements.jq_quests`, shows grey system chat message
+- WS `jq_inventory_full` handler: shows system chat "Your inventory is full! Please drop an item to make room for your reward." Player stays on map.
 - WS `jq_proximity` handler: shows random "come closer" phrase in system chat
 - `handleServerMapChange()` handles the subsequent unsolicited `change_map`
 

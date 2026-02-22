@@ -1,7 +1,19 @@
 # .memory Sync Status
 
-Last synced: 2026-02-22T13:21:00+11:00
+Last synced: 2026-02-22T15:45:00+11:00
 Status: ✅ Synced
+
+## 2026-02-22 update (inventory full loot/JQ guard)
+- **Server (`ws.ts`)**: Added `inventoryTypeByItemId()`, `hasInventorySpace()`, `canFitItem()` helpers.
+  - `loot_item` handler now checks `canFitItem()` before removing drop; sends `loot_failed { reason: "inventory_full" }` if tab is full.
+  - `jq_reward` handler checks inventory capacity (EQUIP + CASH tabs) before rolling reward; sends `jq_inventory_full` if full. Player stays on map, no warp.
+  - Zakum Helmet bonus only awarded if EQUIP tab has room.
+- **Client (`app.js`)**:
+  - `tryLootDrop()` pre-checks inventory capacity before sending `loot_item` to server; shows system chat message if full.
+  - `lootDropLocally()` shows system chat message when tab is full (both full-reject and partial-pickup cases).
+  - `loot_failed` handler handles `"inventory_full"` reason with system chat message.
+  - New `jq_inventory_full` WS handler shows "Your inventory is full! Please drop an item to make room for your reward."
+- Updated `.memory/inventory-system.md`, `.memory/shared-schema.md`, `.memory/client-server.md`.
 
 ## 2026-02-22 update (character-anchored remote chat bubble + git hash log)
 - `drawRemotePlayerChatBubble`: removed viewport clamping (`clampedX`), bubble now centered

@@ -1860,6 +1860,8 @@ function handleServerMessage(msg) {
         // Drop no longer exists on server — remove locally
         const idx = groundDrops.findIndex(d => d.drop_id === failDropId);
         if (idx >= 0) groundDrops.splice(idx, 1);
+      } else if (msg.reason === "inventory_full") {
+        addSystemChatMessage("Your inventory is full. Please make room before picking up more items.");
       }
       // "owned" — drop stays visible, player just can't pick it up yet
       break;
@@ -2102,6 +2104,11 @@ function handleServerMessage(msg) {
       if (runtime.chat.history.length > runtime.chat.maxHistory) runtime.chat.history.shift();
       appendChatLogMessage(sysMsg);
       rlog(`[JQ] Reward: ${itemName} (${itemId}) for ${questName}, completions=${completions}${bonusItemName ? `, bonus: ${bonusItemName}` : ""}`);
+      break;
+    }
+
+    case "jq_inventory_full": {
+      addSystemChatMessage("Your inventory is full! Please drop an item to make room for your reward.");
       break;
     }
 
@@ -3792,6 +3799,25 @@ function tryLootDrop() {
       drop.y - 32, drop.y,
     );
     if (rectsOverlap(pBounds, dropBounds)) {
+      // Pre-check: does the inventory tab have room for this item?
+      const dropInvType = inventoryTypeById(drop.id) || "ETC";
+      const dropStackable = isItemStackable(drop.id);
+      let hasRoom = false;
+      if (dropStackable) {
+        // Check if existing stacks have space
+        for (const entry of playerInventory) {
+          if (entry.id === drop.id && entry.invType === dropInvType) {
+            const slotMax = getItemSlotMax(drop.id);
+            if (entry.qty < slotMax) { hasRoom = true; break; }
+          }
+        }
+      }
+      if (!hasRoom) hasRoom = findFreeSlot(dropInvType) !== -1;
+      if (!hasRoom) {
+        addSystemChatMessage("Your inventory is full. Please make room before picking up more items.");
+        return;
+      }
+
       if (_wsConnected) {
         // Loot ownership: skip if owned by someone else and less than 5s old
         if (drop.ownerId && drop.ownerId !== sessionId) {
@@ -3843,8 +3869,10 @@ function lootDropLocally(drop) {
       if (remaining === drop.qty) {
         // Nothing was added at all — cancel pickup
         drop.pickingUp = false;
+        addSystemChatMessage("Your inventory is full. Please make room before picking up more items.");
         return;
       }
+      addSystemChatMessage("Your inventory is full. Some items could not be picked up.");
       break; // partial pickup — some went in, rest lost (tab full)
     }
     const wzCat = equipWzCategoryFromId(drop.id);

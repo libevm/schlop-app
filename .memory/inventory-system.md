@@ -189,7 +189,11 @@ Drops are synced across all players in the same map via the server.
 - One item per press (C++ `lootenabled` parity)
 - Equip items: non-stackable, added with `invType: "EQUIP"`, assigned free slot
 - Other items: stack if same ID exists in inventory
-- If tab is full (`findFreeSlot` returns -1), pickup is rejected
+- If tab is full (`findFreeSlot` returns -1), pickup is rejected with system chat message:
+  "Your inventory is full. Please make room before picking up more items."
+- Client pre-checks inventory capacity in `tryLootDrop()` before sending `loot_item` to server
+- Server also validates capacity via `canFitItem()` — sends `loot_failed { reason: "inventory_full" }` if full
+- Partial pickup: if some stacks were filled but new slots needed, shows partial message
 
 ## Starter Items
 

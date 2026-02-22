@@ -532,9 +532,11 @@ Possible reasons:
 { "type": "loot_failed", "drop_id": 123, "reason": "owned", "owner_id": "abc", "remaining_ms": 3200 }
 { "type": "loot_failed", "drop_id": 123, "reason": "not_found" }
 { "type": "loot_failed", "drop_id": 123, "reason": "already_looted" }
+{ "type": "loot_failed", "drop_id": 123, "reason": "inventory_full" }
 ```
 - `owned`: another player has loot priority, protection hasn't expired
 - `not_found` / `already_looted`: client should remove drop from groundDrops
+- `inventory_full`: player's inventory tab for this item type has no free slots; drop stays on map
 
 ### Loot Ownership Rules
 - **Reactor/mob drops**: `owner_id` = majority damage dealer. Owner has 5s exclusive pickup.
@@ -639,6 +641,13 @@ Sent when a drop has been on the ground for 180 seconds. Client fades it out ove
 Sent when player requests `jq_reward` but is >200px from the reward NPC.
 Only applies to `requirePlatform: true` JQ maps (Forest of Patience).
 Client shows a random "come closer" phrase in system chat.
+
+### `jq_inventory_full` — Server rejects JQ reward (inventory full)
+```json
+{ "type": "jq_inventory_full" }
+```
+Sent when player requests `jq_reward` but their inventory (EQUIP/CASH tab) has no free slots.
+Player stays on the current map (no warp). Client shows system chat message telling them to drop items.
 
 ### `mob_authority` — Mob authority assignment
 ```json

@@ -109,6 +109,71 @@ export interface WSClientData {
 export const DROP_EXPIRE_MS = 180_000;
 /** How often the server sweeps for expired drops (ms). */
 const DROP_SWEEP_INTERVAL_MS = 5_000;
+/** Maximum inventory slots per tab (must match client INV_MAX_SLOTS). */
+const INV_MAX_SLOTS_PER_TAB = 32;
+
+/**
+ * Determine inventory tab type from item ID prefix.
+ * Matches client-side `inventoryTypeById(id)`.
+ */
+function inventoryTypeByItemId(itemId: number): string {
+  const prefix = Math.floor(itemId / 1_000_000);
+  switch (prefix) {
+    case 1: return "EQUIP";
+    case 2: return "USE";
+    case 3: return "SETUP";
+    case 4: return "ETC";
+    case 5: return "CASH";
+    default: return "ETC";
+  }
+}
+
+/**
+ * Check if the client's inventory has room for an item in the given tab.
+ * Returns true if at least one free slot exists (slot 0..INV_MAX_SLOTS_PER_TAB-1).
+ */
+function hasInventorySpace(client: WSClient, invType: string): boolean {
+  const usedSlots = new Set<number>();
+  for (const it of client.inventory) {
+    if (it.inv_type === invType) usedSlots.add(it.slot);
+  }
+  for (let s = 0; s < INV_MAX_SLOTS_PER_TAB; s++) {
+    if (!usedSlots.has(s)) return true;
+  }
+  return false;
+}
+
+/**
+ * Check if the client's inventory can accommodate a stackable item.
+ * Returns true if the item can be stacked onto existing slots or a free slot exists.
+ * For non-stackable items (EQUIP), just checks for a free slot.
+ */
+function canFitItem(client: WSClient, itemId: number, qty: number): boolean {
+  const invType = inventoryTypeByItemId(itemId);
+  const isEquip = invType === "EQUIP";
+
+  if (isEquip) {
+    return hasInventorySpace(client, invType);
+  }
+
+  // Stackable: check if existing stacks have room, or if a new slot is available
+  // Default slotMax 100 for non-equip items (conservative; client has WZ data for precise values)
+  const slotMax = 100;
+  let remaining = qty;
+
+  for (const it of client.inventory) {
+    if (it.item_id === itemId && it.inv_type === invType) {
+      const space = slotMax - it.qty;
+      if (space > 0) {
+        remaining -= space;
+        if (remaining <= 0) return true;
+      }
+    }
+  }
+
+  // Still need space — check for free slots
+  return hasInventorySpace(client, invType);
+}
 
 export interface MapDrop {
   drop_id: number;
@@ -935,9 +1000,27 @@ export function handleClientMessage(
         }
       }
 
+      // Check inventory capacity before rolling reward
+      // JQ rewards go to EQUIP or CASH tab — check both have room
+      if (!hasInventorySpace(client, "EQUIP") && !hasInventorySpace(client, "CASH")) {
+        sendDirect(client, {
+          type: "jq_inventory_full",
+        });
+        break;
+      }
+
       // Roll 50/50 equipment or cash item
       const reward = rollJqReward();
       const itemName = getItemName(reward.item_id);
+      const rewardInvType = reward.category === "EQUIP" ? "EQUIP" : "CASH";
+
+      // If the specific tab for this reward is full, reject
+      if (!hasInventorySpace(client, rewardInvType)) {
+        sendDirect(client, {
+          type: "jq_inventory_full",
+        });
+        break;
+      }
 
       // Add item to player's inventory
       const invType = reward.category === "EQUIP" ? "EQUIP" : "CASH";
@@ -966,9 +1049,10 @@ export function handleClientMessage(
       }
 
       // Bonus drop: Zakum Helmet (25% chance on Breath of Lava completion)
+      // Only awarded if EQUIP tab has room
       let bonusItemId = 0;
       let bonusItemName = "";
-      if (client.mapId === "280020001" && Math.random() < 0.25) {
+      if (client.mapId === "280020001" && Math.random() < 0.25 && hasInventorySpace(client, "EQUIP")) {
         bonusItemId = 1002357; // Zakum Helmet
         bonusItemName = getItemName(bonusItemId) || "Zakum Helmet";
         const equipMaxSlot = client.inventory
@@ -1165,6 +1249,16 @@ export function handleClientMessage(
           });
           break;
         }
+      }
+
+      // Check inventory capacity before allowing loot
+      if (!canFitItem(client, pendingDrop.item_id, pendingDrop.qty)) {
+        roomManager.sendTo(client, {
+          type: "loot_failed",
+          drop_id: dropId,
+          reason: "inventory_full",
+        });
+        break;
       }
 
       const looted = roomManager.removeDrop(client.mapId, dropId);
