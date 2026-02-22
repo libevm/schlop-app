@@ -28,19 +28,20 @@ The docs UI includes sidebar navigation for markdown files under `docs/`.
 
 ---
 
-## 2026-02-22 15:40 (GMT+11) — Git hash in console log + improved off-screen culling
+## 2026-02-22 15:45 (GMT+11) — Character-anchored remote chat bubbles + git hash log
 
 ### Summary
-- Git commit hash is now logged in the browser console at boot (`[boot] Build: <hash>`).
-- Remote player chat bubbles and name labels use screen-space bounds check (not world-rect), fixing edge-clamped bubbles still appearing for off-screen players.
+- Remote chat bubbles now stay anchored to their character — no viewport clamping. If the character is half off-screen, the bubble is half visible (natural canvas clipping). Fully off-screen bubbles are skipped entirely.
+- Git commit hash logged in console at boot.
 
 ### What changed
+- `client/web/app.js`
+  - `drawRemotePlayerChatBubble`: removed `clampedX` viewport clamping; bubble centered on character anchor; tail always points to character; only fully-off-canvas bubbles skipped
+  - `drawRemotePlayerNameLabel`: removed screen-space guard, clips naturally
+  - `[boot] Build: <hash>` console log at startup
 - `tools/dev/serve-client-online.mjs`
   - resolves `git rev-parse --short HEAD` at startup
-  - injects `window.__BUILD_GIT_HASH__` into HTML alongside existing online config
-- `client/web/app.js`
-  - `[boot] Build: <hash>` console log at startup
-  - `drawRemotePlayerChatBubble` and `drawRemotePlayerNameLabel`: switched to screen-space position check with small margin (±30px horiz, -80/+30px vert)
+  - injects `window.__BUILD_GIT_HASH__` into HTML
 
 ## 2026-02-22 13:21 (GMT+11) — Logs table update for chat send actions
 

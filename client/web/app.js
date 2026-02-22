@@ -2803,8 +2803,6 @@ function showPlayerInfoModal(rp) {
 
 function drawRemotePlayerNameLabel(rp) {
   const screen = worldToScreen(rp.renderX, rp.renderY);
-  if (screen.x < -30 || screen.x > canvasEl.width + 30 ||
-      screen.y < -80 || screen.y > canvasEl.height + 30) return;
   ctx.save();
   ctx.font = "bold 11px 'Dotum', Arial, sans-serif";
   ctx.textAlign = "center";
@@ -2837,10 +2835,6 @@ function drawRemotePlayerNameLabel(rp) {
 function drawRemotePlayerChatBubble(rp) {
   const now = performance.now();
   if (rp.chatBubbleExpires < now || !rp.chatBubble) return;
-  // Skip bubble when the remote player is off-screen (screen-space check)
-  const rpScreen = worldToScreen(rp.renderX, rp.renderY);
-  if (rpScreen.x < -30 || rpScreen.x > canvasEl.width + 30 ||
-      rpScreen.y < -80 || rpScreen.y > canvasEl.height + 30) return;
 
   const bubbleOffsetY = (rp.action === "prone" || rp.action === "proneStab") ? 40 : 70;
   const anchor = worldToScreen(rp.renderX, rp.renderY - bubbleOffsetY);
@@ -2862,10 +2856,19 @@ function drawRemotePlayerChatBubble(rp) {
   }
   const { lines, width, height } = rp._bubbleLayout;
 
-  const clampedX = Math.max(6, Math.min(canvasEl.width - width - 6, anchor.x - width / 2));
+  // Bubble is anchored to the character — no viewport clamping.
+  // It naturally clips at canvas edges when the character is partially off-screen.
+  const bubbleX = Math.round(anchor.x - width / 2);
   const y = anchor.y - height - 16;
 
-  roundRect(ctx, clampedX, y, width, height, 6);
+  // Skip drawing entirely if bubble is fully outside canvas
+  if (bubbleX + width < 0 || bubbleX > canvasEl.width ||
+      y + height + 7 < 0 || y > canvasEl.height) {
+    ctx.restore();
+    return;
+  }
+
+  roundRect(ctx, bubbleX, y, width, height, 6);
   ctx.fillStyle = "rgba(255, 255, 255, 0.94)";
   ctx.fill();
   ctx.strokeStyle = "rgba(60, 80, 120, 0.4)";
@@ -2877,11 +2880,11 @@ function drawRemotePlayerChatBubble(rp) {
   const textBlockHeight = lines.length * CHAT_BUBBLE_LINE_HEIGHT;
   const textOffsetY = (height - textBlockHeight) / 2;
   for (let i = 0; i < lines.length; i++) {
-    ctx.fillText(lines[i], clampedX + CHAT_BUBBLE_HORIZONTAL_PADDING, y + textOffsetY + i * CHAT_BUBBLE_LINE_HEIGHT + CHAT_BUBBLE_LINE_HEIGHT / 2);
+    ctx.fillText(lines[i], bubbleX + CHAT_BUBBLE_HORIZONTAL_PADDING, y + textOffsetY + i * CHAT_BUBBLE_LINE_HEIGHT + CHAT_BUBBLE_LINE_HEIGHT / 2);
   }
 
   // Tail
-  const tailX = Math.max(clampedX + 8, Math.min(clampedX + width - 8, anchor.x));
+  const tailX = anchor.x;
   ctx.beginPath();
   ctx.moveTo(tailX - 6, y + height);
   ctx.lineTo(tailX + 6, y + height);

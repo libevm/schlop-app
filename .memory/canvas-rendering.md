@@ -778,11 +778,11 @@ Items can be dropped on the map and looted by the player.
   Dotum font. Positioned above player head. **Prone-aware**: Y offset is 70px above feet
   normally, 40px when `action === "prone"` or `"proneStab"` (C++ parity: `chatballoon.draw(absp - Point(0, 85))`
   is a fixed offset from feet — shorter prone sprite means bubble naturally sits lower).
-- **Remote chat bubble + name label visibility**: both `drawRemotePlayerChatBubble(rp)` and
-  `drawRemotePlayerNameLabel(rp)` exit early when the remote player's screen-space position
-  is outside the canvas bounds (with small margin: ±30px horizontal, -80px top, +30px bottom).
-  Uses `worldToScreen()` screen-space check — more accurate than world-rect visibility for
-  edge-clamped UI elements that would otherwise render at viewport edges for off-screen players.
+- **Remote chat bubble anchoring**: `drawRemotePlayerChatBubble(rp)` positions the bubble
+  centered on the character's screen-space anchor — no viewport clamping. The bubble naturally
+  clips at canvas edges when the character is partially off-screen (half-visible character →
+  half-visible bubble). Only skipped when the bubble rect is fully outside the canvas.
+  The tail always points straight down to the character anchor (no clamping).
 - **Status bar** (`drawStatusBar()`): frosted dark background, gold level text with shadow (Dotum font),
   HP (red gradient + gloss) and MP (blue gradient + gloss) gauge bars.
   Uses `player.hp/maxHp/mp/maxMp/exp/maxExp/level/job`. Default: Lv1 Beginner, 50/50 HP, 5/5 MP.
