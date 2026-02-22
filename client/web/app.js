@@ -2835,6 +2835,7 @@ function drawRemotePlayerNameLabel(rp) {
 function drawRemotePlayerChatBubble(rp) {
   const now = performance.now();
   if (rp.chatBubbleExpires < now || !rp.chatBubble) return;
+  if (!isWorldRectVisible(rp.renderX, rp.renderY, 1, 1, 0)) return;
 
   const bubbleOffsetY = (rp.action === "prone" || rp.action === "proneStab") ? 40 : 70;
   const anchor = worldToScreen(rp.renderX, rp.renderY - bubbleOffsetY);

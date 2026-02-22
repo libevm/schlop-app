@@ -3,6 +3,13 @@
 Last synced: 2026-02-22T13:21:00+11:00
 Status: ✅ Synced
 
+## 2026-02-22 update (remote off-screen chat bubble culling)
+- Updated `client/web/app.js` in `drawRemotePlayerChatBubble(rp)`:
+  - added viewport visibility guard (`isWorldRectVisible(rp.renderX, rp.renderY, 1, 1, 0)`),
+  - remote chat bubbles no longer render when the speaking character is off-screen.
+- Updated `.memory/canvas-rendering.md` with the new remote bubble visibility rule.
+- Added reference scan snapshot: `.memory/reference-scan-2026-02-22-chat-bubble-offscreen.md`.
+
 ## 2026-02-22 update (logs table: send_message action)
 - Updated server chat logging in `server/src/ws.ts`:
   - chat events now append `send_message: {text}` to `logs` table.

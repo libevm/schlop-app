@@ -28,6 +28,16 @@ The docs UI includes sidebar navigation for markdown files under `docs/`.
 
 ---
 
+## 2026-02-22 15:31 (GMT+11) — Hide remote chat bubbles when speaker is off-screen
+
+### Summary
+Remote player chat bubbles are now skipped when the speaking character is outside the active viewport.
+
+### What changed
+- `client/web/app.js`
+  - `drawRemotePlayerChatBubble(rp)` now returns early unless `isWorldRectVisible(rp.renderX, rp.renderY, 1, 1, 0)` is true.
+  - Prevents edge-clamped bubbles from appearing when the sender is fully off-screen.
+
 ## 2026-02-22 13:21 (GMT+11) — Logs table update for chat send actions
 
 ### Summary
