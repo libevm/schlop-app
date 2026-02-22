@@ -28,6 +28,21 @@ The docs UI includes sidebar navigation for markdown files under `docs/`.
 
 ---
 
+## 2026-02-22 11:49 (GMT+11) — Admin UI implementation planning (`client:admin-ui` + server admin API)
+
+### Summary
+Added a concrete implementation plan in `.memory/admin-ui-implementation-plan.md` for a GM-only admin dashboard launched via `bun run client:admin-ui`, backed by new `/api/admin/*` routes on the same `bun run server` process.
+
+### Why it matters
+- Aligns requested admin architecture with existing multiplayer server process.
+- Includes explicit non-locking SQLite strategy (WAL + dedicated read/write behavior).
+- Defines auth requirements (username/password + GM-only), delivery phases, tests, and docs updates.
+
+### Files updated
+- `.memory/admin-ui-implementation-plan.md`
+- `.memory/reference-scan-2026-02-22-admin-ui.md`
+- `.memory/sync-status.md`
+
 ## 2026-02-21 20:00 (GMT+11) — Tailwind v4 CSS Build Fix (online/offline startup)
 
 ### Summary

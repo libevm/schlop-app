@@ -1,7 +1,19 @@
 # .memory Sync Status
 
-Last synced: 2026-02-22T07:15:00+11:00
+Last synced: 2026-02-22T11:49:00+11:00
 Status: ✅ Synced
+
+## 2026-02-22 update (admin-ui plan rewrite for `client:admin-ui`)
+- Rewrote `.memory/admin-ui-implementation-plan.md` to match the requested architecture:
+  - `bun run client:admin-ui` command as the admin dashboard entrypoint,
+  - admin dashboard connecting to the same `bun run server` backend via `/api/admin/*`,
+  - GM-only username/password login and protected admin sessions,
+  - non-locking DB strategy (WAL + dedicated reader/writer behavior),
+  - incremental PR delivery sequence, tests, and documentation requirements.
+- Updated `.memory/reference-scan-2026-02-22-admin-ui.md` with a follow-up scan:
+  - confirmed AGENTS reference paths remain unavailable on this machine,
+  - documented current standalone admin-ui baseline in `server/src/admin-ui.ts`,
+  - documented missing pieces needed for the new integrated server + client admin-ui design.
 
 ## 2026-02-22 update (append-only action logs table)
 - Added `logs` table to SQLite database (db.ts): `id, username, timestamp, action`
@@ -31,6 +43,8 @@ Status: ✅ Synced
 | `client-server.md` | Client-server architecture: session/auth model, character state schema, WebSocket overview, V2 map set, resource pipeline |
 | `shared-schema.md` | **Wire protocol source of truth**: all REST and WebSocket message types, fields, examples, room model, C++ parity notes |
 | `implementation-plan.md` | **5-phase implementation plan** with step-by-step instructions, code snippets, file paths, test procedures |
+| `admin-ui-implementation-plan.md` | Step-by-step implementation plan for GM-only DB admin UI command + auth + non-locking strategy |
+| `reference-scan-2026-02-22-admin-ui.md` | Pre-work read-only scan snapshot for admin-ui task (references + current repo findings) |
 | `game-design.md` | High-level game design notes and feature goals |
 | `tech-stack.md` | Technology choices (partially stale — actual stack is vanilla JS + raw Bun.serve) |
 | `cpp-port-architecture-snapshot.md` | C++ reference client architecture snapshot (read-only reference) |
