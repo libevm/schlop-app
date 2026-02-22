@@ -1,7 +1,46 @@
 # .memory Sync Status
 
-Last synced: 2026-02-22T12:41:00+11:00
+Last synced: 2026-02-22T13:14:00+11:00
 Status: ✅ Synced
+
+## 2026-02-22 update (mobile controls explicit 25px cluster margins)
+- Refined edge spacing in `client/web/app.js` to explicit per-cluster margins:
+  - D-pad uses `margin-left: 25px`
+  - A/B cluster uses `margin-right: 25px`
+- Overlay container horizontal padding reset to `0` so margin is controlled directly by control clusters.
+
+## 2026-02-22 update (mobile controls side margin tweak)
+- Adjusted touch overlay horizontal padding in `client/web/app.js` to `25px` per side.
+- Result: both D-pad (left cluster) and A/B buttons (right cluster) keep ~25px margin from screen edges.
+
+## 2026-02-22 update (mobile layout follow-up: lower D-pad, raise A/B, hide indicators)
+- Updated mobile touch controls in `client/web/app.js`:
+  - pushed D-pad as low as possible (lower overlay anchor + stronger negative D-pad bottom margin),
+  - raised right action cluster (A/B) upward using extra bottom margin,
+  - removed visible button indicators/text from on-screen controls (kept `aria-label` for accessibility).
+
+## 2026-02-22 update (mobile transparency + lower D-pad tweak)
+- Updated mobile touch controls in `client/web/app.js`:
+  - moved D-pad further downward (`overlay bottom` lowered + larger negative D-pad bottom margin),
+  - set button fills to ~90% transparent (idle alpha ~0.10; pressed alpha ~0.20).
+
+## 2026-02-22 update (mobile button label fix)
+- Fixed mobile action button labels in `client/web/app.js`:
+  - jump button now displays `A`,
+  - attack button now displays `B`.
+
+## 2026-02-22 update (mobile overlay placement/transparency tweak)
+- Tuned mobile touch overlay in `client/web/app.js`:
+  - moved D-pad lower on screen (`bottom` reduced + D-pad negative bottom margin),
+  - increased transparency of button fills (idle ~55% alpha, pressed ~65% alpha).
+- Change targets thumb comfort and better world visibility through controls.
+
+## 2026-02-22 update (mobile touch overlay style/layout follow-up)
+- Updated mobile online controls per request:
+  - controls now semi-opaque at ~80% (no glass/blur effect),
+  - overlay anchored with minimal horizontal padding to push controls far left/right,
+  - right action buttons relabeled and remapped to `A` (jump) and `B` (attack).
+- Updated `README.md` control hint and `.memory/client-server.md` movement-touch description.
 
 ## 2026-02-22 update (mobile touch overlay UX pass)
 - Optimized `client:online` mobile touch controls for thumb reach in `client/web/app.js`:

@@ -223,7 +223,7 @@ Controls:
 - while attached use `↑` / `↓` to climb
 - while on rope/ladder, hold `←` / `→` then press `Space` to jump off sideways (no horizontal ladder walk)
 - `↓` (or `S`) crouch (`prone`) when grounded
-- on mobile in `client:online`, touch controls overlay appears automatically (arrow pad + `J` jump + `A` attack)
+- on mobile in `client:online`, touch controls overlay appears automatically (arrow pad + `A` jump + `B` attack)
 
 ---
 

@@ -548,11 +548,10 @@ allClients: Map<sessionId, WSClient>
 - `moveLeft`, `moveRight`, `moveUp`, `moveDown` (default: arrow keys)
 - `getGameplayKeys()` builds key set dynamically from current keybinds
 - Online mobile clients (`window.__MAPLE_ONLINE__` + mobile/coarse-pointer detect) spawn an on-screen touch overlay optimized for thumb reach:
-  - larger semi-transparent controls with blur/backdrop,
-  - bottom-safe-area positioning,
+  - larger semi-opaque controls (80% opacity, no glass/blur effect),
+  - bottom-safe-area positioning with minimal side padding (pushed far left/right),
   - D-pad arrows map to `runtime.input.left/right/up/down`,
-  - `J` (larger lower-right) maps to jump hold/queue,
-  - `A` (upper-right) triggers `performAttack()`.
+  - right-side buttons use classic labels: `A` = jump (larger lower-right), `B` = attack (upper-right).
 
 ---
 

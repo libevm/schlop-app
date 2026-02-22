@@ -13874,37 +13874,35 @@ function setupMobileTouchControls() {
     "position:absolute",
     "left:0",
     "right:0",
-    "bottom:calc(env(safe-area-inset-bottom, 0px) + 14px)",
+    "bottom:calc(env(safe-area-inset-bottom, 0px) - 34px)",
     "z-index:120000",
     "display:flex",
     "justify-content:space-between",
     "align-items:flex-end",
-    "padding:0 12px",
+    "padding:0",
     "pointer-events:none",
     "user-select:none",
   ].join(";");
 
   const dpad = document.createElement("div");
-  dpad.style.cssText = "display:grid;grid-template-columns:64px 64px 64px;grid-template-rows:64px 64px 64px;gap:8px;pointer-events:auto;touch-action:none;";
+  dpad.style.cssText = "display:grid;grid-template-columns:64px 64px 64px;grid-template-rows:64px 64px 64px;gap:8px;pointer-events:auto;touch-action:none;margin-left:25px;margin-bottom:-52px;";
 
   const actions = document.createElement("div");
-  actions.style.cssText = "display:flex;flex-direction:column;align-items:flex-end;gap:10px;pointer-events:auto;touch-action:none;margin-right:2px;";
+  actions.style.cssText = "display:flex;flex-direction:column;align-items:flex-end;gap:10px;pointer-events:auto;touch-action:none;margin-right:25px;margin-bottom:24px;";
 
   function mkBtn(label, gridPos = "") {
     const b = document.createElement("button");
     b.type = "button";
-    b.textContent = label;
+    b.setAttribute("aria-label", label);
+    b.textContent = "";
     b.style.cssText = [
       "width:64px",
       "height:64px",
       "border-radius:16px",
       "border:1px solid rgba(255,255,255,0.28)",
-      "background:rgba(15,23,42,0.46)",
-      "color:rgba(226,232,240,0.96)",
-      "font-weight:700",
-      "font-size:22px",
-      "backdrop-filter:blur(6px)",
-      "box-shadow:0 6px 18px rgba(0,0,0,0.28)",
+      "background:rgba(15,23,42,0.10)",
+      "color:transparent",
+      "font-size:0",
       "touch-action:none",
     ].join(";");
     if (gridPos) b.style.gridArea = gridPos;
@@ -13916,11 +13914,11 @@ function setupMobileTouchControls() {
   const downBtn = mkBtn("↓", "2 / 2");
   const rightBtn = mkBtn("→", "2 / 3");
 
-  const jumpBtn = mkBtn("J");
+  const jumpBtn = mkBtn("A");
   jumpBtn.style.width = "76px";
   jumpBtn.style.height = "76px";
   jumpBtn.style.borderRadius = "999px";
-  const attackBtn = mkBtn("A");
+  const attackBtn = mkBtn("B");
   attackBtn.style.width = "72px";
   attackBtn.style.height = "72px";
   attackBtn.style.borderRadius = "999px";
@@ -13982,8 +13980,8 @@ function setupMobileTouchControls() {
 
   function setPressedVisual(button, pressed) {
     button.style.background = pressed
-      ? "rgba(59,130,246,0.42)"
-      : "rgba(15,23,42,0.46)";
+      ? "rgba(59,130,246,0.20)"
+      : "rgba(15,23,42,0.10)";
     button.style.transform = pressed ? "scale(0.96)" : "scale(1)";
   }
 

@@ -28,6 +28,84 @@ The docs UI includes sidebar navigation for markdown files under `docs/`.
 
 ---
 
+## 2026-02-22 13:14 (GMT+11) — Mobile controls explicit 25px edge margins
+
+### Summary
+Updated touch control spacing to use explicit per-cluster margins from screen edges.
+
+### What changed
+- `client/web/app.js`
+  - D-pad cluster: `margin-left: 25px`
+  - A/B cluster: `margin-right: 25px`
+  - overlay container horizontal padding reset to `0`
+
+## 2026-02-22 13:09 (GMT+11) — Mobile controls edge margin tweak
+
+### Summary
+Adjusted on-screen touch control layout to keep both control clusters away from screen edges.
+
+### What changed
+- `client/web/app.js`
+  - set mobile touch overlay horizontal padding to `25px`
+  - gives ~25px edge margin for both D-pad and A/B clusters
+
+## 2026-02-22 13:06 (GMT+11) — Mobile controls layout follow-up
+
+### Summary
+Applied requested positioning/style tweaks:
+- D-pad moved even lower,
+- A/B cluster moved higher,
+- visible indicators removed from touch buttons.
+
+### What changed
+- `client/web/app.js`
+  - lowered global touch overlay and D-pad placement
+  - added upward offset for right action cluster
+  - removed button text/icons while preserving `aria-label`
+
+## 2026-02-22 13:00 (GMT+11) — Mobile controls: lower D-pad + 90% transparent buttons
+
+### Summary
+Per request, moved arrow controls lower and increased transparency significantly.
+
+### What changed
+- `client/web/app.js`
+  - lowered overlay anchor (`bottom`) and pushed D-pad further down
+  - set idle button background alpha to ~0.10 (≈90% transparent)
+  - set pressed background alpha to ~0.20
+
+## 2026-02-22 12:56 (GMT+11) — Mobile button label correction
+
+### Summary
+Corrected on-screen action button labels to match requested mapping:
+- `A` = jump
+- `B` = attack
+
+### File changed
+- `client/web/app.js`
+
+## 2026-02-22 12:53 (GMT+11) — Mobile controls tweak (lower D-pad + more transparent)
+
+### Summary
+Adjusted on-screen mobile controls to improve thumb comfort and visibility:
+- D-pad moved lower,
+- button backgrounds made more transparent.
+
+### What changed
+- `client/web/app.js`
+  - overlay bottom offset reduced
+  - D-pad shifted downward relative to action buttons
+  - idle alpha reduced to ~55%, pressed alpha ~65%
+
+## 2026-02-22 12:49 (GMT+11) — Mobile controls polish (`A` jump / `B` attack, opaque style)
+
+### Summary
+Adjusted the online mobile controls to match requested layout/style:
+- no glass effect,
+- semi-opaque controls (~80%),
+- controls pushed farther to screen edges,
+- right action buttons relabeled/remapped to `A` = jump and `B` = attack.
+
 ## 2026-02-22 12:41 (GMT+11) — Mobile touch overlay UX tuning (thumb reach + semi-transparent look)
 
 ### Summary
