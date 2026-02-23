@@ -33,10 +33,18 @@ bun run client:online
 bun run client:admin-ui
 ```
 
+### Hot reload (dev mode)
+
+`bun run client:online` watches `client/web/` for `.js`, `.css`, and `.html` changes:
+- **CSS changes** → hot-swapped without page reload (stylesheet link cache-bust)
+- **JS / HTML changes** → full page reload
+
+Hot reload is automatic in dev mode. Disabled in `--prod`.
+
 ### Production mode
 
 ```bash
-bun run client:online:prod   # minified JS + gzipped assets
+bun run client:online:prod   # minified JS + gzipped assets (no hot-reload)
 ```
 
 ### Caddy reverse proxy

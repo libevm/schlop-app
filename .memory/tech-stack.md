@@ -208,9 +208,14 @@ These can be added later only if profiling proves they are needed.
 - Custom middleware: character-api.ts, pow.ts, map-data.ts, reactor-system.ts
 
 ### Client Servers (`tools/dev/`)
-- **serve-client-offline.mjs** — static file server (Bun.serve)
 - **serve-client-online.mjs** — static files + API/WS proxy to game server
   - `--prod` mode: JS minification (Bun.build), gzip pre-compression, ETag support
+  - **Dev mode**: hot-reload via file watcher + `/__hmr` WebSocket
+    - Watches `client/web/` for `.js`/`.css`/`.html` changes (80ms debounce)
+    - CSS changes: hot-swapped without page reload (stylesheet link cache-bust)
+    - JS/HTML changes: full page reload
+    - HMR client script auto-injected into HTML, reconnects with exponential backoff
+    - JS/CSS served with `no-cache` in dev mode for instant pickup
 
 ### Packages
 - **`packages/shared-schemas/`** — workspace package (mostly scaffolding, zod schemas not heavily used)

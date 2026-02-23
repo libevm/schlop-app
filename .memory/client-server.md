@@ -8,19 +8,13 @@
 
 ## Client Modes
 
-### Offline (`bun run client:offline`)
-- Builds CSS via Tailwind CLI then starts static file server
-- No game server dependency — all state local: in-memory + localStorage
-- Serves `client/web/`, `/resources/`, `/resourcesv2/`
-- Default port: 5173
-- File: `tools/dev/serve-client-offline.mjs`
-
 ### Online (`bun run client:online`)
-- Builds CSS via Tailwind CLI then starts hardened static file server + API proxy
+- Starts hardened static file server + API proxy + Tailwind CSS watcher + hot-reload
 - Designed to run behind Caddy (or similar reverse proxy) for TLS + compression
 - Injects `window.__MAPLE_ONLINE__ = true` and `window.__MAPLE_SERVER_URL__` into HTML
 - Proxies `/api/*` requests to game server (default `http://127.0.0.1:5200`)
 - WebSocket proxy: `/ws` → game server WS (buffered during upstream connect)
+- HMR WebSocket: `/__hmr` → dev-only live-reload (CSS hot-swap, JS/HTML full reload)
 - Client detects online mode via `window.__MAPLE_ONLINE__` flag
 - File: `tools/dev/serve-client-online.mjs`
 - Env vars:
@@ -59,15 +53,13 @@
 - Requires GM username/password login (claimed account)
 - File: `tools/dev/serve-admin-ui.mjs`
 
-### Legacy (`bun run client:web`)
-- Alias for `client:offline` (backward compatible)
-
 ### Tailwind CSS Build Pipeline
 - Source: `client/src/styles/app.css` — Tailwind v4 imports (theme + utilities, no preflight) + all custom CSS
-- Output: `client/web/styles.css` — built by `@tailwindcss/cli`, minified
+- Output: `client/web/styles.css` — built by `@tailwindcss/cli`
 - `@source` directives scan `client/web/index.html` and `client/web/app.js` for class usage
-- Scripts: `bun run --cwd client css` (one-shot), `bun run --cwd client css:watch` (dev)
-- `web`, `offline`, `online` scripts auto-build CSS before starting server
+- Dev mode: Tailwind watcher spawned automatically by `serve-client-online.mjs` (no `--minify`)
+- Prod mode: one-shot minified build via `bun run css` before server start
+- Scripts: `bun run --cwd client css` (one-shot minified), `bun run --cwd client css:watch` (dev)
 - CDN `<script src="https://cdn.tailwindcss.com">` removed from index.html
 
 ---
@@ -82,6 +74,10 @@
 - Challenge TTL: 60 seconds. Max pending: 10,000.
 - Prevents bot/spam account creation (~1s solve time on modern browser at 20 bits)
 - Client shows a sliding progress bar overlay during solving
+- **Server-unreachable handling**: if fetch to `/api/pow/challenge` or `/api/pow/verify` fails
+  (network error or bad response), the PoW overlay shows "Server is not reachable" with a Retry button.
+  User clicks Retry → re-attempts from the top. No uncaught errors, no page reload needed.
+  Progress bar track is hidden during error state, restored on retry.
 - `valid_sessions` table tracks all server-issued sessions (PoW or login)
 - Sessions expire after 7 days of inactivity (`last_used_at` column)
 - Server purges expired sessions hourly via `purgeExpiredSessions()`

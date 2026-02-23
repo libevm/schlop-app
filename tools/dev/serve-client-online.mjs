@@ -14,9 +14,9 @@
  *   ALLOWED_ORIGIN       (default "" — reflect request origin; set to lock down CORS)
  *   PROXY_TIMEOUT_MS     (default 10000)
  */
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { execSync } from "node:child_process";
-import { extname, join, normalize } from "node:path";
+import { existsSync, readFileSync, readdirSync, statSync, watch } from "node:fs";
+import { execSync, spawn } from "node:child_process";
+import { extname, join, normalize, relative } from "node:path";
 import { gzipSync } from "node:zlib";
 
 /* ─── Config ──────────────────────────────────────────────────────────────── */
@@ -31,6 +31,94 @@ const proxyTimeoutMs = Number(process.env.PROXY_TIMEOUT_MS ?? "10000");
 const repoRoot = normalize(join(import.meta.dir, "..", ".."));
 const webRoot = join(repoRoot, "client", "web");
 const resourcesV2Root = join(repoRoot, "resourcesv2");
+
+/* ─── Hot-reload (dev mode only) ───────────────────────────────────────────── */
+
+/** @type {Set<import("bun").ServerWebSocket>} */
+const hmrClients = new Set();
+const HMR_WATCH_EXTENSIONS = new Set([".js", ".css", ".html"]);
+
+/** Debounced file-change → reload broadcast */
+let _hmrTimeout = null;
+function scheduleHmrReload(filePath) {
+  if (_hmrTimeout) clearTimeout(_hmrTimeout);
+  _hmrTimeout = setTimeout(() => {
+    _hmrTimeout = null;
+    const ext = extname(filePath).toLowerCase();
+    const payload = JSON.stringify({ type: "reload", file: relative(webRoot, filePath), ext });
+    for (const ws of hmrClients) {
+      try { ws.send(payload); } catch { hmrClients.delete(ws); }
+    }
+    if (hmrClients.size > 0) {
+      console.log(`   🔄 ${relative(webRoot, filePath)} changed → ${hmrClients.size} client(s) reloading`);
+    }
+  }, 80); // 80ms debounce — batch rapid saves
+}
+
+if (!isProd) {
+  // Watch client/web/ for .js/.css/.html changes (recursive)
+  try {
+    const watcher = watch(webRoot, { recursive: true }, (eventType, filename) => {
+      if (!filename) return;
+      const ext = extname(filename).toLowerCase();
+      if (!HMR_WATCH_EXTENSIONS.has(ext)) return;
+      scheduleHmrReload(join(webRoot, filename));
+    });
+    // Prevent watcher from keeping process alive if everything else closes
+    watcher.unref?.();
+  } catch (err) {
+    console.warn("   ⚠️  File watcher failed (hot-reload disabled):", err.message);
+  }
+
+  // Tailwind CSS watcher — regenerates web/styles.css on source changes.
+  // The file watcher above detects that and hot-swaps CSS in the browser.
+  const cssIn = join(repoRoot, "client", "src", "styles", "app.css");
+  const cssOut = join(webRoot, "styles.css");
+  const twBin = join(repoRoot, "client", "node_modules", ".bin", "tailwindcss");
+  const tw = spawn(twBin, ["-i", cssIn, "-o", cssOut, "--watch"], {
+    stdio: ["ignore", "ignore", "inherit"],  // suppress stdout (noisy), show stderr (errors)
+    cwd: repoRoot,
+  });
+  tw.unref();
+  process.on("exit", () => { try { tw.kill(); } catch {} });
+}
+
+/** Small inline script injected into HTML to connect to the HMR WebSocket */
+const hmrClientScript = `
+<script>
+(function() {
+  if (window.__hmrConnected) return;
+  window.__hmrConnected = true;
+  var retries = 0;
+  function connect() {
+    var ws = new WebSocket("ws://" + location.host + "/__hmr");
+    ws.onmessage = function(e) {
+      try {
+        var msg = JSON.parse(e.data);
+        if (msg.type === "reload") {
+          console.log("[HMR] " + msg.file + " changed, reloading…");
+          if (msg.ext === ".css") {
+            // Hot-swap CSS without full page reload
+            document.querySelectorAll('link[rel="stylesheet"]').forEach(function(link) {
+              var href = link.href.split("?")[0];
+              link.href = href + "?t=" + Date.now();
+            });
+          } else {
+            location.reload();
+          }
+        }
+      } catch {}
+    };
+    ws.onopen = function() { retries = 0; console.log("[HMR] connected"); };
+    ws.onclose = function() {
+      retries++;
+      var delay = Math.min(1000 * Math.pow(2, retries), 10000);
+      setTimeout(connect, delay);
+    };
+  }
+  connect();
+})();
+</script>`;
 
 /* ─── Git hash (resolved once at startup) ─────────────────────────────────── */
 let gitHash = "unknown";
@@ -158,6 +246,8 @@ function getContentType(path) {
  */
 function getCacheControl(pathname, ext) {
   if (ext === ".html") return "no-cache";
+  // Dev mode: no caching for JS/CSS so hot-reload always picks up fresh files
+  if (!isProd && (ext === ".js" || ext === ".css")) return "no-cache";
   if (pathname.startsWith("/resourcesv2/")) {
     return "public, max-age=604800, immutable";
   }
@@ -356,6 +446,10 @@ function handleRequest(request) {
 
     let html = readFileSync(htmlPath, "utf-8");
     html = html.replace("</head>", `${onlineConfigScript}\n</head>`);
+    // Inject HMR client in dev mode
+    if (!isProd) {
+      html = html.replace("</body>", `${hmrClientScript}\n</body>`);
+    }
 
     const headers = new Headers({
       "content-type": "text/html; charset=utf-8",
@@ -405,9 +499,17 @@ function startServer(startPort, attempts = 10) {
         fetch(request, server) {
           const url = new URL(request.url);
 
+          // HMR WebSocket (dev mode only)
+          if (!isProd && url.pathname === "/__hmr") {
+            if (server.upgrade(request, { data: { type: "hmr" } })) {
+              return undefined;
+            }
+            return new Response("HMR WebSocket upgrade failed", { status: 400 });
+          }
+
           // WebSocket proxy — upgrade and relay to game server
           if (url.pathname === "/ws") {
-            if (server.upgrade(request, { data: {} })) {
+            if (server.upgrade(request, { data: { type: "game" } })) {
               return undefined;
             }
             const headers = new Headers({ "content-type": "text/plain" });
@@ -423,6 +525,10 @@ function startServer(startPort, attempts = 10) {
         },
         websocket: {
           open(ws) {
+            if (ws.data.type === "hmr") {
+              hmrClients.add(ws);
+              return;
+            }
             // Connect to game server WS
             const target = gameServerUrl.replace(/^http/, "ws") + "/ws";
             const upstream = new WebSocket(target);
@@ -449,6 +555,7 @@ function startServer(startPort, attempts = 10) {
             });
           },
           message(ws, message) {
+            if (ws.data.type === "hmr") return; // HMR clients don't send meaningful messages
             const upstream = ws.data.upstream;
             if (!upstream) return;
             if (ws.data.buffered) {
@@ -459,6 +566,10 @@ function startServer(startPort, attempts = 10) {
             }
           },
           close(ws, code, reason) {
+            if (ws.data.type === "hmr") {
+              hmrClients.delete(ws);
+              return;
+            }
             const upstream = ws.data.upstream;
             if (upstream && upstream.readyState === WebSocket.OPEN) {
               const safeCode = (code === 1000 || (code >= 3000 && code <= 4999)) ? code : 1000;
@@ -486,6 +597,7 @@ function startServer(startPort, attempts = 10) {
 const server = startServer(requestedPort);
 console.log(`🍄 Shlop ONLINE client running at http://${host}:${server.port}`);
 console.log(`   Mode: online${isProd ? " (PRODUCTION — minified + gzip)" : ""} (game server: ${gameServerUrl})`);
+if (!isProd) console.log("   🔄 Hot-reload: watching client/web/ for .js/.css/.html changes");
 console.log("   API proxy: /api/* → game server");
 console.log(`   WebSocket proxy: /ws → ${gameServerUrl.replace(/^http/, "ws")}/ws`);
 console.log(`   Proxy timeout: ${proxyTimeoutMs}ms`);

@@ -256,28 +256,81 @@ function _showPow(msg) {
 function _hidePow() { _powOverlay?.classList.add("hidden"); }
 
 async function obtainSessionViaPow() {
-  console.log("[pow] Requesting challenge…");
-  _showPow("Connecting…");
-  const chResp = await fetch("/api/pow/challenge");
-  const chData = await chResp.json();
-  if (!chData.ok) { _hidePow(); throw new Error("Failed to get PoW challenge: " + (chData.error || "unknown")); }
+  while (true) {
+    console.log("[pow] Requesting challenge…");
+    _showPow("Connecting…");
 
-  _showPow("Establishing session…");
-  const nonce = await solvePoW(chData.challenge, chData.difficulty);
+    let chResp, chData;
+    try {
+      chResp = await fetch("/api/pow/challenge");
+      chData = await chResp.json();
+    } catch (err) {
+      console.error("[pow] Server unreachable:", err);
+      const retry = await _showPowError("Server is not reachable");
+      if (retry) continue;
+    }
+    if (!chData?.ok) {
+      console.error("[pow] Challenge failed:", chData);
+      const retry = await _showPowError("Failed to connect to server");
+      if (retry) continue;
+    }
 
-  _showPow("Verifying…");
-  console.log("[pow] Submitting solution…");
-  const vResp = await fetch("/api/pow/verify", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ challenge: chData.challenge, nonce }),
+    _showPow("Establishing session…");
+    const nonce = await solvePoW(chData.challenge, chData.difficulty);
+
+    _showPow("Verifying…");
+    console.log("[pow] Submitting solution…");
+    let vResp, vData;
+    try {
+      vResp = await fetch("/api/pow/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ challenge: chData.challenge, nonce }),
+      });
+      vData = await vResp.json();
+    } catch (err) {
+      console.error("[pow] Verify request failed:", err);
+      const retry = await _showPowError("Server is not reachable");
+      if (retry) continue;
+    }
+    if (!vData?.ok) {
+      console.error("[pow] Verification failed:", vData);
+      const retry = await _showPowError("Session verification failed");
+      if (retry) continue;
+    }
+
+    console.log("[pow] Session obtained: " + vData.session_id.slice(0, 8) + "…");
+    _hidePow();
+    return vData.session_id;
+  }
+}
+
+/**
+ * Show an error message on the PoW overlay with a Retry button.
+ * Returns a Promise that resolves to true when the user clicks Retry.
+ */
+function _showPowError(message) {
+  return new Promise((resolve) => {
+    if (_powLabel) {
+      _powLabel.innerHTML = `${message}<br><button id="pow-retry-btn" style="
+        margin-top: 14px; padding: 8px 28px; font-size: 14px;
+        background: rgba(255,255,255,0.12); color: #fff; border: 1px solid rgba(255,255,255,0.25);
+        border-radius: 6px; cursor: pointer; font-family: inherit;
+      ">Retry</button>`;
+    }
+    _powOverlay?.classList.remove("hidden");
+    // Hide the progress bar track while showing error
+    const track = _powOverlay?.querySelector(".pow-track");
+    if (track) track.style.display = "none";
+
+    const btn = document.getElementById("pow-retry-btn");
+    if (btn) {
+      btn.addEventListener("click", () => {
+        if (track) track.style.display = "";
+        resolve(true);
+      }, { once: true });
+    }
   });
-  const vData = await vResp.json();
-  if (!vData.ok) { _hidePow(); throw new Error("PoW verification failed: " + (vData.error || "unknown")); }
-
-  console.log("[pow] Session obtained: " + vData.session_id.slice(0, 8) + "…");
-  _hidePow();
-  return vData.session_id;
 }
 
 // Some map IDs are absent in the extracted client dataset. Redirect these to
@@ -14767,11 +14820,19 @@ window.addEventListener("beforeunload", () => {
 
   // If the server rejected our session (expired/invalid), get a new one via PoW
   if (window.__MAPLE_ONLINE__ && !savedCharacter && sessionId) {
-    const checkResp = await fetch("/api/character/claimed", {
-      headers: { "Authorization": "Bearer " + sessionId },
-    });
-    if (checkResp.status === 401) {
-      console.log("[boot] Session rejected by server — performing proof-of-work…");
+    try {
+      const checkResp = await fetch("/api/character/claimed", {
+        headers: { "Authorization": "Bearer " + sessionId },
+      });
+      if (checkResp.status === 401) {
+        console.log("[boot] Session rejected by server — performing proof-of-work…");
+        localStorage.removeItem(SESSION_KEY);
+        sessionId = await obtainSessionViaPow();
+        localStorage.setItem(SESSION_KEY, sessionId);
+      }
+    } catch (err) {
+      console.error("[boot] Session check failed (server unreachable):", err);
+      // Force re-auth via PoW (which has its own retry UI)
       localStorage.removeItem(SESSION_KEY);
       sessionId = await obtainSessionViaPow();
       localStorage.setItem(SESSION_KEY, sessionId);

@@ -3,13 +3,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "css": "bunx @tailwindcss/cli -i src/styles/app.css -o web/styles.css --minify",
-    "css:watch": "bunx @tailwindcss/cli -i src/styles/app.css -o web/styles.css --watch",
-    "online": "bun install && bun run css && bun run ../tools/dev/serve-client-online.mjs",
-    "online:prod": "bun install && bun run css && bun run ../tools/dev/serve-client-online.mjs --prod",
+    "css": "tailwindcss -i src/styles/app.css -o web/styles.css --minify",
+    "css:watch": "tailwindcss -i src/styles/app.css -o web/styles.css --watch",
+    "online": "bun run ../tools/dev/serve-client-online.mjs",
+    "online:prod": "bun run css && bun run ../tools/dev/serve-client-online.mjs --prod",
     "admin-ui": "bun run ../tools/dev/serve-admin-ui.mjs"
   },
-  "devDependencies": {
+  "dependencies": {
     "@tailwindcss/cli": "^4.2.0",
     "tailwindcss": "^4.2.0"
   }

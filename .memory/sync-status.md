@@ -1,7 +1,28 @@
 # .memory Sync Status
 
-Last synced: 2026-02-22T15:45:00+11:00
+Last synced: 2026-02-23T12:45:00+11:00
 Status: ✅ Synced
+
+## 2026-02-23 update (PoW server-unreachable error screen)
+- **`client/web/app.js`**: `obtainSessionViaPow()` now catches network errors from `fetch`
+  - Shows "Server is not reachable" on the PoW overlay with a Retry button
+  - Retry loops back to re-attempt the challenge request
+  - Also handles failed challenge/verify JSON responses with retry UI
+  - `_showPowError(message)` helper: renders error + Retry button in PoW overlay, hides progress bar
+  - Boot sequence: `/api/character/claimed` fetch wrapped in try/catch — falls through to PoW retry on network error
+
+## 2026-02-23 update (hot-reload dev server)
+- **`tools/dev/serve-client-online.mjs`**: Added dev-mode hot-reload system:
+  - File watcher (`node:fs.watch`) monitors `client/web/` recursively for `.js`/`.css`/`.html` changes
+  - `/__hmr` WebSocket endpoint for reload notifications (80ms debounce)
+  - HMR client script auto-injected into HTML `<body>` (dev mode only, not `--prod`)
+  - CSS changes hot-swapped via stylesheet link cache-bust (no page reload)
+  - JS/HTML changes trigger full page reload
+  - HMR WebSocket reconnects with exponential backoff (max 10s)
+  - JS/CSS served with `no-cache` cache-control in dev mode
+  - WebSocket handler differentiates HMR vs game-proxy connections via `ws.data.type`
+- Updated `README.md` with hot-reload documentation
+- Updated `.memory/tech-stack.md` actual stack section
 
 ## 2026-02-22 update (inventory full loot/JQ guard)
 - **Server (`ws.ts`)**: Added `inventoryTypeByItemId()`, `hasInventorySpace()`, `canFitItem()` helpers.
