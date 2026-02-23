@@ -428,6 +428,44 @@ export const FIXED_STEP_MS = 1000 / 60;
 export const MAX_FRAME_DELTA_MS = 250;
 export const MAX_STEPS_PER_FRAME = 6;
 
+// ─── Animation State Maps ────────────────────────────────────────────────────
+export const objectAnimStates = new Map();
+
+// ─── Drop Expiry ─────────────────────────────────────────────────────────────
+export let _localDropIdCounter = -1;
+export function setLocalDropIdCounter(v) { _localDropIdCounter = v; }
+export const DROP_EXPIRE_MS = 180_000;
+export const DROP_EXPIRE_FADE_MS = 2000;
+
+// ─── Chair Sprite Cache ──────────────────────────────────────────────────────
+export const _chairSpriteCache = new Map(); // chairItemId → { img, originX, originY, width, height } or null
+
+// ─── Character Constants ─────────────────────────────────────────────────────
+export const CLIMBING_STANCES = new Set(["ladder", "rope"]);
+
+// ─── Character Placement Cache ───────────────────────────────────────────────
+export const characterPlacementTemplateCache = new Map();
+
+// ─── WZ Cursor ───────────────────────────────────────────────────────────────
+export const wzCursor = {
+  states: {},        // stateId -> { frames: [HTMLImageElement], delays: [number] }
+  state: 0,          // Current state (0=IDLE, 1=CANCLICK, 12=CLICKING)
+  frameIndex: 0,
+  frameTimer: 0,
+  x: 0,              // canvas-space X (for game hit detection)
+  y: 0,              // canvas-space Y
+  clientX: 0,        // viewport-space X (for HTML overlay positioning)
+  clientY: 0,        // viewport-space Y
+  visible: true,
+  loaded: false,
+  clickState: false, // True while mouse is held down
+};
+export const CURSOR_IDLE = 0;
+export const CURSOR_CANCLICK = 1;
+export const CURSOR_CLICKING = 12;
+export const CURSOR_DEFAULT_DELAY = 100;
+export const CURSOR_CANCLICK_DELAY = 350;
+
 // ─── Sound Constants ─────────────────────────────────────────────────────────
 export const BGM_FADE_DURATION_MS = 800;
 export const BGM_TARGET_VOLUME = 0.25;

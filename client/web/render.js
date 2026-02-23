@@ -14,6 +14,8 @@ import {
   CHAT_BUBBLE_VERTICAL_PADDING, CHAT_BUBBLE_STANDARD_WIDTH_MULTIPLIER,
   DEFAULT_STANDARD_CHARACTER_WIDTH,
   BG_REFERENCE_HEIGHT, DEFAULT_CANVAS_HEIGHT,
+  _chairSpriteCache, characterPlacementTemplateCache,
+  objectAnimStates,
 } from "./state.js";
 import {
   safeNumber, getMetaByKey, getImageByKey,
@@ -28,6 +30,7 @@ import {
   spawnDamageNumber, visibleSpritesForLayer,
 } from "./life.js";
 import { clampXToSideWalls, findFootholdAtXNearY, findFootholdBelow } from "./physics.js";
+import { _localSetEffect } from "./character.js";
 
 export function drawVRBoundsOverflowMask() {
   if (!runtime.map) return;
@@ -193,12 +196,12 @@ export function drawBackgroundLayer(frontFlag) {
 }
 
 // Object animation states: keyed by "layer:objId" -> { frameIndex, timerMs }
-const objectAnimStates = new Map();
+// (objectAnimStates moved to state.js)
 // Background animation states: keyed by bg index -> { frameIndex, timerMs }
-const bgAnimStates = new Map();
+export const bgAnimStates = new Map();
 // Background motion states: keyed by bg index -> { x, y }
-const bgMotionStates = new Map();
-const portalFrameWarmupRequested = new Set();
+export const bgMotionStates = new Map();
+export const portalFrameWarmupRequested = new Set();
 
 export function updateBackgroundAnimations(dtMs) {
   if (!runtime.map) return;

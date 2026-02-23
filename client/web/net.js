@@ -11,7 +11,7 @@ import {
   CHAT_BUBBLE_VERTICAL_PADDING, CHAT_BUBBLE_STANDARD_WIDTH_MULTIPLIER,
   FACE_ANIMATION_SPEED, DEFAULT_STANDARD_CHARACTER_WIDTH,
   PLAYER_HIT_FACE_DURATION_MS, ATTACK_RANGE_X, ATTACK_RANGE_Y,
-  SESSION_KEY,
+  SESSION_KEY, CLIMBING_STANCES, _chairSpriteCache,
 } from "./state.js";
 import {
   safeNumber, childByName, imgdirLeafRecord, pickCanvasNode, canvasMetaFromNode,
@@ -79,9 +79,9 @@ export const _remoteSetEffects = new Map();
 /** sessionId → Map<itemId, wzJson> */
 export const remoteEquipData = new Map();
 /** sessionId → { faceData, hairData } for gender-specific WZ */
-const remoteLookData = new Map();
+export const remoteLookData = new Map();
 /** sessionId → per-player placement template cache */
-const remoteTemplateCache = new Map();
+export const remoteTemplateCache = new Map();
 
 // ── Snapshot interpolation constants ──
 // Render remote players slightly "in the past" so we always have two snapshots

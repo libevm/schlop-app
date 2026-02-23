@@ -14,6 +14,7 @@ import {
   PLAYER_HIT_FACE_DURATION_MS,
   EQUIP_SLOT_LIST,
   STATUSBAR_HEIGHT, STATUSBAR_BAR_HEIGHT, STATUSBAR_PADDING_H,
+  CLIMBING_STANCES, characterPlacementTemplateCache,
 } from "./state.js";
 import {
   safeNumber, childByName, imgdirChildren, imgdirLeafRecord,
@@ -27,8 +28,9 @@ import {
   loadLifeAnimation, loadReactorAnimation,
   loadBackgroundMeta, loadAnimatedBackgroundFrames,
   loadTileMeta, loadObjectMeta, loadAnimatedObjectFrames,
-  portalVisibilityMode,
+  portalVisibilityMode, DEGEN_STANCES_BY_TYPE,
 } from "./life.js";
+import { equipWzCategoryFromId } from "./save.js";
 
 export function requestCharacterData() {
   if (runtime.characterData && runtime.characterHeadData && runtime.characterFaceData) {
@@ -257,7 +259,7 @@ export function updateFaceAnimation(dt) {
 }
 
 /** Climbing stances where equipment with no matching stance should be hidden. */
-const CLIMBING_STANCES = new Set(["ladder", "rope"]);
+// (CLIMBING_STANCES moved to state.js)
 
 /**
  * Extract canvas parts from an equipment WZ node for a given stance and frame.
@@ -907,7 +909,7 @@ const _setEffectData = new Map();
 let _setEffectsLoaded = false;
 
 /** Active set effect state for local player */
-const _localSetEffect = { active: false, frameIndex: 0, frameTimer: 0 };
+export const _localSetEffect = { active: false, frameIndex: 0, frameTimer: 0 };
 
 // (_remoteSetEffects is now in net.js)
 

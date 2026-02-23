@@ -14,6 +14,7 @@ import {
   DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT,
   FIXED_RES_WIDTH, FIXED_RES_HEIGHT,
   MIN_CANVAS_WIDTH, MIN_CANVAS_HEIGHT,
+  wzCursor, CURSOR_IDLE, CURSOR_CANCLICK, CURSOR_CLICKING,
 } from "./state.js";
 import { loadJsonFromStorage, saveJsonToStorage } from "./util.js";
 import { wsSend, _wsConnected, setLastChatSendTime } from "./net.js";
@@ -426,7 +427,7 @@ export function bindCanvasResizeHandling() {
   window.addEventListener("resize", onResize);
 
   if (typeof ResizeObserver !== "undefined") {
-    canvasResizeObserver = new ResizeObserver(() => {
+    let canvasResizeObserver = new ResizeObserver(() => {
       syncCanvasResolution();
     });
     canvasResizeObserver.observe(canvasEl);

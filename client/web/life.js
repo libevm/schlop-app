@@ -28,7 +28,7 @@ import {
   MOB_GRAVFORCE, MOB_SWIMGRAVFORCE, MOB_FRICTION, MOB_SLOPEFACTOR,
   MOB_GROUNDSLIP, MOB_SWIMFRICTION, MOB_PHYS_TIMESTEP,
   MOB_STAND_MIN_MS, MOB_STAND_MAX_MS, MOB_MOVE_MIN_MS, MOB_MOVE_MAX_MS,
-  DROP_PICKUP_RANGE, cameraHeightBias,
+  DROP_PICKUP_RANGE, cameraHeightBias, objectAnimStates,
   MAP_ID_REDIRECTS, newCharacterDefaults,
   EQUIP_SLOT_LIST, INV_MAX_SLOTS,
 } from "./state.js";
@@ -248,7 +248,7 @@ export const ATTACK_STANCES_BY_TYPE = [
 ];
 
 // Degenerate (prone) stances per weapon attack type
-const DEGEN_STANCES_BY_TYPE = [
+export const DEGEN_STANCES_BY_TYPE = [
   /* 0: NONE */     [],
   /* 1: S1A1M1D */  [],
   /* 2: SPEAR */    [],
@@ -377,7 +377,7 @@ export function hasProjectileAmmo() {
 // Wand/Staff degenerate is for skills only (not regular attack).
 // So isAttackDegenerate is no longer needed — prone check is inlined in performAttack.
 
-const damageNumbers = []; // { x, y, vspeed, value, critical, opacity, miss }
+export const damageNumbers = []; // { x, y, vspeed, value, critical, opacity, miss }
 
 // ─── WZ Damage Number Sprites ────────────────────────────────────────────────
 // Loaded from Effect.wz/BasicEff.img: NoRed0/NoRed1 (normal), NoCri0/NoCri1 (critical)

@@ -20,6 +20,7 @@ import {
   SESSION_KEY, CHARACTER_SAVE_KEY, KEYBINDS_STORAGE_KEY,
   newCharacterDefaults, playerFacePath, playerHairPath,
   PORTAL_SPAWN_Y_OFFSET,
+  wzCursor,
 } from "./state.js";
 import {
   safeNumber, loadJsonFromStorage, saveJsonToStorage,
@@ -250,9 +251,7 @@ export function adjustStanceForRemoteWeapon(rp, action) {
 }
 
 // (groundDrops, drop constants, iconDataUriCache are now in state.js)
-let _localDropIdCounter = -1;
-const DROP_EXPIRE_MS = 180_000;
-const DROP_EXPIRE_FADE_MS = 2000;
+// (_localDropIdCounter, DROP_EXPIRE_MS, DROP_EXPIRE_FADE_MS moved to state.js)
 
 export function getIconDataUri(key) {
   return iconDataUriCache.get(key) ?? null;

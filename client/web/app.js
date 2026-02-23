@@ -60,6 +60,8 @@ import {
   MINIMAP_PADDING, MINIMAP_TITLE_HEIGHT, MINIMAP_BORDER_RADIUS,
   MINIMAP_PLAYER_RADIUS, MINIMAP_PORTAL_RADIUS, MINIMAP_CLOSE_SIZE,
   MAP_BANNER_SHOW_MS, MAP_BANNER_FADE_MS, MAP_BANNER_SLIDE_MS,
+  wzCursor, CURSOR_IDLE, CURSOR_CANCLICK, CURSOR_CLICKING,
+  characterPlacementTemplateCache, objectAnimStates,
 } from './state.js';
 
 // Pure utilities, WZ helpers, asset cache, draw primitives
@@ -92,6 +94,7 @@ import {
   setAwaitingInitialMap, setInitialMapResolve,
   setPendingMapChangeResolve, setPendingMapChangeReject, setPendingMapChangeTimer,
   setLastPosSendTime, setLastChatSendTime, setLastEmoteTime, setLastMobStateSendTime,
+  remoteLookData, remoteTemplateCache,
 } from './net.js';
 
 // Life system: mobs, NPCs, combat, damage, reactors, spatial, map data, portals
@@ -137,6 +140,7 @@ import {
   portalMomentumEase, startPortalMomentumScroll, waitForPortalMomentumScrollToFinish,
   movePlayerToPortalInCurrentMap, waitForAnimationFrame, fadeScreenTo,
   getWeaponAttackStances, getWeaponSfxKey, hasProjectileAmmo,
+  loadDamageNumberSprites, damageNumbers,
 } from './life.js';
 
 // Player physics, foothold helpers, wall collision, camera
@@ -167,6 +171,7 @@ import {
   composeCharacterPlacements, characterBoundsFromPlacements,
   splitWordByWidth, wrapBubbleTextToWidth,
   playerHitBlinkColorScale, drawCharacter,
+  bgAnimStates, bgMotionStates, portalFrameWarmupRequested,
 } from './render.js';
 
 // Audio system: BGM, SFX, UI sounds, mob sounds
@@ -232,6 +237,7 @@ import {
   startItemDrag, cancelItemDrag,
   inventoryTypeById, equipWzCategoryFromId, equipSlotFromId,
   findFreeSlot, isItemStackable, getItemSlotMax,
+  initUIWindowDrag, bringWindowToFront,
 } from './save.js';
 
 // Hide chat until first map loads successfully
@@ -428,10 +434,10 @@ function buildKeybindsUI() {
   }
 }
 
-let canvasResizeObserver = null;
+// (canvasResizeObserver moved to input.js)
 
 
-const characterPlacementTemplateCache = new Map();
+// (characterPlacementTemplateCache moved to state.js)
 
 
 

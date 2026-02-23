@@ -10,6 +10,10 @@ import {
   equipWindowEl, inventoryWindowEl, keybindsWindowEl,
   DROP_PICKUP_RANGE, DROP_BOB_SPEED, DROP_BOB_AMP, DROP_SPAWN_VSPEED,
   DROP_SPINSTEP, DROP_PHYS_GRAVITY, DROP_PHYS_TERMINAL_VY, LOOT_ANIM_DURATION,
+  wzCursor, CURSOR_IDLE, CURSOR_CANCLICK, CURSOR_CLICKING,
+  CURSOR_DEFAULT_DELAY, CURSOR_CANCLICK_DELAY,
+  _chairSpriteCache,
+  _localDropIdCounter, setLocalDropIdCounter, DROP_EXPIRE_MS, DROP_EXPIRE_FADE_MS,
 } from "./state.js";
 import {
   safeNumber, childByName, imgdirLeafRecord, fetchJson,
@@ -285,7 +289,8 @@ export function executeDropOnMap(dropQty) {
   const dropIconKey = draggedItem.iconKey;
   const dropName = draggedItem.name;
   const dropItemId = draggedItem.id;
-  const localId = _localDropIdCounter--;
+  const localId = _localDropIdCounter;
+  setLocalDropIdCounter(_localDropIdCounter - 1);
 
   groundDrops.push({
     drop_id: localId,
@@ -351,7 +356,7 @@ export function executeDropOnMap(dropQty) {
 // to use. The chair sprite is drawn at the player's feet. Other players see the chair
 // via the player_sit message which includes chair_id.
 
-const _chairSpriteCache = new Map(); // chairItemId → { img, originX, originY, width, height } or null
+// (_chairSpriteCache moved to state.js)
 const _chairSpriteLoading = new Set();
 
 export async function loadChairSprite(chairId) {
@@ -821,27 +826,7 @@ export function isUIWindowVisible(key) {
   return el && !el.classList.contains("hidden");
 }
 
-/** WZ Cursor system — canvas-drawn animated cursor with states */
-const wzCursor = {
-  states: {},        // stateId -> { frames: [HTMLImageElement], delays: [number] }
-  state: 0,          // Current state (0=IDLE, 1=CANCLICK, 12=CLICKING)
-  frameIndex: 0,
-  frameTimer: 0,
-  x: 0,              // canvas-space X (for game hit detection)
-  y: 0,              // canvas-space Y
-  clientX: 0,        // viewport-space X (for HTML overlay positioning)
-  clientY: 0,        // viewport-space Y
-  visible: true,
-  loaded: false,
-  clickState: false, // True while mouse is held down
-};
-
-// C++ cursor state IDs
-const CURSOR_IDLE = 0;
-const CURSOR_CANCLICK = 1;
-const CURSOR_CLICKING = 12;
-const CURSOR_DEFAULT_DELAY = 100; // ms per frame (WZ fallback)
-const CURSOR_CANCLICK_DELAY = 350; // ms per frame for CANCLICK idle hover
+// (wzCursor, CURSOR_* constants are now in state.js)
 
 export async function loadCursorAssets() {
   try {
