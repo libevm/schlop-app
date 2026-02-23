@@ -74,6 +74,8 @@ export let _initialMapResolve = null;
 
 /** sessionId → RemotePlayer */
 export const remotePlayers = new Map();
+/** Active set effects for remote players: sessionId → { active, frameIndex, frameTimer } */
+export const _remoteSetEffects = new Map();
 /** sessionId → Map<itemId, wzJson> */
 export const remoteEquipData = new Map();
 /** sessionId → { faceData, hairData } for gender-specific WZ */
