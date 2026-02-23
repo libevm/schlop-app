@@ -1,203 +1,86 @@
-const chatBarEl = document.getElementById("chat-bar");
-const chatInputEl = document.getElementById("chat-input");
-const chatLogEl = document.getElementById("chat-log");
+// ─── Module Imports ──────────────────────────────────────────────────────────
+// Shared state, constants, caches, DOM refs
+import {
+  fn, runtime, ctx, canvasEl, sessionId, setSessionId,
+  chatBarEl, chatInputEl, chatLogEl, chatLogMessagesEl, chatLogHandleEl,
+  pickupJournalEl, settingsButtonEl, settingsModalEl, keybindsButtonEl,
+  settingsBgmToggleEl, settingsSfxToggleEl, settingsFixedResEl,
+  settingsMinimapToggleEl, settingsPingToggleEl, pingWindowEl, pingValueEl,
+  pingIndicatorEl, settingsLogoutBtn, logoutConfirmEl, logoutConfirmYesEl,
+  logoutConfirmNoEl, claimHudButton, logoutConfirmTextEl, claimOverlayEl,
+  claimPasswordInput, claimPasswordConfirm, claimErrorEl, claimConfirmBtn,
+  claimCancelBtn, authTabLogin, authTabCreate, authLoginView, authCreateView,
+  loginNameInput, loginPasswordInput, loginErrorEl, loginSubmitBtn,
+  equipWindowEl, inventoryWindowEl, keybindsWindowEl, equipGridEl, invGridEl,
+  keybindsGridEl, uiTooltipEl, openKeybindsBtnEl,
+  dlog, rlog, DLOG_MAX, _debugLogBuffer, _debugLogDirty, setDebugLogDirty,
+  cachedFetch, jsonCache, metaCache, metaPromiseCache, imageCache, imagePromiseCache,
+  soundDataUriCache, soundDataPromiseCache, iconDataUriCache,
+  RESOURCE_CACHE_NAME,
+  DEFAULT_CANVAS_WIDTH, DEFAULT_CANVAS_HEIGHT, FIXED_RES_WIDTH, FIXED_RES_HEIGHT,
+  MIN_CANVAS_WIDTH, MIN_CANVAS_HEIGHT, BG_REFERENCE_HEIGHT,
+  SPATIAL_BUCKET_SIZE, SPATIAL_QUERY_MARGIN, PERF_SAMPLE_SIZE,
+  gameViewWidth, gameViewHeight,
+  PHYS_TPS, PHYS_GRAVFORCE, PHYS_FRICTION, PHYS_SLOPEFACTOR, PHYS_GROUNDSLIP,
+  PHYS_FALL_BRAKE, PHYS_HSPEED_DEADZONE, PHYS_FALL_SPEED_CAP, PHYS_MAX_LAND_SPEED,
+  PHYS_ROPE_JUMP_HMULT, PHYS_ROPE_JUMP_VDIV, PHYS_CLIMB_ACTION_DELAY_MS,
+  PHYS_SWIMGRAVFORCE, PHYS_SWIMFRICTION, PHYS_SWIM_HFRICTION, PHYS_FLYFORCE,
+  PHYS_SWIM_HFORCE, PHYS_SWIM_JUMP_MULT, PHYS_DEFAULT_SPEED_STAT, PHYS_DEFAULT_JUMP_STAT,
+  PLAYER_TOUCH_HITBOX_HEIGHT, PLAYER_TOUCH_HITBOX_HALF_WIDTH,
+  PLAYER_TOUCH_HITBOX_PRONE_HEIGHT, PLAYER_TOUCH_HITBOX_PRONE_HALF_WIDTH,
+  TRAP_HIT_INVINCIBILITY_MS, PLAYER_KB_HSPEED, PLAYER_KB_VFORCE,
+  MOB_KB_FORCE_GROUND, MOB_KB_FORCE_AIR, MOB_KB_COUNTER_START, MOB_KB_COUNTER_END,
+  PLAYER_HIT_FACE_DURATION_MS, FALL_DAMAGE_THRESHOLD, FALL_DAMAGE_PERCENT,
+  HIDDEN_PORTAL_REVEAL_DELAY_MS, HIDDEN_PORTAL_FADE_IN_MS,
+  PORTAL_SPAWN_Y_OFFSET, PORTAL_FADE_OUT_MS, PORTAL_FADE_IN_MS,
+  PORTAL_SCROLL_MIN_MS, PORTAL_SCROLL_MAX_MS, PORTAL_SCROLL_SPEED_PX_PER_SEC,
+  PORTAL_ANIMATION_FRAME_MS,
+  FACE_ANIMATION_SPEED, DEFAULT_STANDARD_CHARACTER_WIDTH,
+  CHAT_BUBBLE_LINE_HEIGHT, CHAT_BUBBLE_HORIZONTAL_PADDING,
+  CHAT_BUBBLE_VERTICAL_PADDING, CHAT_BUBBLE_STANDARD_WIDTH_MULTIPLIER,
+  STATUSBAR_HEIGHT, STATUSBAR_BAR_HEIGHT, STATUSBAR_PADDING_H,
+  SETTINGS_CACHE_KEY, CHAT_LOG_HEIGHT_CACHE_KEY, CHAT_LOG_COLLAPSED_KEY,
+  KEYBINDS_STORAGE_KEY, SESSION_KEY, CHARACTER_SAVE_KEY,
+  MAP_ID_REDIRECTS, cameraHeightBias, newCharacterDefaults,
+  playerFacePath, playerHairPath,
+  EQUIP_SLOT_LIST, INV_COLS, INV_ROWS, INV_MAX_SLOTS, INV_TABS,
+  currentInvTab, setCurrentInvTab,
+  playerEquipped, playerInventory, groundDrops, draggedItem,
+  DROP_PICKUP_RANGE, DROP_BOB_SPEED, DROP_BOB_AMP, DROP_SPAWN_VSPEED,
+  DROP_SPINSTEP, DROP_PHYS_GRAVITY, DROP_PHYS_TERMINAL_VY, LOOT_ANIM_DURATION,
+  FIXED_STEP_MS, MAX_FRAME_DELTA_MS, MAX_STEPS_PER_FRAME,
+  BGM_FADE_DURATION_MS, BGM_TARGET_VOLUME, SFX_POOL_SIZE,
+  DEFAULT_MOB_HIT_SOUND, DEFAULT_MOB_DIE_SOUND,
+  ATTACK_COOLDOWN_MS, ATTACK_RANGE_X, ATTACK_RANGE_Y,
+  MOB_HIT_DURATION_MS, MOB_AGGRO_DURATION_MS, MOB_KB_SPEED, MOB_RESPAWN_DELAY_MS,
+  MOB_HP_BAR_WIDTH, MOB_HP_BAR_HEIGHT,
+  MOB_GRAVFORCE, MOB_SWIMGRAVFORCE, MOB_FRICTION, MOB_SLOPEFACTOR,
+  MOB_GROUNDSLIP, MOB_SWIMFRICTION, MOB_PHYS_TIMESTEP,
+  MOB_STAND_MIN_MS, MOB_STAND_MAX_MS, MOB_MOVE_MIN_MS, MOB_MOVE_MAX_MS,
+  MINIMAP_PADDING, MINIMAP_TITLE_HEIGHT, MINIMAP_BORDER_RADIUS,
+  MINIMAP_PLAYER_RADIUS, MINIMAP_PORTAL_RADIUS, MINIMAP_CLOSE_SIZE,
+  MAP_BANNER_SHOW_MS, MAP_BANNER_FADE_MS, MAP_BANNER_SLIDE_MS,
+} from './state.js';
+
+// Pure utilities, WZ helpers, asset cache, draw primitives
+import {
+  safeNumber, loadJsonFromStorage, saveJsonToStorage,
+  childByName, imgdirChildren, parseLeafValue, imgdirLeafRecord,
+  vectorRecord, pickCanvasNode, canvasMetaFromNode,
+  objectMetaExtrasFromNode, applyObjectMetaExtras,
+  findNodeByPath, resolveNodeByUol, randomRange,
+  mapPathFromId, soundPathFromName,
+  fetchJson, getMetaByKey, requestMeta, requestImageByKey, getImageByKey,
+  wrapText, roundRect,
+  worldToScreen, isWorldRectVisible, drawWorldImage, drawScreenImage,
+  localPoint, topLeftFromAnchor, worldPointFromTopLeft,
+} from './util.js';
+
 // Hide chat until first map loads successfully
 if (chatBarEl) chatBarEl.style.display = "none";
 if (chatLogEl) chatLogEl.style.display = "none";
-const chatLogMessagesEl = document.getElementById("chat-log-messages");
-const chatLogHandleEl = document.getElementById("chat-log-handle");
-const pickupJournalEl = document.getElementById("pickup-journal");
-const settingsButtonEl = document.getElementById("settings-button");
-const settingsModalEl = document.getElementById("settings-modal");
-const keybindsButtonEl = document.getElementById("keybinds-button");
-const settingsBgmToggleEl = document.getElementById("settings-bgm-toggle");
-const settingsSfxToggleEl = document.getElementById("settings-sfx-toggle");
-const settingsFixedResEl = document.getElementById("settings-fixed-res");
-const settingsMinimapToggleEl = document.getElementById("settings-minimap-toggle");
-const settingsPingToggleEl = document.getElementById("settings-ping-toggle");
-const pingWindowEl = document.getElementById("ping-window");
-const pingValueEl = document.getElementById("ping-value");
-const pingIndicatorEl = document.getElementById("ping-indicator");
-const settingsLogoutBtn = document.getElementById("settings-logout-btn");
-const logoutConfirmEl = document.getElementById("logout-confirm-overlay");
-const logoutConfirmYesEl = document.getElementById("logout-confirm-yes");
-const logoutConfirmNoEl = document.getElementById("logout-confirm-no");
-const claimHudButton = document.getElementById("claim-hud-button");
-const logoutConfirmTextEl = document.getElementById("logout-confirm-text");
-const claimOverlayEl = document.getElementById("claim-overlay");
-const claimPasswordInput = document.getElementById("claim-password-input");
-const claimPasswordConfirm = document.getElementById("claim-password-confirm");
-const claimErrorEl = document.getElementById("claim-error");
-const claimConfirmBtn = document.getElementById("claim-confirm-btn");
-const claimCancelBtn = document.getElementById("claim-cancel-btn");
-const authTabLogin = document.getElementById("auth-tab-login");
-const authTabCreate = document.getElementById("auth-tab-create");
-const authLoginView = document.getElementById("auth-login-view");
-const authCreateView = document.getElementById("auth-create-view");
-const loginNameInput = document.getElementById("login-name-input");
-const loginPasswordInput = document.getElementById("login-password-input");
-const loginErrorEl = document.getElementById("login-error");
-const loginSubmitBtn = document.getElementById("login-submit");
-const canvasEl = document.getElementById("map-canvas");
-const ctx = canvasEl.getContext("2d", { alpha: false, desynchronized: true }) || canvasEl.getContext("2d");
-if (!ctx) {
-  throw new Error("Failed to acquire 2D rendering context.");
-}
-ctx.imageSmoothingEnabled = false;
 
-// ── Debug log system ────────────────────────────────────────────────
-// Ring buffer of last 5000 lines. No console output. Download via Settings.
-const DLOG_MAX = 5000;
-const _debugLogBuffer = [];
-let _debugLogDirty = false;
-
-function dlog(category, msg) {
-  const ts = new Date().toLocaleTimeString("en-GB", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit", fractionalSecondDigits: 3 });
-  const line = `[${ts}] [${category}] ${msg}`;
-  _debugLogBuffer.push(line);
-  if (_debugLogBuffer.length > DLOG_MAX) _debugLogBuffer.shift();
-  _debugLogDirty = true;
-}
-
-/** Convenience: keeps old rlog(msg) signature working → routes to dlog("info", msg) */
-function rlog(msg) { dlog("info", msg); }
-
-
-
-// ── Capture global errors/warnings/rejections ──
-window.addEventListener("error", (e) => {
-  const loc = e.filename ? ` (${e.filename}:${e.lineno}:${e.colno})` : "";
-  dlog("error", `${e.message}${loc}`);
-});
-window.addEventListener("unhandledrejection", (e) => {
-  const reason = e.reason instanceof Error ? `${e.reason.message}\n${e.reason.stack}` : String(e.reason);
-  dlog("error", `Unhandled rejection: ${reason}`);
-});
-
-
-// ── Persistent browser cache for /resourcesv2/ assets ──
-const RESOURCE_CACHE_NAME = "maple-resources-v1";
-let _resourceCache = null;
-async function getResourceCache() {
-  if (!_resourceCache) {
-    try { _resourceCache = await caches.open(RESOURCE_CACHE_NAME); } catch { _resourceCache = null; }
-  }
-  return _resourceCache;
-}
-
-async function cachedFetch(url) {
-  const cache = await getResourceCache();
-  if (cache) {
-    const cached = await cache.match(url);
-    if (cached) return cached;
-  }
-  const response = await fetch(url);
-  if (response.ok && cache) {
-    try { await cache.put(url, response.clone()); } catch {}
-  }
-  if (!response.ok) console.warn(`[fetch] Failed (${response.status}): ${url}`);
-  return response;
-}
-
-const jsonCache = new Map();
-const metaCache = new Map();
-const metaPromiseCache = new Map();
-const imageCache = new Map();
-const imagePromiseCache = new Map();
-const soundDataUriCache = new Map();
-const soundDataPromiseCache = new Map();
-
-// ─── Canvas / Display ─────────────────────────────────────────────────────────
-const DEFAULT_CANVAS_WIDTH = 1024;
-const DEFAULT_CANVAS_HEIGHT = 768;
-const FIXED_RES_WIDTH = 1024;
-const FIXED_RES_HEIGHT = 768;
-const MIN_CANVAS_WIDTH = 640;
-const MIN_CANVAS_HEIGHT = 320;
-const BG_REFERENCE_HEIGHT = 600;
-
-/** Game viewport dimensions — fixed 1024×768 in fixedRes mode, actual canvas size otherwise. */
-function gameViewWidth() {
-  return runtime.settings.fixedRes ? FIXED_RES_WIDTH : canvasEl.width;
-}
-function gameViewHeight() {
-  return runtime.settings.fixedRes ? FIXED_RES_HEIGHT : canvasEl.height;
-}
-
-const SPATIAL_BUCKET_SIZE = 256;
-const SPATIAL_QUERY_MARGIN = 320;
-const PERF_SAMPLE_SIZE = 120;
-
-// ─── Player Physics (per-tick units, C++ TIMESTEP = 8ms → 125 TPS) ───────────
-const PHYS_TPS = 125;
-const PHYS_GRAVFORCE = 0.14;
-const PHYS_FRICTION = 0.5;
-const PHYS_SLOPEFACTOR = 0.1;
-const PHYS_GROUNDSLIP = 3.0;
-const PHYS_FALL_BRAKE = 0.025;
-const PHYS_HSPEED_DEADZONE = 0.1;
-const PHYS_FALL_SPEED_CAP = 670;
-const PHYS_MAX_LAND_SPEED = 162.5;
-const PHYS_ROPE_JUMP_HMULT = 6.0;
-const PHYS_ROPE_JUMP_VDIV = 1.5;
-const PHYS_CLIMB_ACTION_DELAY_MS = 200;
-const PHYS_SWIMGRAVFORCE = 0.07;
-const PHYS_SWIMFRICTION = 0.08;
-const PHYS_SWIM_HFRICTION = 0.14;
-const PHYS_FLYFORCE = 0.25;
-const PHYS_SWIM_HFORCE = 0.12;
-const PHYS_SWIM_JUMP_MULT = 0.8;
-const PHYS_DEFAULT_SPEED_STAT = 115;
-const PHYS_DEFAULT_JUMP_STAT = 110;
-const PLAYER_TOUCH_HITBOX_HEIGHT = 50;
-const PLAYER_TOUCH_HITBOX_HALF_WIDTH = 12;
-const PLAYER_TOUCH_HITBOX_PRONE_HEIGHT = 28;
-const PLAYER_TOUCH_HITBOX_PRONE_HALF_WIDTH = 18;
-const TRAP_HIT_INVINCIBILITY_MS = 2000;
-// C++ Player::damage knockback: hspeed = ±1.5, vforce -= 3.5 (per-tick values)
-const PLAYER_KB_HSPEED = 1.5;  // per-tick horizontal speed
-const PLAYER_KB_VFORCE = 3.5;  // per-tick upward impulse (applied as vforce)
-// C++ Mob::update HIT stance: hforce = ±0.2 (ground) or ±0.1 (air), counter 170→200
-const MOB_KB_FORCE_GROUND = 0.2;  // per-tick knockback force on ground
-const MOB_KB_FORCE_AIR = 0.1;     // per-tick knockback force in air
-const MOB_KB_COUNTER_START = 170;
-const MOB_KB_COUNTER_END = 200;
-const PLAYER_HIT_FACE_DURATION_MS = 500;
-const FALL_DAMAGE_THRESHOLD = 500; // pixels of fall distance before damage kicks in
-const FALL_DAMAGE_PERCENT = 0.1; // 10% of max HP per threshold exceeded
-
-// ─── Portal / Map Transitions ─────────────────────────────────────────────────
-const HIDDEN_PORTAL_REVEAL_DELAY_MS = 500;
-const HIDDEN_PORTAL_FADE_IN_MS = 400;
-const PORTAL_SPAWN_Y_OFFSET = 24;
-const PORTAL_FADE_OUT_MS = 180;
-const PORTAL_FADE_IN_MS = 240;
-const PORTAL_SCROLL_MIN_MS = 180;
-const PORTAL_SCROLL_MAX_MS = 560;
-const PORTAL_SCROLL_SPEED_PX_PER_SEC = 3200;
-const PORTAL_ANIMATION_FRAME_MS = 100;
-
-// ─── Character / UI ───────────────────────────────────────────────────────────
-const FACE_ANIMATION_SPEED = 1.6;
-const DEFAULT_STANDARD_CHARACTER_WIDTH = 58;
-const CHAT_BUBBLE_LINE_HEIGHT = 16;
-const CHAT_BUBBLE_HORIZONTAL_PADDING = 8;
-const CHAT_BUBBLE_VERTICAL_PADDING = 10;
-const CHAT_BUBBLE_STANDARD_WIDTH_MULTIPLIER = 3;
-const STATUSBAR_HEIGHT = 0;
-const STATUSBAR_BAR_HEIGHT = 14;
-const STATUSBAR_PADDING_H = 10;
-
-// ─── Persistence Keys ─────────────────────────────────────────────────────────
-const SETTINGS_CACHE_KEY = "shlop.settings.v1";
-const CHAT_LOG_HEIGHT_CACHE_KEY = "shlop.debug.chatLogHeight.v1";
-const CHAT_LOG_COLLAPSED_KEY = "shlop.chatLogCollapsed.v1";
-const KEYBINDS_STORAGE_KEY = "shlop.keybinds.v1";
-const SESSION_KEY = "shlop.session";
-const CHARACTER_SAVE_KEY = "shlop.character.v1";
-
-// ─── Session ID (server-issued via proof-of-work) ─────────────────────────────
-let sessionId = localStorage.getItem(SESSION_KEY) || "";
+// (constants, runtime, caches, and DOM refs are now in state.js)
 
 /**
  * Solve a SHA-256 proof-of-work challenge.
@@ -333,311 +216,9 @@ function _showPowError(message) {
   });
 }
 
-// Some map IDs are absent in the extracted client dataset. Redirect these to
-// equivalent accessible maps to avoid hard 404 failures in browser play.
-const MAP_ID_REDIRECTS = {
-  "100000110": "910000000", // Henesys Free Market Entrance -> Free Market
-};
+// (MAP_ID_REDIRECTS, cameraHeightBias, newCharacterDefaults, playerFacePath/HairPath, runtime are now in state.js)
 
-/**
- * Camera Y offset: push scene lower on tall viewports.
- * Backgrounds designed for 600px — bias shifts camera so bottom stays consistent.
- */
-function cameraHeightBias() {
-  if (runtime.settings.fixedRes) return 0;
-  return Math.max(0, (canvasEl.height - BG_REFERENCE_HEIGHT) / 2);
-}
-
-/**
- * Default equipment set for the character.
- * Each entry is { id, category, path } where path is relative to Character.wz.
- * Equipment IDs follow MapleStory conventions: id/10000 determines category.
- */
-/**
- * Gender-aware new-character defaults. Called once at creation time.
- * After creation, face_id/hair_id/equipment are stored as character state
- * and can be changed independently (e.g. hair salon, equip swap).
- */
-function newCharacterDefaults(gender) {
-  const female = gender === true;
-  return {
-    face_id: female ? 21000 : 20000,
-    hair_id: female ? 31000 : 30000,
-    equipment: female
-      ? [
-          { id: 1041002, category: "Coat" },
-          { id: 1061002, category: "Pants" },
-          { id: 1072001, category: "Shoes" },
-          { id: 1302000, category: "Weapon" },
-        ]
-      : [
-          { id: 1040002, category: "Coat" },
-          { id: 1060002, category: "Pants" },
-          { id: 1072001, category: "Shoes" },
-          { id: 1302000, category: "Weapon" },
-        ],
-  };
-}
-/** Build WZ path fragments from runtime.player.face_id / hair_id */
-function playerFacePath() { return `Face/${String(runtime.player.face_id).padStart(8, "0")}.img.json`; }
-function playerHairPath() { return `Hair/${String(runtime.player.hair_id).padStart(8, "0")}.img.json`; }
-
-const runtime = {
-  map: null,
-  mapId: null,
-  camera: { x: 0, y: 0 },
-  backgroundViewAnchorY: null,
-  player: {
-    x: 0,
-    y: 0,
-    prevX: 0,
-    prevY: 0,
-    vx: 0,
-    vy: 0,
-    onGround: false,
-    climbing: false,
-    swimming: false,
-    climbRope: null,
-    climbCooldownUntil: 0,
-    climbAttachTime: 0,
-    downJumpIgnoreFootholdId: null,
-    downJumpIgnoreUntil: 0,
-    downJumpControlLock: false,
-    downJumpTargetFootholdId: null,
-    reattachLockUntil: 0,
-    reattachLockRopeKey: null,
-    footholdId: null,
-    footholdLayer: 3,
-    facing: -1,
-    action: "stand1",
-    frameIndex: 0,
-    frameTimer: 0,
-    bubbleText: "",
-    bubbleExpiresAt: 0,
-    stats: {
-      speed: PHYS_DEFAULT_SPEED_STAT,
-      jump: PHYS_DEFAULT_JUMP_STAT,
-    },
-    attacking: false,
-    attackStance: "",
-    attackFrameIndex: 0,
-    attackFrameTimer: 0,
-    attackCooldownUntil: 0,
-    name: "Shlop",
-    gender: false,
-    face_id: 20000,
-    hair_id: 30000,
-    level: 1,
-    job: "Beginner",
-    hp: 50,
-    maxHp: 50,
-    mp: 5,
-    maxMp: 5,
-    exp: 0,
-    maxExp: 15,
-    trapInvincibleUntil: 0,
-    lastTrapHitAt: 0,
-    lastTrapHitDamage: 0,
-    fallStartY: 0,
-    knockbackClimbLockUntil: 0,
-    chairId: 0,  // 0 = no chair, otherwise item ID of active chair
-    achievements: {},  // quest_name → completion count (server-authoritative, synced on jq_reward)
-  },
-  input: {
-    enabled: false,
-    left: false,
-    right: false,
-    up: false,
-    down: false,
-    jumpHeld: false,
-    jumpQueued: false,
-    ctrlHeld: false,
-  },
-  chat: {
-    inputActive: false,
-    history: [],
-    maxHistory: 200,
-    sentHistory: [],      // local player's sent messages (most recent last)
-    sentHistoryMax: 50,   // max sent messages to remember
-    recallIndex: -1,      // current position in sentHistory (-1 = not recalling)
-    recallDraft: "",      // the text that was in the input before recalling
-  },
-  mapBanner: {
-    active: false,
-    mapName: "",
-    streetName: "",
-    markName: "",
-    startedAt: 0,
-    showUntil: 0,
-    fadeStartAt: 0,
-  },
-
-  settings: {
-    bgmEnabled: true,
-    sfxEnabled: true,
-    fixedRes: true,
-    minimapVisible: true,
-    showPing: false,
-  },
-  keybinds: {
-    moveLeft: "ArrowLeft",
-    moveRight: "ArrowRight",
-    moveUp: "ArrowUp",
-    moveDown: "ArrowDown",
-    attack: "KeyC",
-    jump: "Space",
-    loot: "KeyZ",
-    equip: "KeyE",
-    inventory: "KeyI",
-    keybinds: "KeyK",
-    face1: "Digit1",
-    face2: "Digit2",
-    face3: "Digit3",
-    face4: "Digit4",
-    face5: "Digit5",
-    face6: "Digit6",
-    face7: "Digit7",
-    face8: "Digit8",
-    face9: "Digit9",
-  },
-  mouseWorld: { x: 0, y: 0 },
-  characterData: null,
-  characterHeadData: null,
-  characterFaceData: null,
-  characterHairData: null,
-  characterEquipData: {},  // keyed by equip id → parsed JSON
-  faceAnimation: {
-    expression: "default",
-    frameIndex: 0,
-    frameTimerMs: 0,
-    blinkCooldownMs: 2200,
-    overrideExpression: null,
-    overrideUntilMs: 0,
-  },
-  zMapOrder: {},
-  characterDataPromise: null,
-  lastRenderableCharacterFrame: null,
-  lastCharacterBounds: null,
-  standardCharacterWidth: DEFAULT_STANDARD_CHARACTER_WIDTH,
-  perf: {
-    updateMs: 0,
-    renderMs: 0,
-    frameMs: 0,
-    loopIntervalMs: 0,
-    samples: new Array(PERF_SAMPLE_SIZE).fill(0),
-    sampleCursor: 0,
-    sampleCount: 0,
-    drawCalls: 0,
-    culledSprites: 0,
-    tilesDrawn: 0,
-    objectsDrawn: 0,
-    lifeDrawn: 0,
-    portalsDrawn: 0,
-    reactorsDrawn: 0,
-  },
-
-  audioUnlocked: false,
-  bgmAudio: null,
-  currentBgmPath: null,
-  loading: {
-    active: false,
-    total: 0,
-    loaded: 0,
-    progress: 0,
-    label: "",
-  },
-  audioDebug: {
-    lastSfx: null,
-    lastSfxAtMs: 0,
-    sfxPlayCount: 0,
-    lastBgm: null,
-  },
-  mapLoadToken: 0,
-  portalCooldownUntil: 0,
-  portalWarpInProgress: false,
-  hiddenPortalState: new Map(),
-  transition: {
-    alpha: 0,
-    active: false,
-  },
-  portalScroll: {
-    active: false,
-    startX: 0,
-    startY: 0,
-    targetX: 0,
-    targetY: 0,
-    elapsedMs: 0,
-    durationMs: 0,
-  },
-  portalAnimation: {
-    regularFrameIndex: 0,
-    regularTimerMs: 0,
-    hiddenFrameIndex: 0,
-    hiddenTimerMs: 0,
-  },
-  previousTimestampMs: null,
-  tickAccumulatorMs: 0,
-
-  // NPC dialogue state
-  npcDialogue: {
-    active: false,
-    npcName: "",
-    npcFunc: "",
-    lines: [],        // all dialogue lines (each can be string or { text, options })
-    lineIndex: 0,     // current line being shown
-    npcWorldX: 0,
-    npcWorldY: 0,
-    npcIdx: -1,       // lifeEntry index of the NPC being talked to
-    hoveredOption: -1, // which option is hovered (-1 = none)
-    scriptId: "",      // NPC script identifier (from Npc.wz info/script)
-  },
-
-  // GM state
-  gm: false,
-  gmMouseFly: false,
-  gmOverlay: false,
-};
-
-// ─── In-game UI Windows (Equipment + Inventory) ─────────────────────────────
-
-const equipWindowEl = document.getElementById("equip-window");
-const inventoryWindowEl = document.getElementById("inventory-window");
-const keybindsWindowEl = document.getElementById("keybinds-window");
-const equipGridEl = document.getElementById("equip-grid");
-const invGridEl = document.getElementById("inv-grid");
-const keybindsGridEl = document.getElementById("keybinds-grid");
-const uiTooltipEl = document.getElementById("ui-tooltip");
-const openKeybindsBtnEl = document.getElementById("open-keybinds-btn");
-
-// Equip slots as flat 4-column grid
-const EQUIP_SLOT_LIST = [
-  { type: "Cap",        label: "Hat" },
-  { type: "FaceAcc",    label: "Face Acc" },
-  { type: "EyeAcc",     label: "Eye Acc" },
-  { type: "Earrings",   label: "Earrings" },
-  { type: "Pendant",    label: "Pendant" },
-  { type: "Cape",       label: "Cape" },
-  { type: "Coat",       label: "Top" },
-  { type: "Longcoat",   label: "Overall" },
-  { type: "Shield",     label: "Shield" },
-  { type: "Glove",      label: "Gloves" },
-  { type: "Pants",      label: "Bottom" },
-  { type: "Shoes",      label: "Shoes" },
-  { type: "Weapon",     label: "Weapon" },
-  { type: "Ring",       label: "Ring" },
-  { type: "Belt",       label: "Belt" },
-  { type: "Medal",      label: "Medal" },
-];
-
-const INV_COLS = 4;
-const INV_ROWS = 8;
-const INV_MAX_SLOTS = INV_COLS * INV_ROWS; // 32 slots per tab
-
-/** Player equipment slots — maps category to { id, name, iconSrc } */
-const playerEquipped = new Map();
-
-/** Player inventory — array of { id, name, qty, iconKey, invType, category, slot } */
-const playerInventory = [];
+// (UI window DOM refs, EQUIP_SLOT_LIST, inventory state are now in state.js)
 
 /** Find the first free slot index (0..INV_MAX_SLOTS-1) for a given tab type. Returns -1 if full. */
 function findFreeSlot(invType) {
@@ -651,23 +232,8 @@ function findFreeSlot(invType) {
   return -1;
 }
 
-/** Selected/dragged item state */
-const draggedItem = {
-  active: false,
-  source: null,     // "inventory" | "equip"
-  sourceIndex: -1,  // inventory index or equip slot type
-  id: 0,
-  name: "",
-  qty: 0,
-  iconKey: null,
-  category: null,   // for equip items
-};
-
+// (draggedItem, INV_TABS, currentInvTab are now in state.js)
 // ── Inventory type / equip category helpers (C++ parity) ──
-
-// C++ InventoryType::by_item_id — prefix = id / 1000000
-const INV_TABS = ["EQUIP", "USE", "SETUP", "ETC", "CASH"];
-let currentInvTab = "EQUIP";
 
 function inventoryTypeById(itemId) {
   const prefix = Math.floor(itemId / 1000000);
@@ -866,24 +432,10 @@ function adjustStanceForRemoteWeapon(rp, action) {
   return action;
 }
 
-/** Ground drops — items on the map floor */
-const groundDrops = [];
-// Each: { drop_id, id, name, qty, iconKey, x, y, vy, onGround, opacity, angle, bobPhase, spawnTime, destY, category, pickingUp, pickupStart }
-let _localDropIdCounter = -1; // negative IDs for local drops (offline / before server assigns ID)
-
-const DROP_PICKUP_RANGE = 50;   // C++ uses drop bounds(32x32) at player pos
-const DROP_BOB_SPEED = 0.025;   // C++ moved += 0.025 per tick
-const DROP_BOB_AMP = 2.5;       // C++ cos(moved) * 2.5
-const DROP_SPAWN_VSPEED = -7.9; // scaled to match original peak height with faster gravity
-const DROP_SPINSTEP = 0.3;      // spin per tick while airborne
-const DROP_PHYS_GRAVITY = 0.35; // 2.5x gravity for snappier landing
-const DROP_PHYS_TERMINAL_VY = 12;// terminal fall speed
-const LOOT_ANIM_DURATION = 400; // ms — pickup fly animation
-const DROP_EXPIRE_MS = 180_000; // 180s — drops disappear after this (C++ server standard)
-const DROP_EXPIRE_FADE_MS = 2000; // 2s fade-out animation before removal
-
-/** Icon data URI cache */
-const iconDataUriCache = new Map();
+// (groundDrops, drop constants, iconDataUriCache are now in state.js)
+let _localDropIdCounter = -1;
+const DROP_EXPIRE_MS = 180_000;
+const DROP_EXPIRE_FADE_MS = 2000;
 
 function getIconDataUri(key) {
   return iconDataUriCache.get(key) ?? null;
@@ -4726,162 +4278,6 @@ window.addEventListener("blur", () => {
   }
 });
 
-function safeNumber(value, fallback = 0) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-/** Safe JSON load from localStorage. Returns null on any failure. */
-function loadJsonFromStorage(key) {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
-}
-
-/** Safe JSON save to localStorage. Silently ignores failures. */
-function saveJsonToStorage(key, value) {
-  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
-}
-
-function childByName(node, name) {
-  return (node?.$$ ?? []).find((child) => child.$imgdir === name);
-}
-
-function imgdirChildren(node) {
-  return (node?.$$ ?? []).filter((child) => typeof child.$imgdir === "string");
-}
-
-function parseLeafValue(leaf) {
-  if (leaf.$int) return Number.parseInt(leaf.value, 10);
-  if (leaf.$float) return Number.parseFloat(leaf.value);
-  if (leaf.$double) return Number.parseFloat(leaf.value);
-  if (leaf.$short) return Number.parseInt(leaf.value, 10);
-  if (leaf.$string) return String(leaf.value);
-  return leaf.value;
-}
-
-function imgdirLeafRecord(node) {
-  const record = {};
-  for (const child of node?.$$ ?? []) {
-    const key = child.$int ?? child.$float ?? child.$string ?? child.$double ?? child.$short;
-    if (!key) continue;
-    record[key] = parseLeafValue(child);
-  }
-  return record;
-}
-
-function vectorRecord(node) {
-  const vectors = {};
-
-  for (const child of node?.$$ ?? []) {
-    if (child.$vector) {
-      vectors[child.$vector] = {
-        x: safeNumber(child.x, 0),
-        y: safeNumber(child.y, 0),
-      };
-    }
-
-    if (child.$imgdir === "map") {
-      for (const mapVector of child.$$ ?? []) {
-        if (!mapVector.$vector) continue;
-        vectors[mapVector.$vector] = {
-          x: safeNumber(mapVector.x, 0),
-          y: safeNumber(mapVector.y, 0),
-        };
-      }
-    }
-  }
-
-  return vectors;
-}
-
-function pickCanvasNode(node, preferredIndex = "0") {
-  if (!node) return null;
-  if (node.$canvas) return node;
-
-  const children = node.$$ ?? [];
-  const directCanvas =
-    children.find((child) => child.$canvas === preferredIndex) ??
-    children.find((child) => typeof child.$canvas === "string");
-  if (directCanvas) return directCanvas;
-
-  const numericFrame =
-    children.find((child) => child.$imgdir === preferredIndex) ??
-    children.find((child) => /^\d+$/.test(child.$imgdir ?? ""));
-  if (numericFrame) return pickCanvasNode(numericFrame, "0");
-
-  return null;
-}
-
-function canvasMetaFromNode(canvasNode) {
-  if (!canvasNode?.basedata) return null;
-
-  const leaf = imgdirLeafRecord(canvasNode);
-  const hasA0 = Object.prototype.hasOwnProperty.call(leaf, "a0");
-  const hasA1 = Object.prototype.hasOwnProperty.call(leaf, "a1");
-
-  let opacityStart = 255;
-  let opacityEnd = 255;
-  if (hasA0 && hasA1) {
-    opacityStart = safeNumber(leaf.a0, 255);
-    opacityEnd = safeNumber(leaf.a1, 255);
-  } else if (hasA0) {
-    opacityStart = safeNumber(leaf.a0, 255);
-    opacityEnd = 255 - opacityStart;
-  } else if (hasA1) {
-    opacityEnd = safeNumber(leaf.a1, 255);
-    opacityStart = 255 - opacityEnd;
-  }
-
-  return {
-    basedata: canvasNode.basedata,
-    width: safeNumber(canvasNode.width, 0),
-    height: safeNumber(canvasNode.height, 0),
-    vectors: vectorRecord(canvasNode),
-    zName: String(leaf.z ?? ""),
-    moveType: safeNumber(leaf.moveType, 0),
-    moveW: safeNumber(leaf.moveW, 0),
-    moveH: safeNumber(leaf.moveH, 0),
-    moveP: safeNumber(leaf.moveP, Math.PI * 2 * 1000),
-    moveR: safeNumber(leaf.moveR, 0),
-    opacityStart,
-    opacityEnd,
-  };
-}
-
-function objectMetaExtrasFromNode(node) {
-  const leaf = imgdirLeafRecord(node);
-  return {
-    obstacle: safeNumber(leaf.obstacle, 0),
-    damage: safeNumber(leaf.damage, 0),
-    hazardDir: safeNumber(leaf.dir, 0),
-  };
-}
-
-function applyObjectMetaExtras(meta, extras) {
-  if (!meta) return null;
-  return {
-    ...meta,
-    ...extras,
-  };
-}
-
-function mapPathFromId(mapId) {
-  const id = String(mapId).trim();
-  if (!/^\d{9}$/.test(id)) {
-    throw new Error("Map ID must be 9 digits");
-  }
-
-  const prefix = id[0];
-  return `/resourcesv2/Map.wz/Map/Map${prefix}/${id}.img.json`;
-}
-
-function soundPathFromName(soundFile) {
-  const normalized = soundFile.endsWith(".img") ? soundFile : `${soundFile}.img`;
-  return `/resourcesv2/Sound.wz/${normalized}.json`;
-}
-
 function loadSettings() {
   const parsed = loadJsonFromStorage(SETTINGS_CACHE_KEY);
   if (!parsed) return;
@@ -4985,70 +4381,6 @@ function bindCanvasResizeHandling() {
   }
 }
 
-function worldToScreen(worldX, worldY) {
-  return {
-    x: Math.round(worldX - runtime.camera.x + gameViewWidth() / 2),
-    y: Math.round(worldY - runtime.camera.y + gameViewHeight() / 2),
-  };
-}
-
-function isWorldRectVisible(worldX, worldY, width, height, margin = 96) {
-  const halfW = gameViewWidth() / 2;
-  const halfH = gameViewHeight() / 2;
-  const left = runtime.camera.x - halfW - margin;
-  const right = runtime.camera.x + halfW + margin;
-  const top = runtime.camera.y - halfH - margin;
-  const bottom = runtime.camera.y + halfH + margin;
-
-  return worldX + width >= left && worldX <= right && worldY + height >= top && worldY <= bottom;
-}
-
-function drawWorldImage(image, worldX, worldY, opts = {}) {
-  const screen = worldToScreen(worldX, worldY);
-  const flipped = !!opts.flipped;
-
-  if (!flipped) {
-    ctx.drawImage(image, screen.x, screen.y);
-    runtime.perf.drawCalls += 1;
-    return;
-  }
-
-  ctx.save();
-  ctx.translate(screen.x + image.width, screen.y);
-  ctx.scale(-1, 1);
-  ctx.drawImage(image, 0, 0);
-  runtime.perf.drawCalls += 1;
-  ctx.restore();
-}
-
-function localPoint(meta, image, vectorName, flipped) {
-  const origin = meta?.vectors?.origin ?? { x: 0, y: image.height };
-  const vector = vectorName ? meta?.vectors?.[vectorName] ?? { x: 0, y: 0 } : { x: 0, y: 0 };
-
-  const baseX = origin.x + vector.x;
-  const x = flipped ? image.width - baseX : baseX;
-  const y = origin.y + vector.y;
-
-  return { x, y };
-}
-
-function topLeftFromAnchor(meta, image, anchorWorld, anchorName, flipped) {
-  const anchorLocal = localPoint(meta, image, anchorName, flipped);
-
-  return {
-    x: anchorWorld.x - anchorLocal.x,
-    y: anchorWorld.y - anchorLocal.y,
-  };
-}
-
-function worldPointFromTopLeft(meta, image, topLeft, vectorName, flipped) {
-  const pointLocal = localPoint(meta, image, vectorName, flipped);
-  return {
-    x: topLeft.x + pointLocal.x,
-    y: topLeft.y + pointLocal.y,
-  };
-}
-
 // ─── Map String Data ──────────────────────────────────────────────────────────
 let mapStringData = null;
 let mapStringDataPromise = null;
@@ -5089,159 +4421,6 @@ function getMapStringStreet(mapId) {
   if (!entry) return null;
   return entry.streetName ?? null;
 }
-
-/**
- * Centralized JSON asset loader with caching, request coalescing, and retry.
- * All WZ data access MUST go through this function (Step 32 compliance).
- * The promise cache deduplicates in-flight requests for the same path.
- * On transient failure, retries up to 2 times with exponential backoff.
- */
-async function fetchJson(path) {
-  if (!jsonCache.has(path)) {
-    jsonCache.set(
-      path,
-      (async () => {
-        const response = await cachedFetch(path);
-        if (!response.ok) {
-          const msg = `Failed to load JSON ${path} (${response.status})`;
-          console.error(`[fetchJson] FAIL: ${msg}`);
-          rlog(`fetchJson FAIL: ${msg}`);
-          throw new Error(msg);
-        }
-        return response.json();
-      })(),
-    );
-  }
-
-  return jsonCache.get(path);
-}
-
-function getMetaByKey(key) {
-  return metaCache.get(key) ?? null;
-}
-
-function requestMeta(key, loader) {
-  if (metaCache.has(key)) {
-    return metaCache.get(key);
-  }
-
-  if (!metaPromiseCache.has(key)) {
-    metaPromiseCache.set(
-      key,
-      (async () => {
-        try {
-          const meta = await loader();
-          if (meta) {
-            metaCache.set(key, meta);
-            return meta;
-          }
-        } catch (error) {
-          dlog("warn", `[asset-meta] failed ${key}: ${error}`);
-        } finally {
-          metaPromiseCache.delete(key);
-        }
-
-        return null;
-      })(),
-    );
-  }
-
-  return metaPromiseCache.get(key);
-}
-
-function requestImageByKey(key) {
-  if (imageCache.has(key)) {
-    return imageCache.get(key);
-  }
-
-  if (imagePromiseCache.has(key)) {
-    return imagePromiseCache.get(key);
-  }
-
-  const meta = metaCache.get(key);
-  if (!meta) {
-    return null;
-  }
-
-  if (!meta.basedata || typeof meta.basedata !== "string" || meta.basedata.length < 8) {
-    rlog(`BAD BASEDATA key=${key} type=${typeof meta.basedata} len=${meta.basedata?.length ?? 0}`);
-    return null;
-  }
-
-  const promise = new Promise((resolve) => {
-    const image = new Image();
-    image.onload = () => {
-      imageCache.set(key, image);
-      imagePromiseCache.delete(key);
-      resolve(image);
-    };
-    image.onerror = () => {
-      rlog(`IMG DECODE FAIL key=${key} basedataLen=${meta.basedata?.length ?? "N/A"}`);
-      imagePromiseCache.delete(key);
-      resolve(null);
-    };
-    image.src = `data:image/png;base64,${meta.basedata}`;
-  });
-
-  imagePromiseCache.set(key, promise);
-  return promise;
-}
-
-function getImageByKey(key) {
-  const cached = imageCache.get(key);
-  if (cached) return cached;
-  requestImageByKey(key);
-  return null;
-}
-
-function findNodeByPath(root, names) {
-  let current = root;
-  for (const name of names) {
-    current = childByName(current, name);
-    if (!current) return null;
-  }
-  return current;
-}
-
-function resolveNodeByUol(root, basePath, uolValue) {
-  if (!uolValue || typeof uolValue !== "string") {
-    return null;
-  }
-
-  const targetPath = uolValue.startsWith("/") ? [] : [...basePath];
-  const tokens = uolValue.split("/").filter((token) => token.length > 0);
-
-  for (const token of tokens) {
-    if (token === ".") continue;
-    if (token === "..") {
-      targetPath.pop();
-      continue;
-    }
-    targetPath.push(token);
-  }
-
-  if (targetPath.length === 0) {
-    return null;
-  }
-
-  let current = root;
-  for (const segment of targetPath) {
-    current = (current?.$$ ?? []).find(
-      (child) =>
-        child.$imgdir === segment ||
-        child.$canvas === segment ||
-        child.$vector === segment ||
-        child.$sound === segment,
-    );
-
-    if (!current) {
-      return null;
-    }
-  }
-
-  return current;
-}
-
 // ─── Life (Mob/NPC) Sprite System ─────────────────────────────────────────────
 const lifeAnimations = new Map(); // key: "m:0120100" or "n:1012000" -> { stances, name }
 const lifeAnimationPromises = new Map();
@@ -5407,26 +4586,10 @@ async function loadLifeAnimation(type, id) {
 // Per-life-entry runtime animation state
 const lifeRuntimeState = new Map();
 
-// ─── Mob Physics (per-tick values — used internally by friction formulas) ──────
-const MOB_TPS = 125;              // C++ ticks per second (1000 / 8ms)
-const MOB_GRAVFORCE = 0.14;      // px/tick²
-const MOB_SWIMGRAVFORCE = 0.03;
-const MOB_FRICTION = 0.5;
-const MOB_SLOPEFACTOR = 0.1;
-const MOB_GROUNDSLIP = 3.0;
-const MOB_SWIMFRICTION = 0.08;
+// (Mob physics/behavior/UI constants are now in state.js)
+const MOB_TPS = 125;
 const MOB_HSPEED_DEADZONE = 0.1;
-
-// ─── Mob Behavior ─────────────────────────────────────────────────────────────
-const MOB_DEFAULT_HP = 100;       // fallback if WZ maxHP missing
-const MOB_RESPAWN_DELAY_MS = 8000;
-
-const MOB_AGGRO_DURATION_MS = 4000; // chase player after stagger
-
-
-// ─── Mob UI ───────────────────────────────────────────────────────────────────
-const MOB_HP_BAR_WIDTH = 60;
-const MOB_HP_BAR_HEIGHT = 5;
+const MOB_DEFAULT_HP = 100;
 const MOB_HP_SHOW_MS = 3000;
 
 // ─── Damage Numbers (from C++ DamageNumber.cpp) ──────────────────────────────
@@ -5437,9 +4600,7 @@ const DMG_NUMBER_ROW_HEIGHT_CRIT = 36;
 const DMG_DIGIT_ADVANCES = [24, 20, 22, 22, 24, 23, 24, 22, 24, 24];
 
 // ─── Combat / Attack ──────────────────────────────────────────────────────────
-const ATTACK_COOLDOWN_MS = 600;
-const ATTACK_RANGE_X = 120;
-const ATTACK_RANGE_Y = 50;
+// (ATTACK_COOLDOWN_MS, ATTACK_RANGE_X/Y are now in state.js)
 const WEAPON_MULTIPLIER = 4.0;    // 1H Sword
 const DEFAULT_MASTERY = 0.2;
 const DEFAULT_CRITICAL = 0.05;
@@ -6029,9 +5190,6 @@ function buildFallbackScriptDialogue(npcName, npcId, flavourLines) {
   return lines;
 }
 
-function randomRange(min, max) {
-  return min + Math.random() * (max - min);
-}
 
 /** Get Y on a foothold at X, or null if X is outside range or foothold is a wall. */
 function fhGroundAt(fh, x) {
@@ -7608,59 +6766,6 @@ function drawNpcDialogue() {
 
   ctx.restore();
 }
-
-/**
- * Word-wrap text to fit within maxWidth.
- */
-function wrapText(ctx, text, maxWidth) {
-  const lines = [];
-  // Split on explicit newlines first, then word-wrap each paragraph
-  const paragraphs = text.split("\n");
-  for (const para of paragraphs) {
-    const words = para.split(/\s+/).filter(w => w.length > 0);
-    if (words.length === 0) { lines.push(""); continue; }
-    let currentLine = "";
-    for (const word of words) {
-      const testLine = currentLine ? currentLine + " " + word : word;
-      if (ctx.measureText(testLine).width > maxWidth && currentLine) {
-        lines.push(currentLine);
-        currentLine = word;
-      } else {
-        currentLine = testLine;
-      }
-    }
-    if (currentLine) lines.push(currentLine);
-  }
-  if (lines.length === 0) lines.push("");
-  return lines;
-}
-
-/**
- * Draw a rounded rectangle path (does NOT fill/stroke — caller does that).
- */
-function roundRect(ctx, x, y, w, h, r, topOnly = false) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  if (topOnly) {
-    ctx.lineTo(x + w, y + h);
-    ctx.lineTo(x, y + h);
-  } else {
-    ctx.lineTo(x + w, y + h - r);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-    ctx.lineTo(x + r, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  }
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-}
-
-// ─── Reactor Sprite System ────────────────────────────────────────────────────
-// reactorAnimations: reactorId → { states: { [stateNum]: { idle: [frames], hit: [frames] } }, name }
-const reactorAnimations = new Map();
-const reactorAnimationPromises = new Map();
 
 /**
  * Load reactor sprite data from Reactor.wz JSON.
@@ -10910,24 +10015,6 @@ function updateCamera(dt) {
   runtime.camera.y = clampCameraYToMapBounds(runtime.map, runtime.camera.y);
 }
 
-function drawScreenImage(image, x, y, flipped) {
-  const drawX = Math.round(x);
-  const drawY = Math.round(y);
-
-  if (!flipped) {
-    ctx.drawImage(image, drawX, drawY);
-    runtime.perf.drawCalls += 1;
-    return;
-  }
-
-  ctx.save();
-  ctx.translate(drawX + image.width, drawY);
-  ctx.scale(-1, 1);
-  ctx.drawImage(image, 0, 0);
-  runtime.perf.drawCalls += 1;
-  ctx.restore();
-}
-
 /**
  * Black-fill areas outside VR bounds when the map is smaller than the viewport.
  * C++ parity: camera locks to top/left edge when map is shorter/narrower,
@@ -12172,12 +11259,6 @@ function drawChatBubble() {
 }
 
 // ─── Minimap ───────────────────────────────────────────────────────────────────
-const MINIMAP_PADDING = 10;
-const MINIMAP_TITLE_HEIGHT = 20;
-const MINIMAP_BORDER_RADIUS = 6;
-const MINIMAP_PLAYER_RADIUS = 3;
-const MINIMAP_PORTAL_RADIUS = 2.5;
-const MINIMAP_CLOSE_SIZE = 14;
 
 // Stored each frame so the click handler knows where the toggle button is
 // ─── Player Name Label ────────────────────────────────────────────────────────
@@ -12327,9 +11408,6 @@ function drawGaugeBar(x, y, w, h, current, max, fillColor, fillColor2, bgColor, 
 
 // ─── Map Name Banner ─────────────────────────────────────────────────────────
 
-const MAP_BANNER_SHOW_MS = 3500;
-const MAP_BANNER_FADE_MS = 900;
-const MAP_BANNER_SLIDE_MS = 350;
 
 /** Map mark images cache: markName → Image (or null if not available) */
 const _mapMarkImages = new Map();
@@ -13371,9 +12449,6 @@ function update(dt) {
 
 }
 
-const FIXED_STEP_MS = 1000 / 60;
-const MAX_FRAME_DELTA_MS = 250;
-const MAX_STEPS_PER_FRAME = 6;
 let pendingLoopIntervalMs = 0;
 
 function tick(timestampMs) {
@@ -13532,8 +12607,6 @@ function unlockAudio() {
   }
 }
 
-const BGM_FADE_DURATION_MS = 800;
-const BGM_TARGET_VOLUME = 0.25;
 
 function fadeOutAudio(audio, durationMs) {
   if (!audio) return;
@@ -13594,7 +12667,6 @@ async function playBgmPath(bgmPath) {
   }
 }
 
-const SFX_POOL_SIZE = 8;
 const sfxPool = new Map(); // key -> Audio[]
 
 function getSfxFromPool(dataUri) {
@@ -13661,8 +12733,6 @@ async function playSfxWithFallback(soundFile, soundName, fallbackSoundName) {
 }
 
 // Default mob sounds (Snail — 0100100, the most common base mob)
-const DEFAULT_MOB_HIT_SOUND = "0100100/Damage";
-const DEFAULT_MOB_DIE_SOUND = "0100100/Die";
 
 /**
  * Play a mob sound effect with fallback to default (Snail) if not found.
@@ -14487,7 +13557,7 @@ refreshUIWindows();
 // Wire inventory tab buttons
 for (const btn of document.querySelectorAll("#inv-tabs .inv-tab")) {
   btn.addEventListener("click", () => {
-    currentInvTab = btn.dataset.tab;
+    setCurrentInvTab(btn.dataset.tab);
     refreshInvGrid();
   });
 }
@@ -14805,7 +13875,7 @@ window.addEventListener("beforeunload", () => {
   // ── Obtain a valid session via proof-of-work if needed (online only) ──
   if (window.__MAPLE_ONLINE__ && !sessionId) {
     console.log("[boot] No session — performing proof-of-work…");
-    sessionId = await obtainSessionViaPow();
+    setSessionId(await obtainSessionViaPow());
     localStorage.setItem(SESSION_KEY, sessionId);
   }
 
@@ -14827,14 +13897,14 @@ window.addEventListener("beforeunload", () => {
       if (checkResp.status === 401) {
         console.log("[boot] Session rejected by server — performing proof-of-work…");
         localStorage.removeItem(SESSION_KEY);
-        sessionId = await obtainSessionViaPow();
+        setSessionId(await obtainSessionViaPow());
         localStorage.setItem(SESSION_KEY, sessionId);
       }
     } catch (err) {
       console.error("[boot] Session check failed (server unreachable):", err);
       // Force re-auth via PoW (which has its own retry UI)
       localStorage.removeItem(SESSION_KEY);
-      sessionId = await obtainSessionViaPow();
+      setSessionId(await obtainSessionViaPow());
       localStorage.setItem(SESSION_KEY, sessionId);
     }
   }
