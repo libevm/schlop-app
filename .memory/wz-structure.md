@@ -1,14 +1,14 @@
 # WZ File Structure Reference
 
 > **Purpose:** Instruct AI agents on how to read, navigate, and edit the extracted WZ data files used by this MapleStory web client.  
-> **Location:** `resources/<Name>.wz/` (identical copy in `resourcesv2/`)  
-> **Format:** All data is pre-extracted from binary `.wz` archives into **JSON files** (`.img.json`).
+> **Location:** `resourcesv3/<Name>.wz/`  
+> **Format:** All data is pre-extracted from binary `.wz` archives into **Harepacker Classic XML files** (`.img.xml`). The client's `wz-xml-adapter.js` converts these to JSON nodes at fetch time so all consumer code uses the same `$imgdir`/`$$`/`$int`/etc. convention.
 
 ---
 
-## 1. JSON Node Convention
+## 1. Node Convention
 
-Every `.img.json` file follows a recursive WZ-XML-to-JSON convention. Understanding this is critical.
+Every `.img.xml` file is Harepacker Classic XML. The client's `wz-xml-adapter.js` converts these to JSON nodes at fetch time. All client code navigates the JSON convention described below.
 
 ### 1.1 Node Types
 
@@ -93,13 +93,13 @@ info.$$.push({ "$int": "fieldLimit", "value": "0" });
 
 | File | Purpose |
 |---|---|
-| `zmap.img.json` | **Z-order list** — defines the draw order of all character layers (body, arm, hair, face, cap, weapon, shield, cape, shoes, etc.). Each entry is a `$null` node whose name is a draw layer. Layers at the top draw in front. |
-| `smap.img.json` | **Slot map** — maps each z-layer name to equipment slot codes (e.g., `"Wp"` for weapon, `"Bd"` for body, `"Gl"` for glove). Used to determine which equipment sprite file provides art for each layer. |
-| `StandardPDD.img.json` | **PDD (Physical Defense) lookup tables** by job class and level. |
+| `zmap.img.xml` | **Z-order list** — defines the draw order of all character layers (body, arm, hair, face, cap, weapon, shield, cape, shoes, etc.). Each entry is a `$null` node whose name is a draw layer. Layers at the top draw in front. |
+| `smap.img.xml` | **Slot map** — maps each z-layer name to equipment slot codes (e.g., `"Wp"` for weapon, `"Bd"` for body, `"Gl"` for glove). Used to determine which equipment sprite file provides art for each layer. |
+| `StandardPDD.img.xml` | **PDD (Physical Defense) lookup tables** by job class and level. |
 
 ### Editing Notes
-- To change draw order, reorder the `$null` entries in `zmap.img.json`.
-- To change which slot renders at a layer, edit the `$string` value in `smap.img.json`.
+- To change draw order, reorder the `$null` entries in `zmap.img.xml`.
+- To change which slot renders at a layer, edit the `$string` value in `smap.img.xml`.
 
 ---
 
@@ -111,9 +111,9 @@ info.$$.push({ "$int": "fieldLimit", "value": "0" });
 
 ```
 Map.wz/
-├── Back/                    # Background sprite sets (e.g., grassySoil.img.json)
+├── Back/                    # Background sprite sets (e.g., grassySoil.img.xml)
 ├── Map/
-│   ├── AreaCode.img.json    # Area code lookups
+│   ├── AreaCode.img.xml    # Area code lookups
 │   ├── Map0/                # Maps 000000000–000999999
 │   ├── Map1/                # Maps 100000000–199999999  (Victoria Island)
 │   ├── Map2/                # Maps 200000000–299999999  (Ossyria)
@@ -124,7 +124,7 @@ Map.wz/
 └── WorldMap/                # World map overlays
 ```
 
-### 4.2 Map File Structure (`XXXXXXXXX.img.json`)
+### 4.2 Map File Structure (`XXXXXXXXX.img.xml`)
 
 Each map is identified by its 9-digit ID (e.g., `100000000` = Henesys).
 
@@ -158,7 +158,7 @@ Each map is identified by its 9-digit ID (e.g., `100000000` = Henesys).
 { "$int": "fly", "value": "0" }
 ```
 
-- `bgm` format: `"BgmXX/TrackName"` — references `Sound.wz/BgmXX.img.json` → entry named `TrackName`.
+- `bgm` format: `"BgmXX/TrackName"` — references `Sound.wz/BgmXX.img.xml` → entry named `TrackName`.
 - `returnMap` / `forcedReturn`: map IDs for return scroll / forced return.
 - `fieldLimit`: bitmask controlling allowed actions (e.g., no teleport, no summoning).
 
@@ -168,7 +168,7 @@ Each entry defines one background layer:
 
 | Property | Type | Description |
 |---|---|---|
-| `bS` | string | Background set name (references `Back/<name>.img.json`) |
+| `bS` | string | Background set name (references `Back/<name>.img.xml`) |
 | `no` | int | Sprite index within the set |
 | `x`, `y` | int | Position offset |
 | `rx`, `ry` | int | Parallax range |
@@ -182,7 +182,7 @@ Each entry defines one background layer:
 #### 4.2.3 Map Layers (`0`–`7`) — Tiles & Objects
 
 Each layer has:
-- `info` → `tS` (tile set name, references `Tile/<tS>.img.json`)
+- `info` → `tS` (tile set name, references `Tile/<tS>.img.xml`)
 - `tile` → array of tile placements
 - `obj` → array of object placements
 
@@ -197,7 +197,7 @@ Each layer has:
 
 **Object entry:**
 ```json
-{ "$string": "oS", "value": "acc1" },     // object set (references Obj/<oS>.img.json)
+{ "$string": "oS", "value": "acc1" },     // object set (references Obj/<oS>.img.xml)
 { "$string": "l0", "value": "grassySoil" }, // category level 0
 { "$string": "l1", "value": "artificiality" }, // category level 1
 { "$string": "l2", "value": "3" },        // category level 2
@@ -208,7 +208,7 @@ Each layer has:
 { "$int": "zM", "value": "..." }
 ```
 
-Object sprite path: `Obj/<oS>.img.json` → `<l0>` → `<l1>` → `<l2>` → frame `0`, `1`, etc.
+Object sprite path: `Obj/<oS>.img.xml` → `<l0>` → `<l1>` → `<l2>` → frame `0`, `1`, etc.
 
 #### 4.2.4 `life` Section — NPCs & Monsters
 
@@ -284,8 +284,8 @@ Simple vector entries:
 
 ```
 Character.wz/
-├── 0000XXXX.img.json       # Body skins (skin color variants)
-├── 0001XXXX.img.json       # Head skins
+├── 0000XXXX.img.xml       # Body skins (skin color variants)
+├── 0001XXXX.img.xml       # Head skins
 ├── Accessory/              # Face accessories, eye accessories, earrings
 ├── Cap/                    # Hats
 ├── Cape/                   # Capes
@@ -353,7 +353,7 @@ Each file contains:
 
 - **`origin`**: the anchor point for positioning.
 - **`map`**: named anchor points (`neck`, `navel`, `hand`, `handMove`) used to align parts.
-- **`z`**: references `Base.wz/zmap.img.json` for draw order.
+- **`z`**: references `Base.wz/zmap.img.xml` for draw order.
 - **`delay`**: frame display duration in ms (in the frame directory, not the canvas).
 
 ### 5.4 Editing Tips
@@ -368,7 +368,7 @@ Each file contains:
 
 **Path:** `resources/Mob.wz/`
 
-Files: `XXXXXXX.img.json` (7-digit mob ID, e.g., `0100100` = Snail).
+Files: `XXXXXXX.img.xml` (7-digit mob ID, e.g., `0100100` = Snail).
 
 ### 6.1 Structure
 
@@ -412,7 +412,7 @@ Files: `XXXXXXX.img.json` (7-digit mob ID, e.g., `0100100` = Snail).
 
 **Path:** `resources/Npc.wz/`
 
-Files: `XXXXXXX.img.json` (7-digit NPC ID).
+Files: `XXXXXXX.img.xml` (7-digit NPC ID).
 
 ### Structure
 
@@ -443,7 +443,7 @@ Each action contains numbered frame canvases with `origin`, `delay`, and optiona
 
 ### 8.2 File Naming
 
-Files are grouped by prefix: e.g., `0200.img.json` contains items `02000000`–`02009999`.
+Files are grouped by prefix: e.g., `0200.img.xml` contains items `02000000`–`02009999`.
 
 ### 8.3 Item Entry Structure
 
@@ -471,7 +471,7 @@ Files are grouped by prefix: e.g., `0200.img.json` contains items `02000000`–`
 
 **Path:** `resources/Skill.wz/`
 
-Files named by job ID: `000.img.json` (Beginner), `100.img.json` (Warrior 1st job), `110.img.json` (Fighter), etc.
+Files named by job ID: `000.img.xml` (Beginner), `100.img.xml` (Warrior 1st job), `110.img.xml` (Fighter), etc.
 
 ### Structure
 
@@ -509,15 +509,15 @@ Files named by job ID: `000.img.json` (Beginner), `100.img.json` (Warrior 1st jo
 
 | File Pattern | Content |
 |---|---|
-| `Bgm00`–`Bgm21.img.json` | Background music tracks |
+| `Bgm00`–`Bgm21.img.xml` | Background music tracks |
 | `BgmEvent`, `BgmGL`, `BgmJp`, etc. | Regional/event BGM |
-| `BgmUI.img.json` | UI music |
-| `Game.img.json` | General game SFX |
-| `Mob.img.json` | Monster SFX |
-| `Skill.img.json` | Skill SFX |
-| `Field.img.json` | Field/ambient SFX |
-| `UI.img.json` | UI SFX |
-| `Item.img.json`, `Weapon.img.json` | Item/weapon SFX |
+| `BgmUI.img.xml` | UI music |
+| `Game.img.xml` | General game SFX |
+| `Mob.img.xml` | Monster SFX |
+| `Skill.img.xml` | Skill SFX |
+| `Field.img.xml` | Field/ambient SFX |
+| `UI.img.xml` | UI SFX |
+| `Item.img.xml`, `Weapon.img.xml` | Item/weapon SFX |
 
 ### Structure
 
@@ -526,7 +526,7 @@ Each file's `$$` array contains `$sound` entries:
 { "$sound": "FloralLife", "basedata": "<base64 audio>" }
 ```
 
-**Map BGM reference format:** A map's `info.bgm` value like `"Bgm00/FloralLife"` means: open `Sound.wz/Bgm00.img.json`, find the `$sound` entry named `"FloralLife"`.
+**Map BGM reference format:** A map's `info.bgm` value like `"Bgm00/FloralLife"` means: open `Sound.wz/Bgm00.img.xml`, find the `$sound` entry named `"FloralLife"`.
 
 ### Editing Notes
 - To replace audio, encode the new file as base64 and replace `basedata`.
@@ -542,16 +542,16 @@ These files provide human-readable names and descriptions for all game entities.
 
 | File | Contents |
 |---|---|
-| `Map.img.json` | Map names: `streetName`, `mapName`, `mapDesc` — keyed by map ID |
-| `Mob.img.json` | Monster names — keyed by mob ID (without leading zeros) |
-| `Npc.img.json` | NPC names — keyed by NPC ID |
-| `Eqp.img.json` | Equipment names/descriptions — nested by slot category |
-| `Consume.img.json` | Use item names |
-| `Etc.img.json` | Etc item names |
-| `Skill.img.json` | Skill names and descriptions |
-| `Cash.img.json` | Cash item names |
-| `Pet.img.json` | Pet names |
-| `Ins.img.json` | Setup/install item names |
+| `Map.img.xml` | Map names: `streetName`, `mapName`, `mapDesc` — keyed by map ID |
+| `Mob.img.xml` | Monster names — keyed by mob ID (without leading zeros) |
+| `Npc.img.xml` | NPC names — keyed by NPC ID |
+| `Eqp.img.xml` | Equipment names/descriptions — nested by slot category |
+| `Consume.img.xml` | Use item names |
+| `Etc.img.xml` | Etc item names |
+| `Skill.img.xml` | Skill names and descriptions |
+| `Cash.img.xml` | Cash item names |
+| `Pet.img.xml` | Pet names |
+| `Ins.img.xml` | Setup/install item names |
 
 ### Example — Map Names
 
@@ -582,15 +582,15 @@ Map IDs are grouped under region keys: `maple` (0–9M), `victoria` (100M), `oss
 
 | File | Purpose |
 |---|---|
-| `StatusBar.img.json` | HP/MP bars, EXP bar, level display, quickslots |
-| `UIWindow.img.json` | Inventory, equipment, stat, skill windows |
-| `Basic.img.json` | Basic UI elements (cursors, scroll bars, buttons) |
-| `Login.img.json` | Login screen UI |
-| `ChatBalloon.img.json` | Chat bubble sprites |
-| `NameTag.img.json` | Player name tag styles |
-| `BuffIcon.img.json` | Buff status icons |
-| `CashShop.img.json` | Cash shop UI |
-| `MapLogin.img.json` | Map-select login screen |
+| `StatusBar.img.xml` | HP/MP bars, EXP bar, level display, quickslots |
+| `UIWindow.img.xml` | Inventory, equipment, stat, skill windows |
+| `Basic.img.xml` | Basic UI elements (cursors, scroll bars, buttons) |
+| `Login.img.xml` | Login screen UI |
+| `ChatBalloon.img.xml` | Chat bubble sprites |
+| `NameTag.img.xml` | Player name tag styles |
+| `BuffIcon.img.xml` | Buff status icons |
+| `CashShop.img.xml` | Cash shop UI |
+| `MapLogin.img.xml` | Map-select login screen |
 
 Structure is deeply nested `$imgdir`s containing `$canvas` sprites for each UI component.
 
@@ -604,15 +604,15 @@ Miscellaneous data tables:
 
 | File | Purpose |
 |---|---|
-| `Commodity.img.json` | Cash shop commodity listings |
-| `MakeCharInfo.img.json` | Character creation options (starting hair, face, etc.) |
-| `NpcLocation.img.json` | Which NPCs appear on which maps |
-| `MapNeighbors.img.json` | Adjacent map relationships |
-| `SetItemInfo.img.json` | Set bonus definitions |
-| `ItemMake.img.json` | Item crafting recipes |
-| `OXQuiz.img.json` | OX quiz questions |
-| `ForbiddenName.img.json` | Banned character names |
-| `Category.img.json` | Item category hierarchy |
+| `Commodity.img.xml` | Cash shop commodity listings |
+| `MakeCharInfo.img.xml` | Character creation options (starting hair, face, etc.) |
+| `NpcLocation.img.xml` | Which NPCs appear on which maps |
+| `MapNeighbors.img.xml` | Adjacent map relationships |
+| `SetItemInfo.img.xml` | Set bonus definitions |
+| `ItemMake.img.xml` | Item crafting recipes |
+| `OXQuiz.img.xml` | OX quiz questions |
+| `ForbiddenName.img.xml` | Banned character names |
+| `Category.img.xml` | Item category hierarchy |
 
 ---
 
@@ -622,12 +622,12 @@ Miscellaneous data tables:
 
 | File | Purpose |
 |---|---|
-| `QuestInfo.img.json` | Quest names, descriptions, area codes |
-| `Check.img.json` | Quest start/completion requirements (level, items, mobs killed) |
-| `Act.img.json` | Quest rewards (items, EXP, meso, fame) |
-| `Say.img.json` | Quest NPC dialogue |
-| `PQuest.img.json` | Party quest definitions |
-| `Exclusive.img.json` | Mutually exclusive quest groups |
+| `QuestInfo.img.xml` | Quest names, descriptions, area codes |
+| `Check.img.xml` | Quest start/completion requirements (level, items, mobs killed) |
+| `Act.img.xml` | Quest rewards (items, EXP, meso, fame) |
+| `Say.img.xml` | Quest NPC dialogue |
+| `PQuest.img.xml` | Party quest definitions |
+| `Exclusive.img.xml` | Mutually exclusive quest groups |
 
 Quest IDs are the keys within each file.
 
@@ -637,7 +637,7 @@ Quest IDs are the keys within each file.
 
 **Path:** `resources/Reactor.wz/`
 
-Files: `XXXXXXX.img.json`
+Files: `XXXXXXX.img.xml`
 
 ### Structure
 
@@ -675,14 +675,14 @@ States are numbered directories. Each state has events that trigger transitions 
 
 | File | Purpose |
 |---|---|
-| `BasicEff.img.json` | General effects (level up, skill get, etc.) |
-| `CharacterEff.img.json` | Character-bound effects |
-| `ItemEff.img.json` | Item use effects |
-| `MapEff.img.json` | Map-specific effects |
-| `SkillName*.img.json` | Skill name display effects |
-| `Summon.img.json` | Summon visual effects |
-| `Direction*.img.json` | Direction/cutscene effects |
-| `Tomb.img.json` | Death/tombstone effect |
+| `BasicEff.img.xml` | General effects (level up, skill get, etc.) |
+| `CharacterEff.img.xml` | Character-bound effects |
+| `ItemEff.img.xml` | Item use effects |
+| `MapEff.img.xml` | Map-specific effects |
+| `SkillName*.img.xml` | Skill name display effects |
+| `Summon.img.xml` | Summon visual effects |
+| `Direction*.img.xml` | Direction/cutscene effects |
+| `Tomb.img.xml` | Death/tombstone effect |
 
 Each effect is a named `$imgdir` containing numbered `$canvas` animation frames with `origin` and `delay`.
 
@@ -691,7 +691,7 @@ Each effect is a named `$imgdir` containing numbered `$canvas` animation frames 
 ## 18. Common Editing Recipes
 
 ### Add an NPC to a Map
-1. Open `Map.wz/Map/MapX/XXXXXXXXX.img.json`
+1. Open `Map.wz/Map/MapX/XXXXXXXXX.img.xml`
 2. Find the `life` section
 3. Add a new `$imgdir` entry with a unique index:
 ```json
@@ -722,7 +722,7 @@ Each effect is a named `$imgdir` containing numbered `$canvas` animation frames 
 ```
 
 ### Change Monster Stats
-1. Open `Mob.wz/XXXXXXX.img.json`
+1. Open `Mob.wz/XXXXXXX.img.xml`
 2. Find the `info` section
 3. Edit the relevant `$int` value (e.g., `maxHP`, `exp`, `level`)
 
@@ -733,7 +733,7 @@ Each effect is a named `$imgdir` containing numbered `$canvas` animation frames 
 
 ### Look Up a Name
 1. Determine entity type (mob, NPC, map, item, etc.)
-2. Open the corresponding `String.wz/<Type>.img.json`
+2. Open the corresponding `String.wz/<Type>.img.xml`
 3. Search for the ID (without leading zeros for mobs/NPCs)
 
 ### Replace a Sprite
@@ -761,17 +761,17 @@ The `value` is a relative path from the current node. `..` goes up one level. Wh
 
 ```
 Map.wz map file
-  ├── info.bgm ──────────→ Sound.wz/BgmXX.img.json
-  ├── back[].bS ─────────→ Map.wz/Back/<bS>.img.json
-  ├── layer[].info.tS ───→ Map.wz/Tile/<tS>.img.json
-  ├── layer[].obj[].oS ──→ Map.wz/Obj/<oS>.img.json
-  ├── life[].id (type=n) → Npc.wz/<id>.img.json + String.wz/Npc.img.json
-  ├── life[].id (type=m) → Mob.wz/<id>.img.json + String.wz/Mob.img.json
-  └── portal[].tm ───────→ Map.wz/Map/MapX/<tm>.img.json
+  ├── info.bgm ──────────→ Sound.wz/BgmXX.img.xml
+  ├── back[].bS ─────────→ Map.wz/Back/<bS>.img.xml
+  ├── layer[].info.tS ───→ Map.wz/Tile/<tS>.img.xml
+  ├── layer[].obj[].oS ──→ Map.wz/Obj/<oS>.img.xml
+  ├── life[].id (type=n) → Npc.wz/<id>.img.xml + String.wz/Npc.img.xml
+  ├── life[].id (type=m) → Mob.wz/<id>.img.xml + String.wz/Mob.img.xml
+  └── portal[].tm ───────→ Map.wz/Map/MapX/<tm>.img.xml
 
 Character.wz equipment file
-  ├── z values ──────────→ Base.wz/zmap.img.json (draw order)
-  ├── islot/vslot ───────→ Base.wz/smap.img.json (slot mapping)
+  ├── z values ──────────→ Base.wz/zmap.img.xml (draw order)
+  ├── islot/vslot ───────→ Base.wz/smap.img.xml (slot mapping)
   └── map vectors ───────→ Character.wz body file anchors (navel, neck, hand)
 
 String.wz

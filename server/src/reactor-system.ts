@@ -8,6 +8,8 @@
  * - Timed respawn (30s after destruction)
  */
 
+import { readWzXmlFile } from "./wz-xml.ts";
+
 // ─── Constants ──────────────────────────────────────────────────────
 
 /** How many hits to destroy a reactor */
@@ -33,7 +35,7 @@ const REACTOR_HIT_RANGE_Y = 60;
  *   chairs      5%
  *   cash items   2%
  *
- * Pools are loaded dynamically from resourcesv2/ WZ data.
+ * Pools are loaded dynamically from resourcesv3/ WZ data.
  */
 
 let EQUIP_DROPS: number[] = [];
@@ -75,9 +77,9 @@ function buildItemBlacklist(resourceBase: string): Set<number> {
   // ── 1) Items with MISSING NAME / empty name in String.wz ──
   const stringDir = path.join(resourceBase, "String.wz");
 
-  // Eqp.img.json
+  // Eqp.img.xml
   try {
-    const json = JSON.parse(fs.readFileSync(path.join(stringDir, "Eqp.img.json"), "utf8"));
+    const json = readWzXmlFile(path.join(stringDir, "Eqp.img.xml"));
     const eqp = json.$$?.find((c: any) => c.$imgdir === "Eqp");
     if (eqp) {
       for (const cat of eqp.$$ ?? []) {
@@ -94,9 +96,9 @@ function buildItemBlacklist(resourceBase: string): Set<number> {
   } catch {}
 
   // Consume, Etc, Ins, Cash string files
-  for (const file of ["Consume.img.json", "Etc.img.json", "Ins.img.json", "Cash.img.json"]) {
+  for (const file of ["Consume.img.xml", "Etc.img.xml", "Ins.img.xml", "Cash.img.xml"]) {
     try {
-      const json = JSON.parse(fs.readFileSync(path.join(stringDir, file), "utf8"));
+      const json = readWzXmlFile(path.join(stringDir, file));
       for (const item of json.$$ ?? []) {
         const id = parseInt(item.$imgdir, 10);
         const nameNode = item.$$?.find((c: any) => c.$string === "name");
@@ -111,8 +113,8 @@ function buildItemBlacklist(resourceBase: string): Set<number> {
   // ── 2) Prefix 160 (Skill Effect weapons — no stances, islot=Ri) ──
   const weaponDir = path.join(resourceBase, "Character.wz", "Weapon");
   try {
-    for (const f of fs.readdirSync(weaponDir).filter((f: string) => f.endsWith(".img.json"))) {
-      const id = parseInt(f.replace(".img.json", ""), 10);
+    for (const f of fs.readdirSync(weaponDir).filter((f: string) => f.endsWith(".img.xml"))) {
+      const id = parseInt(f.replace(".img.xml", ""), 10);
       if (!isNaN(id) && Math.floor(id / 10000) === 160) {
         blacklist.add(id);
       }
@@ -124,11 +126,11 @@ function buildItemBlacklist(resourceBase: string): Set<number> {
   for (const dir of equipDirs) {
     const fullDir = path.join(resourceBase, "Character.wz", dir);
     try {
-      for (const f of fs.readdirSync(fullDir).filter((f: string) => f.endsWith(".img.json"))) {
-        const id = parseInt(f.replace(".img.json", ""), 10);
+      for (const f of fs.readdirSync(fullDir).filter((f: string) => f.endsWith(".img.xml"))) {
+        const id = parseInt(f.replace(".img.xml", ""), 10);
         if (isNaN(id)) continue;
         try {
-          const json = JSON.parse(fs.readFileSync(path.join(fullDir, f), "utf8"));
+          const json = readWzXmlFile(path.join(fullDir, f));
           const info = json.$$?.find((c: any) => c.$imgdir === "info");
           if (!info) continue;
           for (const c of info.$$ ?? []) {
@@ -146,7 +148,7 @@ function buildItemBlacklist(resourceBase: string): Set<number> {
   return blacklist;
 }
 
-/** Load drop pools from resourcesv2/ WZ data. Call once at server startup. */
+/** Load drop pools from resourcesv3/ WZ data. Call once at server startup. */
 export function loadDropPools(resourceBase: string): void {
   if (_dropPoolsLoaded) return;
   _dropPoolsLoaded = true;
@@ -163,15 +165,15 @@ export function loadDropPools(resourceBase: string): void {
   for (const dir of equipDirs) {
     const fullDir = path.join(resourceBase, "Character.wz", dir);
     try {
-      const files = fs.readdirSync(fullDir).filter((f: string) => f.endsWith(".img.json"));
+      const files = fs.readdirSync(fullDir).filter((f: string) => f.endsWith(".img.xml"));
       for (const f of files) {
-        const id = parseInt(f.replace(".img.json", ""), 10);
+        const id = parseInt(f.replace(".img.xml", ""), 10);
         if (isNaN(id) || blacklist.has(id)) continue;
         EQUIP_DROPS.push(id);
 
         // Check if this equip is a cash item
         try {
-          const json = JSON.parse(fs.readFileSync(path.join(fullDir, f), "utf8"));
+          const json = readWzXmlFile(path.join(fullDir, f));
           const info = json.$$?.find((c: any) => c.$imgdir === "info");
           if (info) {
             const cashNode = info.$$?.find((c: any) => (c.$int === "cash" || c.$short === "cash"));
@@ -187,8 +189,8 @@ export function loadDropPools(resourceBase: string): void {
   // ── USE items: Item.wz/Consume/ ──
   const consumeDir = path.join(resourceBase, "Item.wz", "Consume");
   try {
-    for (const f of fs.readdirSync(consumeDir).filter((f: string) => f.endsWith(".img.json"))) {
-      const json = JSON.parse(fs.readFileSync(path.join(consumeDir, f), "utf8"));
+    for (const f of fs.readdirSync(consumeDir).filter((f: string) => f.endsWith(".img.xml"))) {
+      const json = readWzXmlFile(path.join(consumeDir, f));
       USE_DROPS.push(...extractItemIds(json).filter(id => !blacklist.has(id)));
     }
   } catch {}
@@ -196,8 +198,8 @@ export function loadDropPools(resourceBase: string): void {
   // ── ETC items: Item.wz/Etc/ ──
   const etcDir = path.join(resourceBase, "Item.wz", "Etc");
   try {
-    for (const f of fs.readdirSync(etcDir).filter((f: string) => f.endsWith(".img.json"))) {
-      const json = JSON.parse(fs.readFileSync(path.join(etcDir, f), "utf8"));
+    for (const f of fs.readdirSync(etcDir).filter((f: string) => f.endsWith(".img.xml"))) {
+      const json = readWzXmlFile(path.join(etcDir, f));
       ETC_DROPS.push(...extractItemIds(json).filter(id => !blacklist.has(id)));
     }
   } catch {}
@@ -205,8 +207,8 @@ export function loadDropPools(resourceBase: string): void {
   // ── Chairs: Item.wz/Install/ ──
   const installDir = path.join(resourceBase, "Item.wz", "Install");
   try {
-    for (const f of fs.readdirSync(installDir).filter((f: string) => f.endsWith(".img.json"))) {
-      const json = JSON.parse(fs.readFileSync(path.join(installDir, f), "utf8"));
+    for (const f of fs.readdirSync(installDir).filter((f: string) => f.endsWith(".img.xml"))) {
+      const json = readWzXmlFile(path.join(installDir, f));
       CHAIR_DROPS.push(...extractItemIds(json).filter(id => !blacklist.has(id)));
     }
   } catch {}
@@ -214,8 +216,8 @@ export function loadDropPools(resourceBase: string): void {
   // ── Cash items: Item.wz/Cash/ ──
   const cashDir = path.join(resourceBase, "Item.wz", "Cash");
   try {
-    for (const f of fs.readdirSync(cashDir).filter((f: string) => f.endsWith(".img.json"))) {
-      const json = JSON.parse(fs.readFileSync(path.join(cashDir, f), "utf8"));
+    for (const f of fs.readdirSync(cashDir).filter((f: string) => f.endsWith(".img.xml"))) {
+      const json = readWzXmlFile(path.join(cashDir, f));
       CASH_DROPS.push(...extractItemIds(json).filter(id => !blacklist.has(id)));
     }
   } catch {}
@@ -472,9 +474,9 @@ export function loadItemNames(resourceBase: string): void {
   const path = require("path");
   const stringDir = path.join(resourceBase, "String.wz");
 
-  // Equip names: Eqp.img.json → Eqp → sub-categories → items
+  // Equip names: Eqp.img.xml → Eqp → sub-categories → items
   try {
-    const json = JSON.parse(fs.readFileSync(path.join(stringDir, "Eqp.img.json"), "utf8"));
+    const json = readWzXmlFile(path.join(stringDir, "Eqp.img.xml"));
     const eqp = json.$$?.find((c: any) => c.$imgdir === "Eqp");
     if (eqp) {
       for (const cat of eqp.$$ ?? []) {
@@ -488,9 +490,9 @@ export function loadItemNames(resourceBase: string): void {
   } catch {}
 
   // Consume, Etc, Ins (chairs), Cash items
-  for (const file of ["Consume.img.json", "Etc.img.json", "Ins.img.json", "Cash.img.json"]) {
+  for (const file of ["Consume.img.xml", "Etc.img.xml", "Ins.img.xml", "Cash.img.xml"]) {
     try {
-      const json = JSON.parse(fs.readFileSync(path.join(stringDir, file), "utf8"));
+      const json = readWzXmlFile(path.join(stringDir, file));
       for (const item of json.$$ ?? []) {
         const id = parseInt(item.$imgdir, 10);
         const name = item.$$?.find((c: any) => c.$string === "name")?.value;

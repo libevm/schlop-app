@@ -7,6 +7,7 @@ import {
   metaCache, metaPromiseCache, imageCache, imagePromiseCache, jsonCache, cachedFetch,
   gameViewWidth, gameViewHeight,
 } from './state.js';
+import { xmlToJsonNode } from './wz-xml-adapter.js';
 
 export function safeNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -156,12 +157,12 @@ export function mapPathFromId(mapId) {
   }
 
   const prefix = id[0];
-  return `/resourcesv2/Map.wz/Map/Map${prefix}/${id}.img.json`;
+  return `/resourcesv3/Map.wz/Map/Map${prefix}/${id}.img.xml`;
 }
 
 export function soundPathFromName(soundFile) {
   const normalized = soundFile.endsWith(".img") ? soundFile : `${soundFile}.img`;
-  return `/resourcesv2/Sound.wz/${normalized}.json`;
+  return `/resourcesv3/Sound.wz/${normalized}.xml`;
 }
 
 // ─── World Coordinate Helpers ────────────────────────────────────────────────
@@ -257,10 +258,14 @@ export async function fetchJson(path) {
       (async () => {
         const response = await cachedFetch(path);
         if (!response.ok) {
-          const msg = `Failed to load JSON ${path} (${response.status})`;
-          console.error(`[fetchJson] FAIL: ${msg} (resolved URL may differ due to V2 rewrite)`);
+          const msg = `Failed to load ${path} (${response.status})`;
+          console.error(`[fetchJson] FAIL: ${msg}`);
           rlog(`fetchJson FAIL: ${msg}`);
           throw new Error(msg);
+        }
+        if (path.endsWith(".xml")) {
+          const text = await response.text();
+          return xmlToJsonNode(text);
         }
         return response.json();
       })(),

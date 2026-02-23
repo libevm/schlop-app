@@ -6,7 +6,7 @@ Vanilla JS canvas client, Bun game server, SQLite persistence. No frameworks, no
 
 ## Running
 
-Requires **Bun** ≥ 1.3 and pre-extracted WZ JSON assets in `resourcesv2/`.
+Requires **Bun** ≥ 1.3 and pre-extracted WZ XML assets in `resourcesv3/`.
 
 ```bash
 bun install
@@ -55,7 +55,7 @@ client/web/        Vanilla JS browser client (12 modules, canvas 2D)
 server/src/        Bun game server (REST + WebSocket + SQLite)
 client/admin-ui/   Admin dashboard (GM-only DB browser)
 client/wzeditor/   Browser-based WZ file editor (open/edit/export/repack)
-resourcesv2/       Extracted WZ JSON game assets
+resourcesv3/       Extracted WZ XML game assets (Harepacker Classic XML format)
 .memory/            Architecture docs (agent context)
 ```
 

@@ -10,7 +10,7 @@
 ## Entry Point
 
 `server/src/dev.ts` — bootstraps the server:
-1. Loads drop pools + item names from `resourcesv2/` WZ data
+1. Loads drop pools + item names from `resourcesv3/` WZ data
 2. Creates an `InMemoryDataProvider` (legacy asset API — mostly unused now)
 3. Calls `createServer(provider, config)` → `start()` on port 5200
 
@@ -34,8 +34,9 @@ bun run make-gm NAME        # toggle GM flag
 | `pow.ts` | 222 | Proof-of-Work session acquisition — challenge/verify, session validation |
 | `map-data.ts` | 448 | Lazy WZ map parser — portals, NPCs, footholds, NPC script destinations |
 | `reactor-system.ts` | 534 | Destroyable reactors — HP, cooldowns, loot tables, respawn timers |
+| `wz-xml.ts` | 170 | Server-side WZ XML parser — converts `.img.xml` to JSON node format |
 | `data-provider.ts` | 89 | In-memory DataProvider (legacy asset API interface) |
-| `dev.ts` | 21 | Dev entry point (loads WZ data, starts server) |
+| `dev.ts` | 21 | Dev entry point (loads WZ data from `resourcesv3/`, starts server) |
 | `create-gm.ts` | 64 | CLI: create GM account with credentials |
 | `make-gm.ts` | 34 | CLI: toggle GM flag on existing character |
 | `ws.test.ts` | 790 | WebSocket integration tests (27 tests) |
@@ -146,7 +147,7 @@ SQLite WAL mode. Path: `./data/maple.db`.
 - Multi-hit: 4 HP, 600ms global cooldown, range-validated (120px X, 60px Y)
 - Destruction → rolls loot → `drop_spawn` broadcast
 - 10s respawn timer → `reactor_respawn` broadcast
-- Loot tables loaded from `resourcesv2/` at startup:
+- Loot tables loaded from `resourcesv3/` at startup:
   Equipment 19% | Use 25% | Etc 50% | Chairs 5% | Cash 2%
 - Item blacklist: MISSING NAME, Skill Effect (prefix 160), `expireOnLogout=1`, `quest=1`
 
@@ -161,7 +162,7 @@ SQLite WAL mode. Path: `./data/maple.db`.
 
 ## Map Data (`map-data.ts`)
 
-Lazy-loads WZ JSON from `resourcesv2/Map.wz/Map/MapN/NNNNNNNNN.img.json`.
+Lazy-loads WZ XML from `resourcesv3/Map.wz/Map/MapN/NNNNNNNNN.img.xml` via `wz-xml.ts` parser.
 
 ### Parsed Data
 - **Portals**: index, name, type, x/y, target map + portal name
@@ -201,5 +202,5 @@ CSV export: max 5000 rows.
 | `shared-logic.test.ts` | 45 | Client pure-logic parity: WZ node navigation, UOL resolution, path helpers, equip/inventory ID mapping, anchor math, canvas meta extraction, default character template |
 
 All tests use `POW_DIFFICULTY=1` and in-memory SQLite for speed.
-`ws.test.ts` loads real drop pools from `resourcesv2/` at startup.
+`ws.test.ts` loads real drop pools from `resourcesv3/` at startup.
 `shared-logic.test.ts` re-implements client pure functions (from `util.js`/`save.js`) in TypeScript for DOM-free unit testing.

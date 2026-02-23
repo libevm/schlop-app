@@ -308,13 +308,14 @@ export function clearMapDataCache(): void {
 
 function loadMapData(paddedMapId: string): MapData | null {
   const prefix = paddedMapId.charAt(0);
-  const relPath = `Map.wz/Map/Map${prefix}/${paddedMapId}.img.json`;
+  const relPath = `Map.wz/Map/Map${prefix}/${paddedMapId}.img.xml`;
 
-  const fullPath = resolve(PROJECT_ROOT, "resourcesv2", relPath);
+  const fullPath = resolve(PROJECT_ROOT, "resourcesv3", relPath);
   if (existsSync(fullPath)) {
     try {
+      const { parseWzXml } = require("./wz-xml.ts");
       const text = readFileSync(fullPath, "utf-8");
-      const raw = JSON.parse(text);
+      const raw = parseWzXml(text);
       return parseMapData(raw);
     } catch (err) {
       console.warn(`[map-data] Failed to parse ${fullPath}: ${err}`);
@@ -412,13 +413,14 @@ function parseMapData(mapJson: any): MapData {
 
 function loadNpcScriptId(npcId: string): string {
   const padded = String(npcId).padStart(7, "0");
-  const relPath = `Npc.wz/${padded}.img.json`;
+  const relPath = `Npc.wz/${padded}.img.xml`;
 
-  const fullPath = resolve(PROJECT_ROOT, "resourcesv2", relPath);
+  const fullPath = resolve(PROJECT_ROOT, "resourcesv3", relPath);
   if (existsSync(fullPath)) {
     try {
+      const { parseWzXml } = require("./wz-xml.ts");
       const text = readFileSync(fullPath, "utf-8");
-      const raw = JSON.parse(text);
+      const raw = parseWzXml(text);
       return parseNpcScriptId(raw);
     } catch {
       // ignore

@@ -155,7 +155,7 @@ Climbing: NONE/HEADBAND → `backHair`; HALFCOVER → `backHairBelowCap`; FULLCO
 ### Composition Pipeline
 Body → head → face → hair → equipment layers, all positioned via anchor chains:
 - body.navel → equip.navel, body.neck → head.neck, head.brow → face/hair
-- Z-ordered by `zmap.img.json` layer index
+- Z-ordered by `zmap.img.xml` layer index
 - Cached in `characterPlacementTemplateCache` per `(action, frame, flipped, expression, faceFrame)`
 - If any equip sprite still decoding → template NOT cached (prevents blink)
 
@@ -215,7 +215,7 @@ Weapon hidden, hair uses `backHair`/`backHairBelowCap`, face not drawn, body use
 - Movement/jump/climb → `standUpFromChair()`. Map change resets.
 
 ### Rendering
-- Sprite from `Item.wz/Install/{prefix}.img.json` → `effect/0` canvas
+- Sprite from `Item.wz/Install/{prefix}.img.xml` → `effect/0` canvas
 - Drawn below character (z=-1), bottom aligned to player feet
 - Flips with character facing. Weapon hidden while sitting.
 - Cached in `_chairSpriteCache`. Remote players sync via `player_sit` message.
@@ -224,8 +224,8 @@ Weapon hidden, hair uses `backHair`/`backHairBelowCap`, face not drawn, body use
 
 ## Item Icons
 
-- **Equip**: `Character.wz/{category}/{padded}.img.json` → `info/icon`
-- **Consumable/Etc**: `Item.wz/{folder}/{prefix}.img.json` → `{id}/info/icon`
+- **Equip**: `Character.wz/{category}/{padded}.img.xml` → `info/icon`
+- **Consumable/Etc**: `Item.wz/{folder}/{prefix}.img.xml` → `{id}/info/icon`
 - **UOL resolution**: 663 Consume + 37 Etc items use UOL refs (e.g. `../../02040008/info/icon`)
 - All cached in `iconDataUriCache` as base64 data URIs
 

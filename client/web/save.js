@@ -264,7 +264,7 @@ export function loadEquipIcon(equipId, category) {
   const key = `equip-icon:${equipId}`;
   if (iconDataUriCache.has(key)) return key;
   iconDataUriCache.set(key, null);
-  const path = `/resourcesv2/Character.wz/${category}/${padded}.img.json`;
+  const path = `/resourcesv3/Character.wz/${category}/${padded}.img.xml`;
   fetchJson(path).then((json) => {
     if (!json?.$$) return;
     const infoNode = json.$$.find(c => c.$imgdir === "info");
@@ -286,13 +286,13 @@ export function loadItemIcon(itemId) {
   const prefix = idStr.substring(0, 4);
   let wzPath;
   if (itemId >= 2000000 && itemId < 3000000) {
-    wzPath = `/resourcesv2/Item.wz/Consume/${prefix}.img.json`;
+    wzPath = `/resourcesv3/Item.wz/Consume/${prefix}.img.xml`;
   } else if (itemId >= 3000000 && itemId < 4000000) {
-    wzPath = `/resourcesv2/Item.wz/Install/${prefix}.img.json`;
+    wzPath = `/resourcesv3/Item.wz/Install/${prefix}.img.xml`;
   } else if (itemId >= 4000000 && itemId < 5000000) {
-    wzPath = `/resourcesv2/Item.wz/Etc/${prefix}.img.json`;
+    wzPath = `/resourcesv3/Item.wz/Etc/${prefix}.img.xml`;
   } else if (itemId >= 5000000 && itemId < 6000000) {
-    wzPath = `/resourcesv2/Item.wz/Cash/${prefix}.img.json`;
+    wzPath = `/resourcesv3/Item.wz/Cash/${prefix}.img.xml`;
   } else { return key; }
   fetchJson(wzPath).then((json) => {
     if (!json?.$$) return;
@@ -367,19 +367,19 @@ export async function loadItemName(itemId) {
   const idStr = String(itemId);
   try {
     if (itemId >= 1000000 && itemId < 2000000) {
-      const json = await fetchJson("/resourcesv2/String.wz/Eqp.img.json");
+      const json = await fetchJson("/resourcesv3/String.wz/Eqp.img.xml");
       return findStringName(json, idStr);
     } else if (itemId >= 2000000 && itemId < 3000000) {
-      const json = await fetchJson("/resourcesv2/String.wz/Consume.img.json");
+      const json = await fetchJson("/resourcesv3/String.wz/Consume.img.xml");
       return findStringName(json, idStr);
     } else if (itemId >= 3000000 && itemId < 4000000) {
-      const json = await fetchJson("/resourcesv2/String.wz/Ins.img.json");
+      const json = await fetchJson("/resourcesv3/String.wz/Ins.img.xml");
       return findStringName(json, idStr);
     } else if (itemId >= 4000000 && itemId < 5000000) {
-      const json = await fetchJson("/resourcesv2/String.wz/Etc.img.json");
+      const json = await fetchJson("/resourcesv3/String.wz/Etc.img.xml");
       return findStringName(json, idStr);
     } else if (itemId >= 5000000 && itemId < 6000000) {
-      const json = await fetchJson("/resourcesv2/String.wz/Cash.img.json");
+      const json = await fetchJson("/resourcesv3/String.wz/Cash.img.xml");
       return findStringName(json, idStr);
     }
   } catch {}
@@ -1024,7 +1024,7 @@ export async function loadItemWzInfo(itemId) {
   else if (invType === "SETUP") folder = "Install";
   if (!folder) return null;
   const prefix = String(itemId).padStart(8, "0").slice(0, 4);
-  const path = `/resourcesv2/Item.wz/${folder}/${prefix}.img.json`;
+  const path = `/resourcesv3/Item.wz/${folder}/${prefix}.img.xml`;
   try {
     const json = await fetchJson(path);
     const padded = String(itemId).padStart(8, "0");
@@ -1053,12 +1053,12 @@ export async function loadItemDesc(itemId) {
   if (_itemDescCache[itemId] !== undefined) return _itemDescCache[itemId];
   const invType = inventoryTypeById(itemId);
   let file = null;
-  if (invType === "USE") file = "Consume.img.json";
-  else if (invType === "ETC") file = "Etc.img.json";
-  else if (invType === "SETUP") file = "Ins.img.json";
+  if (invType === "USE") file = "Consume.img.xml";
+  else if (invType === "ETC") file = "Etc.img.xml";
+  else if (invType === "SETUP") file = "Ins.img.xml";
   if (!file) { _itemDescCache[itemId] = null; return null; }
   try {
-    const json = await fetchJson(`/resourcesv2/String.wz/${file}`);
+    const json = await fetchJson(`/resourcesv3/String.wz/${file}`);
     const node = json?.$$?.find(c => c.$imgdir === String(itemId));
     const descChild = node?.$$?.find(c => (c.$string || "") === "desc");
     const desc = descChild?.value || null;

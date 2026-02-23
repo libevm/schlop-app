@@ -4,7 +4,7 @@ import { loadDropPools, loadItemNames } from "./reactor-system.ts";
 import * as path from "path";
 
 // Load drop pools and item names from WZ data at startup
-const resourceBase = path.resolve(__dirname, "../../resourcesv2");
+const resourceBase = path.resolve(__dirname, "../../resourcesv3");
 loadDropPools(resourceBase);
 loadItemNames(resourceBase);
 

@@ -50,12 +50,12 @@ export function requestCharacterData() {
         }));
 
         const fetches = [
-          fetchJson("/resourcesv2/Character.wz/00002000.img.json"),
-          fetchJson("/resourcesv2/Character.wz/00012000.img.json"),
-          fetchJson(`/resourcesv2/Character.wz/${playerFacePath()}`),
-          fetchJson("/resourcesv2/Base.wz/zmap.img.json"),
-          fetchJson(`/resourcesv2/Character.wz/${playerHairPath()}`),
-          ...equipEntries.map((eq) => fetchJson(`/resourcesv2/Character.wz/${eq.category}/${eq.padded}.img.json`)),
+          fetchJson("/resourcesv3/Character.wz/00002000.img.xml"),
+          fetchJson("/resourcesv3/Character.wz/00012000.img.xml"),
+          fetchJson(`/resourcesv3/Character.wz/${playerFacePath()}`),
+          fetchJson("/resourcesv3/Base.wz/zmap.img.xml"),
+          fetchJson(`/resourcesv3/Character.wz/${playerHairPath()}`),
+          ...equipEntries.map((eq) => fetchJson(`/resourcesv3/Character.wz/${eq.category}/${eq.padded}.img.xml`)),
         ];
 
         const results = await Promise.all(fetches);
@@ -919,7 +919,7 @@ export async function loadSetEffects() {
   if (_setEffectsLoaded) return;
   _setEffectsLoaded = true;
   try {
-    const data = await fetchJson("/resourcesv2/Effect.wz/SetEff.img.json");
+    const data = await fetchJson("/resourcesv3/Effect.wz/SetEff.img.xml");
     if (!data?.$$) return;
     for (const setNode of data.$$) {
       const setId = setNode.$imgdir;

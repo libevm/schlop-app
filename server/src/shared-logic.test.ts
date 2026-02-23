@@ -93,12 +93,12 @@ function mapPathFromId(mapId: string | number): string {
   const id = String(mapId).trim();
   if (!/^\d{9}$/.test(id)) throw new Error("Map ID must be 9 digits");
   const prefix = id[0];
-  return `/resourcesv2/Map.wz/Map/Map${prefix}/${id}.img.json`;
+  return `/resourcesv3/Map.wz/Map/Map${prefix}/${id}.img.xml`;
 }
 
 function soundPathFromName(soundFile: string): string {
   const normalized = soundFile.endsWith(".img") ? soundFile : `${soundFile}.img`;
-  return `/resourcesv2/Sound.wz/${normalized}.json`;
+  return `/resourcesv3/Sound.wz/${normalized}.xml`;
 }
 
 function localPoint(
@@ -352,10 +352,10 @@ describe("resolveNodeByUol", () => {
 
 describe("mapPathFromId", () => {
   test("generates correct paths for 9-digit map IDs", () => {
-    expect(mapPathFromId("100000001")).toBe("/resourcesv2/Map.wz/Map/Map1/100000001.img.json");
-    expect(mapPathFromId("200000000")).toBe("/resourcesv2/Map.wz/Map/Map2/200000000.img.json");
-    expect(mapPathFromId("910000000")).toBe("/resourcesv2/Map.wz/Map/Map9/910000000.img.json");
-    expect(mapPathFromId("000000000")).toBe("/resourcesv2/Map.wz/Map/Map0/000000000.img.json");
+    expect(mapPathFromId("100000001")).toBe("/resourcesv3/Map.wz/Map/Map1/100000001.img.xml");
+    expect(mapPathFromId("200000000")).toBe("/resourcesv3/Map.wz/Map/Map2/200000000.img.xml");
+    expect(mapPathFromId("910000000")).toBe("/resourcesv3/Map.wz/Map/Map9/910000000.img.xml");
+    expect(mapPathFromId("000000000")).toBe("/resourcesv3/Map.wz/Map/Map0/000000000.img.xml");
   });
 
   test("rejects non-9-digit IDs", () => {
@@ -368,12 +368,12 @@ describe("mapPathFromId", () => {
 
 describe("soundPathFromName", () => {
   test("appends .img and wraps correctly", () => {
-    expect(soundPathFromName("Mob/0100100")).toBe("/resourcesv2/Sound.wz/Mob/0100100.img.json");
-    expect(soundPathFromName("Bgm00/GoPicnic")).toBe("/resourcesv2/Sound.wz/Bgm00/GoPicnic.img.json");
+    expect(soundPathFromName("Mob/0100100")).toBe("/resourcesv3/Sound.wz/Mob/0100100.img.xml");
+    expect(soundPathFromName("Bgm00/GoPicnic")).toBe("/resourcesv3/Sound.wz/Bgm00/GoPicnic.img.xml");
   });
 
   test("doesn't double .img suffix", () => {
-    expect(soundPathFromName("Mob.img")).toBe("/resourcesv2/Sound.wz/Mob.img.json");
+    expect(soundPathFromName("Mob.img")).toBe("/resourcesv3/Sound.wz/Mob.img.xml");
   });
 });
 

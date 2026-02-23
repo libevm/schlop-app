@@ -60,7 +60,7 @@ export async function loadLifeAnimation(type, id) {
 
   const paddedId = id.replace(/^0+/, "").padStart(7, "0");
   const wzDir = type === "m" ? "Mob.wz" : "Npc.wz";
-  const path = `/resourcesv2/${wzDir}/${paddedId}.img.json`;
+  const path = `/resourcesv3/${wzDir}/${paddedId}.img.xml`;
 
   const promise = (async () => {
     try {
@@ -73,7 +73,7 @@ export async function loadLifeAnimation(type, id) {
         const infoRec = imgdirLeafRecord(infoNode);
         if (infoRec.link) {
           const linkId = String(infoRec.link).replace(/^0+/, "").padStart(7, "0");
-          const linkPath = `/resourcesv2/${wzDir}/${linkId}.img.json`;
+          const linkPath = `/resourcesv3/${wzDir}/${linkId}.img.xml`;
           try {
             srcNode = await fetchJson(linkPath);
           } catch (_) {
@@ -127,8 +127,8 @@ export async function loadLifeAnimation(type, id) {
       const dialogue = [];
       let stringEntry = null;
       try {
-        const stringFile = type === "m" ? "Mob.img.json" : "Npc.img.json";
-        const stringData = await fetchJson(`/resourcesv2/String.wz/${stringFile}`);
+        const stringFile = type === "m" ? "Mob.img.xml" : "Npc.img.xml";
+        const stringData = await fetchJson(`/resourcesv3/String.wz/${stringFile}`);
         const rawId = id.replace(/^0+/, "") || "0";
         stringEntry = (stringData.$$ ?? []).find(
           (c) => c.$imgdir === rawId
@@ -394,7 +394,7 @@ let dmgDigitsLoaded = false;
 export async function loadDamageNumberSprites() {
   if (dmgDigitsLoaded) return;
   try {
-    const json = await fetchJson("/resourcesv2/Effect.wz/BasicEff.img.json");
+    const json = await fetchJson("/resourcesv3/Effect.wz/BasicEff.img.xml");
     if (!json?.$$) return;
 
     const sets = { NoRed0: "normalFirst", NoRed1: "normalRest", NoCri0: "critFirst", NoCri1: "critRest" };
@@ -2406,7 +2406,7 @@ export async function loadReactorAnimation(reactorId) {
   const promise = (async () => {
     try {
       const paddedId = reactorId.padStart(7, "0");
-      const path = `/resourcesv2/Reactor.wz/${paddedId}.img.json`;
+      const path = `/resourcesv3/Reactor.wz/${paddedId}.img.xml`;
       const json = await fetchJson(path);
       if (!json) { reactorAnimations.set(reactorId, null); return null; }
 
@@ -3160,7 +3160,7 @@ export function parseMapData(raw) {
 export async function loadBackgroundMeta(entry) {
   if (!entry.key || !entry.bS) return null;
 
-  const path = `/resourcesv2/Map.wz/Back/${entry.bS}.img.json`;
+  const path = `/resourcesv3/Map.wz/Back/${entry.bS}.img.xml`;
   const json = await fetchJson(path);
   const group = childByName(json, entry.ani === 1 ? "ani" : "back");
 
@@ -3193,7 +3193,7 @@ export function requestBackgroundMeta(entry) {
 export async function loadAnimatedBackgroundFrames(entry) {
   if (entry.ani !== 1) return null;
 
-  const path = `/resourcesv2/Map.wz/Back/${entry.bS}.img.json`;
+  const path = `/resourcesv3/Map.wz/Back/${entry.bS}.img.xml`;
   const json = await fetchJson(path);
   const group = childByName(json, "ani");
   const node = childByName(group, entry.no);
@@ -3238,7 +3238,7 @@ export async function loadAnimatedBackgroundFrames(entry) {
 export async function loadTileMeta(tile) {
   if (!tile.key || !tile.tileSet) return null;
 
-  const path = `/resourcesv2/Map.wz/Tile/${tile.tileSet}.img.json`;
+  const path = `/resourcesv3/Map.wz/Tile/${tile.tileSet}.img.xml`;
   const json = await fetchJson(path);
   const group = childByName(json, tile.u);
   const canvasNode = pickCanvasNode(group, tile.no);
@@ -3264,7 +3264,7 @@ export function requestTileMeta(tile) {
 export async function loadObjectMeta(obj) {
   if (!obj.key) return null;
 
-  const path = `/resourcesv2/Map.wz/Obj/${obj.oS}.img.json`;
+  const path = `/resourcesv3/Map.wz/Obj/${obj.oS}.img.xml`;
   const json = await fetchJson(path);
   const target = findNodeByPath(json, [obj.l0, obj.l1, obj.l2]);
   const extras = objectMetaExtrasFromNode(target);
@@ -3307,7 +3307,7 @@ export function objectAnimationFrameEntries(target) {
  * Returns { frameCount, delays: number[] } or null if single-frame.
  */
 export async function loadAnimatedObjectFrames(obj) {
-  const path = `/resourcesv2/Map.wz/Obj/${obj.oS}.img.json`;
+  const path = `/resourcesv3/Map.wz/Obj/${obj.oS}.img.xml`;
   const json = await fetchJson(path);
   const target = findNodeByPath(json, [obj.l0, obj.l1, obj.l2]);
   if (!target) return null;

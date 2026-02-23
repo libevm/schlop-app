@@ -18,7 +18,7 @@ export async function preloadUISounds() {
   if (_uiSoundsPreloaded) return;
   _uiSoundsPreloaded = true;
   try {
-    const uiSoundJson = await fetchJson("/resourcesv2/Sound.wz/UI.img.json");
+    const uiSoundJson = await fetchJson("/resourcesv3/Sound.wz/UI.img.xml");
     for (const name of ["BtMouseClick", "BtMouseOver", "MenuUp", "MenuDown", "DragStart", "DragEnd"]) {
       const node = uiSoundJson?.$$?.find(c => (c.$imgdir ?? c.$canvas ?? c.$sound) === name);
       if (node?.basedata) {
@@ -26,7 +26,7 @@ export async function preloadUISounds() {
       }
     }
     // Also preload game sounds
-    const gameSoundJson = await fetchJson("/resourcesv2/Sound.wz/Game.img.json");
+    const gameSoundJson = await fetchJson("/resourcesv3/Sound.wz/Game.img.xml");
     for (const name of ["PickUpItem", "DropItem"]) {
       const node = gameSoundJson?.$$?.find(c => (c.$imgdir ?? c.$canvas ?? c.$sound) === name);
       if (node?.basedata) {
@@ -35,7 +35,7 @@ export async function preloadUISounds() {
     }
     // Preload reactor hit/break sounds (Reactor.img > 2000 = reactor 0002000)
     try {
-      const reactorSoundJson = await fetchJson("/resourcesv2/Sound.wz/Reactor.img.json");
+      const reactorSoundJson = await fetchJson("/resourcesv3/Sound.wz/Reactor.img.xml");
       const r2000 = reactorSoundJson?.$$?.find(c => c.$imgdir === "2000");
       if (r2000) {
         // State 0 hit sound (normal hit)

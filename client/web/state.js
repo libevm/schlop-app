@@ -86,7 +86,7 @@ window.addEventListener("unhandledrejection", (e) => {
 });
 
 // ─── Persistent browser cache ────────────────────────────────────────────────
-export const RESOURCE_CACHE_NAME = "maple-resources-v1";
+export const RESOURCE_CACHE_NAME = "maple-resources-v3";
 let _resourceCache = null;
 export async function getResourceCache() {
   if (!_resourceCache) {
@@ -240,8 +240,8 @@ export function newCharacterDefaults(gender) {
   };
 }
 
-export function playerFacePath() { return `Face/${String(runtime.player.face_id).padStart(8, "0")}.img.json`; }
-export function playerHairPath() { return `Hair/${String(runtime.player.hair_id).padStart(8, "0")}.img.json`; }
+export function playerFacePath() { return `Face/${String(runtime.player.face_id).padStart(8, "0")}.img.xml`; }
+export function playerHairPath() { return `Hair/${String(runtime.player.hair_id).padStart(8, "0")}.img.xml`; }
 
 // ─── Runtime State ───────────────────────────────────────────────────────────
 export const runtime = {

@@ -20,6 +20,6 @@
 | `client-server.md` | Wire protocol, REST API, WS messages, session model, persistence | Endpoints, message types, session handling, save schema, resource paths |
 | `items.md` | Inventory, equipment, weapons, drops, chairs, icons, drag-drop | Item data model, equip/unequip, drop mechanics, loot, weapon stances, icons |
 | `physics.md` | Physics system, unit conventions, footholds, gravity, swimming, climbing, mob AI | Physics constants, movement logic, collision, mob behavior, unit conversions |
-| `wz-structure.md` | WZ JSON format, folder structure, data types | WZ parsing, new asset types, folder conventions |
+| `wz-structure.md` | WZ XML format, folder structure, data types | WZ parsing, new asset types, folder conventions |
 | `wzeditor.md` | WZ Editor tool: what it does, file map, keyboard shortcuts, design choices | WZ Editor features, modules, UI, export/import, save formats |
 | `agent-chromium-interaction.md` | How to launch Chromium with debug port, use browser-tools, common pitfalls | Browser testing patterns, server lifecycle in bash |

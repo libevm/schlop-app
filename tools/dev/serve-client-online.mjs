@@ -30,7 +30,8 @@ const proxyTimeoutMs = Number(process.env.PROXY_TIMEOUT_MS ?? "10000");
 
 const repoRoot = normalize(join(import.meta.dir, "..", ".."));
 const webRoot = join(repoRoot, "client", "web");
-const resourcesV2Root = join(repoRoot, "resourcesv2");
+const resourcesV3Root = join(repoRoot, "resourcesv3");
+const publicRoot = join(repoRoot, "client", "public");
 
 /* ─── Hot-reload (dev mode only) ───────────────────────────────────────────── */
 
@@ -248,7 +249,7 @@ function getCacheControl(pathname, ext) {
   if (ext === ".html") return "no-cache";
   // Dev mode: no caching for JS/CSS so hot-reload always picks up fresh files
   if (!isProd && (ext === ".js" || ext === ".css")) return "no-cache";
-  if (pathname.startsWith("/resourcesv2/")) {
+  if (pathname.startsWith("/resourcesv3/") || pathname.startsWith("/public/")) {
     return "public, max-age=604800, immutable";
   }
   return "public, max-age=3600, must-revalidate";
@@ -460,10 +461,20 @@ function handleRequest(request) {
   }
 
   // Game resources
-  if (pathname.startsWith("/resourcesv2/")) {
-    const relativePath = pathname.slice("/resourcesv2/".length);
+  if (pathname.startsWith("/resourcesv3/")) {
+    const relativePath = pathname.slice("/resourcesv3/".length);
     try {
-      return serveFile(safeJoin(resourcesV2Root, relativePath), pathname, request);
+      return serveFile(safeJoin(resourcesV3Root, relativePath), pathname, request);
+    } catch {
+      return notFound();
+    }
+  }
+
+  // Static public assets (loading screen, login BGM)
+  if (pathname.startsWith("/public/")) {
+    const relativePath = pathname.slice("/public/".length);
+    try {
+      return serveFile(safeJoin(publicRoot, relativePath), pathname, request);
     } catch {
       return notFound();
     }

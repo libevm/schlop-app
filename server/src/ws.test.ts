@@ -39,7 +39,7 @@ async function getValidSession(baseUrl: string): Promise<string> {
 }
 
 // Load drop pools from WZ data for tests
-loadDropPools(path.resolve(__dirname, "../../resourcesv2"));
+loadDropPools(path.resolve(__dirname, "../../resourcesv3"));
 
 /**
  * Helper: open a WebSocket and return a promise-based interface.

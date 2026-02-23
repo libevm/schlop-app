@@ -34,7 +34,7 @@ export async function loadEquipWzData(equipId) {
   const category = fn.equipWzCategoryFromId(equipId);
   if (!category) return;
   const padded = String(equipId).padStart(8, "0");
-  const path = `/resourcesv2/Character.wz/${category}/${padded}.img.json`;
+  const path = `/resourcesv3/Character.wz/${category}/${padded}.img.xml`;
   try {
     const data = await fetchJson(path);
     // Cash weapons (prefix 170) have stances nested under numeric weapon-type groups.
@@ -369,7 +369,7 @@ export async function loadChairSprite(chairId) {
   try {
     const prefix = String(chairId).padStart(8, "0").slice(0, 4);
     const padded = String(chairId).padStart(8, "0");
-    const json = await fetchJson(`/resourcesv2/Item.wz/Install/${prefix}.img.json`);
+    const json = await fetchJson(`/resourcesv3/Item.wz/Install/${prefix}.img.xml`);
     const itemNode = (json.$$ ?? []).find(c => c.$imgdir === padded);
     if (!itemNode) { _chairSpriteCache.set(chairId, null); return null; }
 
@@ -832,7 +832,7 @@ export function isUIWindowVisible(key) {
 
 export async function loadCursorAssets() {
   try {
-    const basicJson = await fetchJson("/resourcesv2/UI.wz/Basic.img.json");
+    const basicJson = await fetchJson("/resourcesv3/UI.wz/Basic.img.xml");
     const cursorNode = basicJson?.$$?.find(c => c.$imgdir === "Cursor");
     if (!cursorNode) return;
 

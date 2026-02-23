@@ -244,11 +244,12 @@ All map changes are **server-authoritative** via `initiateMapChange()`:
 
 | Type | Path Pattern |
 |------|-------------|
-| Maps | `/resourcesv2/Map.wz/Map/MapN/NNNNNNNNN.img.json` |
-| Characters | `/resourcesv2/Character.wz/{type}/{id}.img.json` |
-| NPCs | `/resourcesv2/Npc.wz/{id}.img.json` |
-| Mobs | `/resourcesv2/Mob.wz/{id}.img.json` |
-| Sounds | `/resourcesv2/Sound.wz/{name}.img.json` |
-| Items | `/resourcesv2/Item.wz/{category}/{group}.img.json` |
-| UI | `/resourcesv2/UI.wz/{element}.img.json` |
-| Strings | `/resourcesv2/String.wz/{type}.img.json` |
+| Maps | `/resourcesv3/Map.wz/Map/MapN/NNNNNNNNN.img.xml` |
+| Characters | `/resourcesv3/Character.wz/{type}/{id}.img.xml` |
+| NPCs | `/resourcesv3/Npc.wz/{id}.img.xml` |
+| Mobs | `/resourcesv3/Mob.wz/{id}.img.xml` |
+| Sounds | `/resourcesv3/Sound.wz/{name}.img.xml` |
+| Items | `/resourcesv3/Item.wz/{category}/{group}.img.xml` |
+| UI | `/resourcesv3/UI.wz/{element}.img.xml` |
+| Strings | `/resourcesv3/String.wz/{type}.img.xml` |
+| Static assets | `/public/{file}` (login.mp3, mob/orange-mushroom/*) |

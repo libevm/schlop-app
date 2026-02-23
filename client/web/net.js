@@ -785,11 +785,10 @@ export async function loadRemotePlayerEquipData(rp) {
     const category = fn.equipWzCategoryFromId(eq.item_id);
     if (!category) continue;
     const padded = String(eq.item_id).padStart(8, "0");
-    const path = `/resourcesv2/Character.wz/${category}/${padded}.img.json`;
+    const path = `/resourcesv3/Character.wz/${category}/${padded}.img.xml`;
     try {
-      const resp = await cachedFetch(path);
-      if (resp.ok) {
-        const data = await resp.json();
+      const data = await fetchJson(path);
+      if (data) {
         const prefix = Math.floor(eq.item_id / 10000);
         if (prefix === 170) {
           equipMap.set(eq.item_id, resolveCashWeaponDataForRemote(data, eq.item_id, rp.look.equipment));
@@ -836,11 +835,14 @@ export async function loadRemotePlayerLookData(rp) {
 
   const entry = { faceData: null, hairData: null, faceId, hairId };
   try {
-    const facePath = `/resourcesv2/Character.wz/Face/${String(faceId).padStart(8, "0")}.img.json`;
-    const hairPath = `/resourcesv2/Character.wz/Hair/${String(hairId).padStart(8, "0")}.img.json`;
-    const [faceResp, hairResp] = await Promise.all([cachedFetch(facePath), cachedFetch(hairPath)]);
-    if (faceResp.ok) entry.faceData = await faceResp.json();
-    if (hairResp.ok) entry.hairData = await hairResp.json();
+    const facePath = `/resourcesv3/Character.wz/Face/${String(faceId).padStart(8, "0")}.img.xml`;
+    const hairPath = `/resourcesv3/Character.wz/Hair/${String(hairId).padStart(8, "0")}.img.xml`;
+    const [faceData, hairData] = await Promise.all([
+      fetchJson(facePath).catch(() => null),
+      fetchJson(hairPath).catch(() => null),
+    ]);
+    if (faceData) entry.faceData = faceData;
+    if (hairData) entry.hairData = hairData;
   } catch {}
   remoteLookData.set(rp.id, entry);
   remoteTemplateCache.delete(rp.id);

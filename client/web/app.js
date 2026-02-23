@@ -495,7 +495,7 @@ async function loadMapStringData() {
   if (mapStringData) return mapStringData;
   if (mapStringDataPromise) return mapStringDataPromise;
   mapStringDataPromise = (async () => {
-    const raw = await fetchJson("/resourcesv2/String.wz/Map.img.json");
+    const raw = await fetchJson("/resourcesv3/String.wz/Map.img.xml");
     const lookup = {};
     for (const region of raw.$$ ?? []) {
       for (const entry of region.$$ ?? []) {
@@ -732,7 +732,7 @@ async function loadPortalMeta(portal, frameNo) {
   if (!path) return null;
 
   const imageKey = portal.image || "default";
-  const json = await fetchJson("/resourcesv2/Map.wz/MapHelper.img.json");
+  const json = await fetchJson("/resourcesv3/Map.wz/MapHelper.img.xml");
 
   let portalNode = findNodeByPath(json, path);
   if (!portalNode && portal.type === 11 && imageKey !== "default") {
@@ -893,7 +893,7 @@ async function ensureMapMarkImage(markName) {
   if (!_mapHelperJson && !_mapHelperLoading) {
     _mapHelperLoading = true;
     try {
-      const resp = await fetchJson("/resourcesv2/Map.wz/MapHelper.img.json");
+      const resp = await fetchJson("/resourcesv3/Map.wz/MapHelper.img.xml");
       _mapHelperJson = resp;
     } catch (e) {
       rlog(`MapHelper load failed: ${e}`);
@@ -1262,8 +1262,8 @@ let _loginBgmPlaying = false;
 async function preloadLoadingScreenAssets() {
   try {
     const [manifestResp, audioResp] = await Promise.all([
-      cachedFetch("/resourcesv2/mob/orange-mushroom/manifest.json"),
-      cachedFetch("/resourcesv2/sound/login.mp3"),
+      cachedFetch("/public/mob/orange-mushroom/manifest.json"),
+      cachedFetch("/public/login.mp3"),
     ]);
     const manifest = await manifestResp.json();
     _loadingMushroom.manifest = manifest;
@@ -1273,7 +1273,7 @@ async function preloadLoadingScreenAssets() {
     for (const [stance, frames] of Object.entries(manifest)) {
       _loadingMushroom.frames[stance] = [];
       for (const f of frames) {
-        const imgUrl = `/resourcesv2/mob/orange-mushroom/${f.file}`;
+        const imgUrl = `/public/mob/orange-mushroom/${f.file}`;
         const img = new Image();
         const p = (async () => {
           try {

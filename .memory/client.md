@@ -78,9 +78,9 @@ at runtime (not import-time), avoiding circular deps.
 - Render phase: clear canvas → draw map layers → draw entities → draw HUD
 
 ### Asset Pipeline
-- WZ JSON files fetched from `/resourcesv2/` paths
-- `cachedFetch(url)` — browser Cache API (`maple-resources-v1`) for persistent caching
-- `fetchJson(path)` — deduped JSON loader (promise cache prevents duplicate fetches)
+- WZ XML files fetched from `/resourcesv3/` paths
+- `cachedFetch(url)` — browser Cache API (`maple-resources-v3`) for persistent caching
+- `fetchJson(path)` — deduped loader (XML → JSON via wz-xml-adapter, promise cache prevents duplicate fetches)
 - `requestMeta(key, loader)` — metadata cache with async loader + dedup
 - `requestImageByKey(key)` — decodes base64 PNG from WZ basedata → `HTMLImageElement`
 - All caches are `Map` objects in `state.js`: `jsonCache`, `metaCache`, `imageCache`, etc.
@@ -109,7 +109,7 @@ at runtime (not import-time), avoiding circular deps.
 ### Character Composition (`character.js` + `render.js`)
 Sprite layering follows WZ zmap order:
 - Body base → face → hair (below cap) → equipment layers → hair (above cap)
-- Each part resolved from WZ: `Character.wz/{type}/{id}.img.json`
+- Each part resolved from WZ: `Character.wz/{type}/{id}.img.xml`
 - Frame path: `[action, String(frameIndex)]` (array, not string)
 - Anchor chain: body.navel → equip.navel, body.neck → head.neck, head.brow → face/hair
 - Flip handling: `localPoint()` accounts for horizontal flip in anchor math
@@ -145,7 +145,7 @@ Draw order (back to front):
 ### Sound (`sound.js`)
 - BGM: single `Audio` element with 800ms crossfade
 - SFX: pooled `Audio` elements (8 per sound), base64 data URIs from WZ
-- Sound paths: `soundPathFromName("Mob/0100100")` → `/resourcesv2/Sound.wz/Mob.img.json`
+- Sound paths: `soundPathFromName("Mob/0100100")` → `/resourcesv3/Sound.wz/Mob.img.xml`
 
 ### Items & Inventory (`items.js` + `save.js`)
 - 5 tabs: EQUIP, USE, SETUP, ETC, CASH (4×8 grid = 32 slots per tab)
@@ -239,6 +239,8 @@ loadItemIcon, loadItemName, loadItemWzInfo, refreshUIWindows, saveCharacter
 
 ### Dev Mode (default)
 - Static file serving from `client/web/`
+- Static public assets from `client/public/` at `/public/*` (login BGM, loading screen sprites)
+- WZ game resources from `resourcesv3/` at `/resourcesv3/*` (XML, 7d immutable cache)
 - API proxy: `/api/*` → game server (default `http://127.0.0.1:5200`)
 - WebSocket proxy: `/ws` → game server
 - **Hot-reload**: file watcher + `/__hmr` WebSocket
@@ -304,12 +306,12 @@ caused rendering failures:
 All `framePath` vars must use array syntax: `[action, String(frameIndex)]`.
 String basePath spreads individual characters → wrong resolution.
 
-### Asset Paths Must Use `/resourcesv2/`
-`mapPathFromId()` and `soundPathFromName()` must reference `/resourcesv2/`,
-not `/resources/`. The V2 directory contains the processed WZ data.
+### Asset Paths Must Use `/resourcesv3/`
+`mapPathFromId()` and `soundPathFromName()` must reference `/resourcesv3/`,
+not `/resourcesv2/`. The `resourcesv3/` directory contains the processed WZ data in XML format.
 
 ### Sound Path Extension
-`soundPathFromName("Mob/0100100")` must produce `/resourcesv2/Sound.wz/Mob.img.json`.
+`soundPathFromName("Mob/0100100")` must produce `/resourcesv3/Sound.wz/Mob.img.xml`.
 The function handles the `.img` suffix — don't double it.
 
 
@@ -363,12 +365,12 @@ Player render layer: climbing/airborne → layer 7, grounded → `player.foothol
 ## Asset Pipeline
 
 ### Persistent Browser Cache
-`cachedFetch(url)` → Cache API (`maple-resources-v1`). V2 routing rewrites `/resources/` → `/resourcesv2/`. Falls back to `/resources/` on V2 404.
+`cachedFetch(url)` → Cache API (`maple-resources-v3`). XML files parsed with DOMParser and converted to JSON nodes via wz-xml-adapter.js.
 
 ### Three-Layer In-Memory Cache
 | Cache | Type | Content |
 |-------|------|---------|
-| `jsonCache` | `Map<path, Promise<JSON>>` | Raw WZ JSON trees (shared refs — never mutate!) |
+| `jsonCache` | `Map<path, Promise<JSON>>` | Parsed WZ trees (XML→JSON at fetch, shared refs — never mutate!) |
 | `metaCache` | `Map<key, meta>` | Image metadata (basedata, dimensions, origin, z, opacity) |
 | `imageCache` | `Map<key, HTMLImageElement>` | Decoded ready-to-draw images |
 
@@ -396,7 +398,7 @@ Player render layer: climbing/airborne → layer 7, grounded → `player.foothol
 
 Anchor-chain positioning: body → head → face → hair → equipment layers.
 `composeCharacterPlacements()` resolves all parts via `pickAnchorName()` + `topLeftFromAnchor()`,
-z-ordered by `zmap.img.json`. Cached in `characterPlacementTemplateCache` per
+z-ordered by `zmap.img.xml`. Cached in `characterPlacementTemplateCache` per
 `(action, frame, flipped, expression, faceFrame)`. Template NOT cached if any equip/face image still decoding (prevents blink).
 
 **Climbing parity**: weapon hidden, face hidden, hair uses `backHair`/`backHairBelowCap` via UOL, body/coat/pants/shoes use back z-layers.
@@ -471,7 +473,7 @@ Server-authoritative destroyable objects. Reactor 0002001 (wooden box) on map 10
 
 - Dark background, "Loading map assets" title, flat pill progress bar
 - Animated Orange Mushroom sprite (bouncing, walking along progress bar)
-- Login BGM: `resourcesv2/sound/login.mp3` at 35% volume, looped
+- Login BGM: `client/public/login.mp3` at 35% volume, looped
 
 ## HUD Elements
 
