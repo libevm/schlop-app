@@ -2390,6 +2390,10 @@ export function drawNpcDialogue() {
   ctx.restore();
 }
 
+// reactorAnimations: reactorId → { states: { [stateNum]: { idle: [frames], hit: [frames] } }, name }
+const reactorAnimations = new Map();
+const reactorAnimationPromises = new Map();
+
 /**
  * Load reactor sprite data from Reactor.wz JSON.
  * Loads ALL states with their idle canvas frames AND hit animation frames.

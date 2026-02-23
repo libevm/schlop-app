@@ -2,7 +2,7 @@
  * items.js — Equipment management, ground drops, chair system, cursor, UI windows.
  */
 import {
-  fn, runtime, ctx, canvasEl,
+  fn, runtime, ctx, canvasEl, pickupJournalEl,
   dlog, rlog, imageCache, iconDataUriCache,
   gameViewWidth, gameViewHeight,
   playerEquipped, playerInventory, groundDrops, draggedItem,
@@ -14,6 +14,8 @@ import {
   CURSOR_DEFAULT_DELAY, CURSOR_CANCLICK_DELAY,
   _chairSpriteCache,
   _localDropIdCounter, setLocalDropIdCounter, DROP_EXPIRE_MS, DROP_EXPIRE_FADE_MS,
+  characterPlacementTemplateCache,
+  pingWindowEl, sessionId, settingsModalEl,
 } from "./state.js";
 import {
   safeNumber, childByName, imgdirLeafRecord, fetchJson,

@@ -4,7 +4,7 @@
  */
 import {
   fn, runtime, ctx, canvasEl,
-  dlog, rlog, imageCache,
+  dlog, rlog, imageCache, metaCache,
   gameViewWidth, gameViewHeight,
   playerEquipped, playerInventory,
   playerFacePath, playerHairPath,

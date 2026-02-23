@@ -21,6 +21,8 @@ import {
   newCharacterDefaults, playerFacePath, playerHairPath,
   PORTAL_SPAWN_Y_OFFSET,
   wzCursor,
+  _localDropIdCounter, DROP_EXPIRE_MS, DROP_EXPIRE_FADE_MS,
+  settingsPingToggleEl,
 } from "./state.js";
 import {
   safeNumber, loadJsonFromStorage, saveJsonToStorage,

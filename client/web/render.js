@@ -15,7 +15,7 @@ import {
   DEFAULT_STANDARD_CHARACTER_WIDTH,
   BG_REFERENCE_HEIGHT, DEFAULT_CANVAS_HEIGHT,
   _chairSpriteCache, characterPlacementTemplateCache,
-  objectAnimStates,
+  objectAnimStates, PHYS_TPS, playerEquipped,
 } from "./state.js";
 import {
   safeNumber, getMetaByKey, getImageByKey,
