@@ -6,7 +6,7 @@
 
 | Module | Lines | Description |
 |--------|-------|-------------|
-| `state.js` | 436 | Constants, runtime object, caches, DOM refs, fn registry |
+| `state.js` | 474 | Constants, runtime object, caches, DOM refs, fn registry |
 | `util.js` | 351 | WZ helpers, asset cache, draw primitives, text helpers |
 | `net.js` | 1,524 | WebSocket, remote players, interpolation, rendering |
 | `life.js` | 3,663 | Mobs, NPCs, combat, damage, reactors, map data, portals |
@@ -89,3 +89,4 @@ Modules call `fn.funcName()` for functions not available via direct import
 | 7 | 6831f6d | input.js | 5,295 | −9,628 (65%) |
 | 8 | 62aeea0 | items.js | 4,399 | −10,524 (71%) |
 | 9 | 0e162a9 | save.js | 3,241 | −11,682 (78%) |
+| fix | 4de2e87 | cross-module refs | 3,247 | fixed all runtime ReferenceErrors |
