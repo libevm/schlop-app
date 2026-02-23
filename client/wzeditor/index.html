@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WZ Editor</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="app">
+    <!-- Toolbar -->
+    <div id="toolbar">
+        <button id="btn-open-wz" title="Open .wz binary file">📂 Open WZ</button>
+        <button id="btn-open-xml" title="Open XML file or directory">📂 Open XML</button>
+        <div class="separator"></div>
+        <button id="btn-save" title="Save modified images" disabled>💾 Save</button>
+        <button id="btn-export" title="Export as Classic XML directory" disabled>📤 Export XML</button>
+        <button id="btn-save-wz" title="Repack as .wz binary file" disabled>📦 Save WZ</button>
+        <button id="btn-import" title="Import XML into selected node" disabled>📥 Import XML</button>
+        <div class="separator"></div>
+        <button id="btn-undo" title="Undo (Ctrl+Z)" disabled>↩ Undo</button>
+        <button id="btn-redo" title="Redo (Ctrl+Y)" disabled>↪ Redo</button>
+        <div class="separator"></div>
+        <button id="btn-search" title="Search (Ctrl+F)">🔍 Search</button>
+        <div class="separator"></div>
+        <label style="color: var(--text-muted); font-size: 12px;">Encryption:</label>
+        <select id="encryption-select">
+            <option value="AUTO" selected>Auto-detect</option>
+            <option value="GMS">GMS (old)</option>
+            <option value="EMS">EMS / MSEA / KMS</option>
+            <option value="BMS">BMS / Classic (none)</option>
+        </select>
+        <span id="source-info" class="source-info"></span>
+    </div>
+
+    <!-- Main Content -->
+    <div id="content">
+        <!-- Tree Panel -->
+        <div id="tree-panel">
+            <div id="tree-header">Explorer</div>
+            <div id="tree-container"></div>
+        </div>
+
+        <div class="resizer" id="resizer"></div>
+
+        <!-- Editor + Preview -->
+        <div id="editor-panel">
+            <div id="prop-editor" style="display:none;"></div>
+            <div id="preview-panel">
+                <div id="welcome">
+                    <h2>🔧 WZ Editor</h2>
+                    <p>
+                        Open a <strong>.wz</strong> binary file or a Harepacker-exported
+                        <strong>XML</strong> directory/file to get started.
+                    </p>
+                    <p style="font-size: 11px;">
+                        Drag &amp; drop a file, or use the toolbar buttons above.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status Bar -->
+    <div id="status-bar">
+        <span id="status-text">Ready</span>
+        <div id="progress-wrap" style="display:none;">
+            <div id="progress-bar"><div id="progress-fill"></div></div>
+            <span id="progress-text"></span>
+        </div>
+        <span id="status-modified" style="display:none;">Modified: <span id="modified-count">0</span></span>
+    </div>
+</div>
+
+<!-- Drop overlay -->
+<div id="drop-overlay">Drop .wz or .xml file here</div>
+
+<!-- Hidden file inputs -->
+<input type="file" id="file-input-wz" accept=".wz" style="display:none;">
+<input type="file" id="file-input-xml" accept=".xml" style="display:none;">
+
+<script type="module" src="wzeditor.js"></script>
+</body>
+</html>

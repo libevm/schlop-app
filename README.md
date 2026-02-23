@@ -33,6 +33,14 @@ bun run create-gm <username> <password>   # create GM account first
 bun run client:admin-ui                    # opens on port 5174
 ```
 
+### WZ Editor
+
+```bash
+bun run client:wzeditor          # opens on port 5175
+```
+
+Browser-based WZ file editor — open `.wz` binaries or Harepacker XML, browse/edit the tree, export as XML or repack as `.wz`. Fully client-side, no server logic.
+
 ### GM Commands
 
 In-game chat with a GM character:
@@ -46,6 +54,7 @@ In-game chat with a GM character:
 client/web/        Vanilla JS browser client (12 modules, canvas 2D)
 server/src/        Bun game server (REST + WebSocket + SQLite)
 client/admin-ui/   Admin dashboard (GM-only DB browser)
+client/wzeditor/   Browser-based WZ file editor (open/edit/export/repack)
 resourcesv2/       Extracted WZ JSON game assets
 .memory/            Architecture docs (agent context)
 ```

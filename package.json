@@ -12,7 +12,8 @@
     "client:admin-ui": "bun run --cwd client admin-ui",
     "server": "bun run --cwd server dev",
     "make-gm": "bun run server/src/make-gm.ts",
-    "create-gm": "bun run server/src/create-gm.ts"
+    "create-gm": "bun run server/src/create-gm.ts",
+    "client:wzeditor": "bun run tools/dev/serve-wzeditor.mjs"
   },
   "devDependencies": {
     "bun-types": "^1.3.9",
