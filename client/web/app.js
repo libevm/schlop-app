@@ -62,6 +62,7 @@ import {
   MAP_BANNER_SHOW_MS, MAP_BANNER_FADE_MS, MAP_BANNER_SLIDE_MS,
   wzCursor, CURSOR_IDLE, CURSOR_CANCLICK, CURSOR_CLICKING,
   characterPlacementTemplateCache, objectAnimStates,
+  lifeAnimations, lifeRuntimeState, reactorRuntimeState,
 } from './state.js';
 
 // Pure utilities, WZ helpers, asset cache, draw primitives
@@ -76,6 +77,7 @@ import {
   wrapText, roundRect,
   worldToScreen, isWorldRectVisible, drawWorldImage, drawScreenImage,
   localPoint, topLeftFromAnchor, worldPointFromTopLeft,
+  splitWordByWidth, wrapBubbleTextToWidth,
 } from './util.js';
 
 // Multiplayer networking: WebSocket, remote players, interpolation
@@ -99,12 +101,11 @@ import {
 
 // Life system: mobs, NPCs, combat, damage, reactors, spatial, map data, portals
 import {
-  lifeAnimations, lifeAnimationPromises, lifeRuntimeState,
+  lifeAnimationPromises,
   VICTORIA_TOWNS, ALL_MAJOR_TOWNS, NPC_SCRIPTS, JQ_DISPLAY_NAMES,
   NPC_AMBIENT_MESSAGES, _npcAmbientBubbles,
   NPC_AMBIENT_INTERVAL_MIN, NPC_AMBIENT_INTERVAL_MAX, NPC_AMBIENT_DURATION,
   _npcDialogueOptionHitBoxes, _npcDialogueBoxBounds,
-  reactorRuntimeState,
   DMG_NUMBER_VSPEED, DMG_NUMBER_FADE_TIME,
   DMG_NUMBER_ROW_HEIGHT_NORMAL, DMG_NUMBER_ROW_HEIGHT_CRIT, DMG_DIGIT_ADVANCES,
   WEAPON_MULTIPLIER, DEFAULT_MASTERY, DEFAULT_CRITICAL, DEFAULT_ACCURACY, DEFAULT_WATK,
@@ -169,7 +170,6 @@ import {
   zOrderForPart, mergeMapAnchors, pickAnchorName,
   characterTemplateCacheKey, getCharacterPlacementTemplate,
   composeCharacterPlacements, characterBoundsFromPlacements,
-  splitWordByWidth, wrapBubbleTextToWidth,
   playerHitBlinkColorScale, drawCharacter,
   bgAnimStates, bgMotionStates, portalFrameWarmupRequested,
 } from './render.js';
@@ -196,6 +196,7 @@ import {
   loadSetEffects, findActiveSetEffect,
   updateSetEffectAnimation, updateSetEffectAnimations, drawSetEffect,
   drawChatBubble, drawPlayerNameLabel,
+  randomBlinkCooldownMs,
 } from './character.js';
 
 // GM commands, chat, settings, canvas resolution

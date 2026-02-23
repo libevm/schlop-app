@@ -17,7 +17,7 @@ import {
   wzCursor, CURSOR_IDLE, CURSOR_CANCLICK, CURSOR_CLICKING,
 } from "./state.js";
 import { loadJsonFromStorage, saveJsonToStorage } from "./util.js";
-import { wsSend, _wsConnected, setLastChatSendTime } from "./net.js";
+import { wsSend, _wsConnected, _lastChatSendTime, setLastChatSendTime } from "./net.js";
 import { playSfx } from "./sound.js";
 
 // ── GM Slash Commands ────────────────────────────────────────────────

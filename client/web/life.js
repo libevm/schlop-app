@@ -29,6 +29,7 @@ import {
   MOB_GROUNDSLIP, MOB_SWIMFRICTION, MOB_PHYS_TIMESTEP,
   MOB_STAND_MIN_MS, MOB_STAND_MAX_MS, MOB_MOVE_MIN_MS, MOB_MOVE_MAX_MS,
   DROP_PICKUP_RANGE, cameraHeightBias, objectAnimStates,
+  lifeAnimations, lifeRuntimeState, reactorRuntimeState,
   MAP_ID_REDIRECTS, newCharacterDefaults,
   EQUIP_SLOT_LIST, INV_MAX_SLOTS,
 } from "./state.js";
@@ -42,10 +43,10 @@ import {
   worldToScreen, isWorldRectVisible, drawWorldImage, drawScreenImage,
   localPoint, topLeftFromAnchor, worldPointFromTopLeft,
 } from "./util.js";
-import { wsSend } from "./net.js";
+import { wsSend, _wsConnected, _isMobAuthority } from "./net.js";
 
 // ─── Life (Mob/NPC) Sprite System ─────────────────────────────────────────────
-export const lifeAnimations = new Map(); // key: "m:0120100" or "n:1012000" -> { stances, name }
+// (lifeAnimations moved to state.js)
 export const lifeAnimationPromises = new Map();
 
 /**
@@ -207,7 +208,7 @@ export async function loadLifeAnimation(type, id) {
 }
 
 // Per-life-entry runtime animation state
-export const lifeRuntimeState = new Map();
+// (lifeRuntimeState moved to state.js)
 
 // (Mob physics/behavior/UI constants are now in state.js)
 export const MOB_TPS = 125;
@@ -2475,7 +2476,7 @@ export async function loadReactorAnimation(reactorId) {
 }
 
 // Per-reactor runtime animation state
-export const reactorRuntimeState = new Map();
+// (reactorRuntimeState moved to state.js)
 
 /**
  * Server reactors: populate from server-provided reactor list.

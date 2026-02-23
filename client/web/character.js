@@ -15,13 +15,14 @@ import {
   EQUIP_SLOT_LIST,
   STATUSBAR_HEIGHT, STATUSBAR_BAR_HEIGHT, STATUSBAR_PADDING_H,
   CLIMBING_STANCES, characterPlacementTemplateCache,
+  lifeRuntimeState,
 } from "./state.js";
 import {
   safeNumber, childByName, imgdirChildren, imgdirLeafRecord,
   pickCanvasNode, canvasMetaFromNode, resolveNodeByUol, soundPathFromName,
   fetchJson, requestMeta, requestImageByKey, getImageByKey,
   worldToScreen, drawWorldImage,
-  roundRect, wrapText,
+  roundRect, wrapText, wrapBubbleTextToWidth,
 } from "./util.js";
 import { wsSend, remotePlayers, _remoteSetEffects } from "./net.js";
 import {
@@ -29,6 +30,7 @@ import {
   loadBackgroundMeta, loadAnimatedBackgroundFrames,
   loadTileMeta, loadObjectMeta, loadAnimatedObjectFrames,
   portalVisibilityMode, DEGEN_STANCES_BY_TYPE,
+  ATTACK_STANCES_BY_TYPE, MOB_DEFAULT_HP,
 } from "./life.js";
 import { equipWzCategoryFromId } from "./save.js";
 

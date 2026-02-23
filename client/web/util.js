@@ -2,7 +2,7 @@
  * util.js — Pure utility functions for WZ node navigation and helpers.
  * No external dependencies beyond state.js.
  */
-import { rlog, metaCache, imageCache, imagePromiseCache, jsonCache, cachedFetch, dlog } from './state.js';
+import { rlog, ctx, metaCache, imageCache, imagePromiseCache, jsonCache, cachedFetch, dlog } from './state.js';
 
 export function safeNumber(value, fallback = 0) {
   const parsed = Number(value);
@@ -348,4 +348,61 @@ export function worldPointFromTopLeft(meta, image, topLeft, vectorName, flipped)
   const local = localPoint(meta, image, vectorName, flipped);
   if (!local || !topLeft) return null;
   return { x: topLeft.x + local.x, y: topLeft.y + local.y };
+}
+
+// ─── Text wrapping (moved from render.js) ────────────────────────────────────
+export function splitWordByWidth(word, maxWidth) {
+  if (ctx.measureText(word).width <= maxWidth) {
+    return [word];
+  }
+
+  const chunks = [];
+  let current = "";
+
+  for (const char of word) {
+    const candidate = current + char;
+    if (current && ctx.measureText(candidate).width > maxWidth) {
+      chunks.push(current);
+      current = char;
+    } else {
+      current = candidate;
+    }
+  }
+
+  if (current) chunks.push(current);
+  return chunks.length > 0 ? chunks : [word];
+}
+
+export function wrapBubbleTextToWidth(text, maxWidth) {
+  const normalized = String(text ?? "").trim().replace(/\s+/g, " ");
+  if (!normalized) return [""];
+
+  const words = normalized.split(" ");
+  const lines = [];
+  let line = "";
+
+  for (const word of words) {
+    const chunks = splitWordByWidth(word, maxWidth);
+
+    for (const chunk of chunks) {
+      if (!line) {
+        line = chunk;
+        continue;
+      }
+
+      const candidate = `${line} ${chunk}`;
+      if (ctx.measureText(candidate).width <= maxWidth) {
+        line = candidate;
+      } else {
+        lines.push(line);
+        line = chunk;
+      }
+    }
+  }
+
+  if (line) {
+    lines.push(line);
+  }
+
+  return lines;
 }

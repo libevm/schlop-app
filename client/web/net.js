@@ -13,6 +13,7 @@ import {
   PLAYER_HIT_FACE_DURATION_MS, ATTACK_RANGE_X, ATTACK_RANGE_Y,
   SESSION_KEY, CLIMBING_STANCES, _chairSpriteCache,
   MOB_KB_COUNTER_START, MOB_KB_COUNTER_END, PHYS_TPS,
+  lifeAnimations, lifeRuntimeState, reactorRuntimeState,
 } from "./state.js";
 import {
   safeNumber, childByName, imgdirLeafRecord, pickCanvasNode, canvasMetaFromNode,

@@ -6,9 +6,9 @@ import {
   dlog, rlog, soundDataUriCache, soundDataPromiseCache,
   BGM_FADE_DURATION_MS, BGM_TARGET_VOLUME, SFX_POOL_SIZE,
   DEFAULT_MOB_HIT_SOUND, DEFAULT_MOB_DIE_SOUND,
+  lifeAnimations,
 } from "./state.js";
 import { fetchJson, childByName, soundPathFromName } from "./util.js";
-import { lifeAnimations } from "./life.js";
 
 // ── UI Sounds ──
 export let _uiSoundsPreloaded = false;

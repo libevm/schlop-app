@@ -428,6 +428,11 @@ export const FIXED_STEP_MS = 1000 / 60;
 export const MAX_FRAME_DELTA_MS = 250;
 export const MAX_STEPS_PER_FRAME = 6;
 
+// ─── Life/Mob/NPC/Reactor Runtime State ──────────────────────────────────────
+export const lifeAnimations = new Map(); // key: "m:0120100" or "n:1012000" -> { stances, name }
+export const lifeRuntimeState = new Map();
+export const reactorRuntimeState = new Map();
+
 // ─── Animation State Maps ────────────────────────────────────────────────────
 export const objectAnimStates = new Map();
 

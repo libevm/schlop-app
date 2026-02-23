@@ -31,7 +31,7 @@ import {
   requestImageByKey, getImageByKey,
 } from "./util.js";
 import {
-  wsSend, connectWebSocketAsync, _wsConnected,
+  wsSend, connectWebSocketAsync, _wsConnected, _awaitingInitialMap, remoteEquipData,
   setAwaitingInitialMap, setDuplicateLoginBlocked, setInitialMapResolve,
 } from "./net.js";
 import { playUISound } from "./sound.js";

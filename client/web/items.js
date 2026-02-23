@@ -22,7 +22,7 @@ import {
   getImageByKey, requestImageByKey,
   worldToScreen, isWorldRectVisible, drawWorldImage,
 } from "./util.js";
-import { wsSend, wsSendEquipChange, _wsConnected } from "./net.js";
+import { wsSend, wsSendEquipChange, _wsConnected, remotePlayers } from "./net.js";
 import { findFootholdAtXNearY, findFootholdBelow } from "./physics.js";
 import { normalizedRect, playerTouchBounds, rectsOverlap } from "./render.js";
 import { playUISound, preloadUISounds } from "./sound.js";
