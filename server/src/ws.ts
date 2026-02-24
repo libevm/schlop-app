@@ -1439,7 +1439,7 @@ export function handleClientMessage(
 
     case "character_attack": {
       // Server-authoritative attack processing.
-      // Client sends: { type: "character_attack", stance, degenerate }
+      // Client sends: { type: "character_attack", stance, degenerate, x, y, facing }
       // Server: finds mobs in range, calculates damage, applies HP, detects death, spawns drops.
       if (!client.mapId) break;
 
@@ -1450,9 +1450,19 @@ export function handleClientMessage(
       const playerLevel = client.stats?.level ?? 1;
       const { min: pmin, max: pmax } = calcPlayerDamageRange(playerLevel);
 
-      const px = client.x;
-      const py = client.y;
-      const facingLeft = client.facing < 0;
+      // Use attack position from message (client sends current pos).
+      // Also update server-tracked position so it stays in sync.
+      const atkX = Number(msg.x) || client.x;
+      const atkY = Number(msg.y) || client.y;
+      const atkFacing = Number(msg.facing) || client.facing;
+      client.x = atkX;
+      client.y = atkY;
+      client.facing = atkFacing;
+      if (!client.positionConfirmed) client.positionConfirmed = true;
+
+      const px = atkX;
+      const py = atkY;
+      const facingLeft = atkFacing < 0;
 
       const rangeLeft  = facingLeft ? px - ATTACK_RANGE_X : px - 10;
       const rangeRight = facingLeft ? px + 10 : px + ATTACK_RANGE_X;

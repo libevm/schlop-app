@@ -1801,7 +1801,14 @@ export function performAttack() {
   if (_wsConnected) {
     // Online: send character_attack to server — server handles mob targeting,
     // damage calculation, death detection, and drop spawning.
-    wsSend({ type: "character_attack", stance: attackStance, degenerate: isProne });
+    wsSend({
+      type: "character_attack",
+      stance: attackStance,
+      degenerate: isProne,
+      x: Math.round(runtime.player.x),
+      y: Math.round(runtime.player.y),
+      facing: runtime.player.facing,
+    });
   } else {
     // Offline: legacy client-side combat
     wsSend({ type: "attack", stance: attackStance });
