@@ -312,6 +312,67 @@ export function requestMeta(key, loader) {
   return metaPromiseCache.get(key);
 }
 
+// ─── IndexedDB Persistent Image Cache ────────────────────────────────────────
+// Stores decoded PNG Blobs keyed by image key string. Survives page refresh.
+// On cache hit: IDB Blob → createImageBitmap (~1ms, skips full decode pipeline).
+
+const IDB_NAME = "maple-image-cache-v1";
+const IDB_STORE = "images";
+let _idb = null;
+let _idbReady = null;
+
+function _openIDB() {
+  if (_idbReady) return _idbReady;
+  _idbReady = new Promise((resolve) => {
+    try {
+      const req = indexedDB.open(IDB_NAME, 1);
+      req.onupgradeneeded = () => {
+        if (!req.result.objectStoreNames.contains(IDB_STORE)) {
+          req.result.createObjectStore(IDB_STORE);
+        }
+      };
+      req.onsuccess = () => { _idb = req.result; resolve(_idb); };
+      req.onerror = () => resolve(null);
+    } catch { resolve(null); }
+  });
+  return _idbReady;
+}
+
+function _idbGet(key) {
+  return new Promise((resolve) => {
+    if (!_idb) { resolve(null); return; }
+    try {
+      const tx = _idb.transaction(IDB_STORE, "readonly");
+      const req = tx.objectStore(IDB_STORE).get(key);
+      req.onsuccess = () => resolve(req.result ?? null);
+      req.onerror = () => resolve(null);
+    } catch { resolve(null); }
+  });
+}
+
+function _idbPut(key, blob) {
+  if (!_idb) return;
+  try {
+    const tx = _idb.transaction(IDB_STORE, "readwrite");
+    tx.objectStore(IDB_STORE).put(blob, key);
+  } catch {}
+}
+
+/** Convert ImageBitmap → PNG Blob via OffscreenCanvas (for IDB storage). */
+function _bitmapToBlob(bitmap) {
+  try {
+    const oc = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const octx = oc.getContext("2d");
+    octx.drawImage(bitmap, 0, 0);
+    return oc.convertToBlob({ type: "image/png" });
+  } catch { return Promise.resolve(null); }
+}
+
+// Eagerly open IDB so it's ready by the time first images decode
+_openIDB();
+
+// ─── Image Decode + Cache ────────────────────────────────────────────────────
+
 export function requestImageByKey(key) {
   if (imageCache.has(key)) {
     return imageCache.get(key);
@@ -331,31 +392,63 @@ export function requestImageByKey(key) {
     return null;
   }
 
-  // ALL decode runs in the worker pool — main thread only does base64→binary + dispatch.
-  // Raw WZ: worker inflates + pixel-decodes → transfers ImageBitmap zero-copy.
-  // PNG base64: worker does native createImageBitmap → transfers ImageBitmap zero-copy.
-  // After successful decode, basedata is freed from metaCache to reclaim memory.
-  const promise = (isRawWzCanvas(meta)
-    ? decodeRawWzCanvas(meta)
-    : decodePngToImageBitmap(meta.basedata)
-  ).then((bitmap) => {
+  const promise = _decodeWithCache(key, meta);
+  imagePromiseCache.set(key, promise);
+  return promise;
+}
+
+async function _decodeWithCache(key, meta) {
+  // 1. Check IndexedDB for a cached PNG Blob
+  const cachedBlob = await _idbGet(key);
+  if (cachedBlob) {
+    try {
+      const bitmap = await createImageBitmap(cachedBlob);
+      imageCache.set(key, bitmap);
+      imagePromiseCache.delete(key);
+      delete meta.basedata;
+      return bitmap;
+    } catch {
+      // Corrupt entry — fall through to full decode
+    }
+  }
+
+  // 2. Full decode via worker pool
+  try {
+    const isRaw = isRawWzCanvas(meta);
+    const bitmap = await (isRaw
+      ? decodeRawWzCanvas(meta)
+      : decodePngToImageBitmap(meta.basedata));
+
     if (!bitmap) {
       rlog(`DECODE FAIL key=${key} fmt=${meta.wzrawformat ?? "png"}`);
       imagePromiseCache.delete(key);
       return null;
     }
+
     imageCache.set(key, bitmap);
     imagePromiseCache.delete(key);
+
+    // 3. Store decoded image in IDB for next session (fire-and-forget)
+    if (!isRaw && meta.basedata) {
+      // PNG source: re-create binary Blob from base64 (avoids re-encoding via OffscreenCanvas)
+      try {
+        const bin = atob(meta.basedata);
+        const arr = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+        _idbPut(key, new Blob([arr], { type: "image/png" }));
+      } catch {}
+    } else {
+      // Raw WZ source: convert ImageBitmap → PNG Blob via OffscreenCanvas
+      _bitmapToBlob(bitmap).then((blob) => { if (blob) _idbPut(key, blob); }).catch(() => {});
+    }
+
     delete meta.basedata;
     return bitmap;
-  }, (err) => {
+  } catch (err) {
     rlog(`DECODE ERR key=${key}: ${err?.message ?? err}`);
     imagePromiseCache.delete(key);
     return null;
-  });
-
-  imagePromiseCache.set(key, promise);
-  return promise;
+  }
 }
 
 export function getImageByKey(key) {

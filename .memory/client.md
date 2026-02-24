@@ -394,6 +394,19 @@ Follows C++ `Camera.cpp` parity:
 
 + `metaPromiseCache` / `imagePromiseCache` for deduplication.
 
+### Persistent Image Cache (IndexedDB)
+`maple-image-cache-v1` IndexedDB database stores decoded images as PNG Blobs keyed by image key string. Survives page refresh.
+
+**Flow in `requestImageByKey()`:**
+1. Check in-memory `imageCache` → return if hit
+2. Check IndexedDB → if hit, `createImageBitmap(blob)` → store in `imageCache` → return (~1ms, skips full decode)
+3. Full decode via worker pool (current pipeline)
+4. Fire-and-forget: store PNG Blob in IndexedDB for next session
+   - PNG sources: re-decode base64 → binary Blob (avoids OffscreenCanvas re-encode)
+   - Raw WZ sources: `OffscreenCanvas → convertToBlob("image/png")` → IDB
+
+IDB is opened eagerly at module load. Individual get/put per image (not batched).
+
 ### Loading Flow
 `fetchJson(path)` → `requestMeta(key, loaderFn)` → `requestImageByKey(key)` → `getImageByKey(key)` (sync render-loop read, fires async decode on miss).
 
