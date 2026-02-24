@@ -20,6 +20,7 @@ import {
   getNpcOnMap,
   findGroundY,
   getMapData,
+  getMobStats,
   PORTAL_RANGE_PX,
 } from "./map-data.ts";
 import {
@@ -114,6 +115,17 @@ export const DROP_EXPIRE_MS = 180_000;
 const DROP_SWEEP_INTERVAL_MS = 5_000;
 /** Maximum inventory slots per tab (must match client INV_MAX_SLOTS). */
 const INV_MAX_SLOTS_PER_TAB = 32;
+/** Mob respawn delay (ms). */
+const MOB_RESPAWN_DELAY_MS = 7_000;
+/** Attack range constants (must match client ATTACK_RANGE_X/Y). */
+const ATTACK_RANGE_X = 120;
+const ATTACK_RANGE_Y = 50;
+/** Player damage constants (mirror client defaults). */
+const WEAPON_MULTIPLIER = 4.0;
+const DEFAULT_MASTERY = 0.2;
+const DEFAULT_CRITICAL = 0.05;
+const DEFAULT_ACCURACY = 10;
+const DEFAULT_WATK = 15;
 
 /**
  * Determine inventory tab type from item ID prefix.
@@ -176,6 +188,194 @@ function canFitItem(client: WSClient, itemId: number, qty: number): boolean {
 
   // Still need space — check for free slots
   return hasInventorySpace(client, invType);
+}
+
+// ─── Server-Side Mob State ─────────────────────────────────────────
+
+interface ServerMobState {
+  hp: number;
+  maxHp: number;
+  x: number;
+  y: number;
+  dead: boolean;
+  respawnAt: number; // timestamp when mob should respawn (0 = alive)
+}
+
+/** mapId → mobIdx → ServerMobState */
+const _mapMobStates = new Map<string, Map<number, ServerMobState>>();
+
+/** mapId → (lifeIdx → mob ID string). Cached to avoid re-parsing WZ. */
+const _mapMobIds = new Map<string, Map<number, string>>();
+
+/** Initialize mob states for a map from WZ data. Called when first player joins. */
+function initMapMobStates(mapId: string): Map<number, ServerMobState> {
+  const existing = _mapMobStates.get(mapId);
+  if (existing) return existing;
+
+  const states = new Map<number, ServerMobState>();
+  _mapMobStates.set(mapId, states);
+
+  const mobIds = _parseMapLifeEntries(mapId);
+  _mapMobIds.set(mapId, mobIds);
+
+  for (const [lifeIdx, mobId] of mobIds) {
+    const mobStats = getMobStats(mobId);
+    const maxHp = mobStats?.maxHP ?? 100;
+    // Position will be updated from mob_state authority messages.
+    // Initialize with spawn position from WZ.
+    states.set(lifeIdx, {
+      hp: maxHp,
+      maxHp,
+      x: 0, y: 0, // filled from WZ below
+      dead: false,
+      respawnAt: 0,
+    });
+  }
+
+  // Fill spawn positions from WZ
+  _fillMobSpawnPositions(mapId, states);
+  return states;
+}
+
+/** Parse the map's life section in WZ order to get lifeIdx → mobId mapping. */
+function _parseMapLifeEntries(mapId: string): Map<number, string> {
+  const result = new Map<number, string>();
+  const { resolve } = require("path");
+  const { existsSync, readFileSync } = require("fs");
+  const { parseWzXml } = require("./wz-xml.ts");
+  const PROJECT_ROOT = resolve(__dirname, "../..");
+
+  const mapIdStr = String(mapId).padStart(9, "0");
+  const mapDir = `Map${mapIdStr[0]}`;
+  const filePath = resolve(PROJECT_ROOT, "resourcesv3", "Map.wz", "Map", mapDir, `${mapIdStr}.img.xml`);
+
+  if (!existsSync(filePath)) return result;
+  let mapJson: any;
+  try { mapJson = parseWzXml(readFileSync(filePath, "utf-8")); } catch { return result; }
+
+  const sections: any[] = mapJson?.$$;
+  if (!Array.isArray(sections)) return result;
+
+  const lifeSection = sections.find((s: any) => s.$imgdir === "life");
+  if (!lifeSection?.$$) return result;
+
+  let lifeIdx = 0;
+  for (const entry of lifeSection.$$) {
+    const children: any[] = entry.$$;
+    if (!Array.isArray(children)) { lifeIdx++; continue; }
+    let type = "", id = "", hide = false;
+    for (const child of children) {
+      if (child.$string === "type") type = String(child.value ?? "");
+      else if (child.$string === "id") id = String(child.value ?? "");
+      else if (child.$int === "hide") hide = String(child.value) === "1";
+    }
+    if (type === "m" && id && !hide) {
+      result.set(lifeIdx, id);
+    }
+    lifeIdx++;
+  }
+  return result;
+}
+
+/** Fill spawn positions from WZ data. */
+function _fillMobSpawnPositions(mapId: string, states: Map<number, ServerMobState>): void {
+  const { resolve } = require("path");
+  const { existsSync, readFileSync } = require("fs");
+  const { parseWzXml } = require("./wz-xml.ts");
+  const PROJECT_ROOT = resolve(__dirname, "../..");
+
+  const mapIdStr = String(mapId).padStart(9, "0");
+  const mapDir = `Map${mapIdStr[0]}`;
+  const filePath = resolve(PROJECT_ROOT, "resourcesv3", "Map.wz", "Map", mapDir, `${mapIdStr}.img.xml`);
+
+  if (!existsSync(filePath)) return;
+  let mapJson: any;
+  try { mapJson = parseWzXml(readFileSync(filePath, "utf-8")); } catch { return; }
+
+  const sections: any[] = mapJson?.$$;
+  if (!Array.isArray(sections)) return;
+  const lifeSection = sections.find((s: any) => s.$imgdir === "life");
+  if (!lifeSection?.$$) return;
+
+  let lifeIdx = 0;
+  for (const entry of lifeSection.$$) {
+    const children: any[] = entry.$$;
+    if (!Array.isArray(children)) { lifeIdx++; continue; }
+    const st = states.get(lifeIdx);
+    if (st) {
+      for (const child of children) {
+        if (child.$int === "x") st.x = Number(child.value) || 0;
+        else if (child.$int === "cy") st.y = Number(child.value) || 0;
+      }
+    }
+    lifeIdx++;
+  }
+}
+
+/** Clear mob states when all players leave a map. */
+function clearMapMobStates(mapId: string): void {
+  _mapMobStates.delete(mapId);
+  _mapMobIds.delete(mapId);
+}
+
+/** Tick mob respawns — call periodically (e.g. every 1s). */
+function tickMobRespawns(): void {
+  const now = Date.now();
+  for (const [, states] of _mapMobStates) {
+    for (const [, mob] of states) {
+      if (mob.dead && mob.respawnAt > 0 && now >= mob.respawnAt) {
+        mob.dead = false;
+        mob.hp = mob.maxHp;
+        mob.respawnAt = 0;
+      }
+    }
+  }
+}
+
+/**
+ * Calculate player damage range from level (mirrors client calculatePlayerDamageRange).
+ * Uses beginner stat formula: STR = 50 + level, DEX = 4.
+ */
+function calcPlayerDamageRange(level: number): { min: number; max: number } {
+  const str = 50 + level;
+  const dex = 4;
+  const primary = WEAPON_MULTIPLIER * str;
+  const secondary = dex;
+  const multiplier = DEFAULT_WATK / 100;
+  const maxdmg = (primary + secondary) * multiplier;
+  const mindmg = ((primary * 0.9 * DEFAULT_MASTERY) + secondary) * multiplier;
+  return { min: Math.max(1, mindmg), max: Math.max(1, maxdmg) };
+}
+
+/**
+ * Calculate damage to a specific mob (mirrors client calculateMobDamage).
+ * Returns { damage, critical, miss }.
+ */
+function calcMobDamage(
+  playerMin: number, playerMax: number, playerLevel: number,
+  mobLevel: number, mobWdef: number, mobAvoid: number,
+  isDegenerate: boolean,
+): { damage: number; critical: boolean; miss: boolean } {
+  let pmin = playerMin, pmax = playerMax;
+  if (isDegenerate) { pmin /= 10; pmax /= 10; }
+
+  let leveldelta = mobLevel - playerLevel;
+  if (leveldelta < 0) leveldelta = 0;
+
+  const hitchance = DEFAULT_ACCURACY / ((1.84 + 0.07 * leveldelta) * mobAvoid + 1.0);
+  if (Math.random() > Math.max(0.01, hitchance)) {
+    return { damage: 0, critical: false, miss: true };
+  }
+
+  const maxd = Math.max(1, pmax * (1 - 0.01 * leveldelta) - mobWdef * 0.5);
+  const mind = Math.max(1, pmin * (1 - 0.01 * leveldelta) - mobWdef * 0.6);
+
+  let damage = mind + Math.random() * (maxd - mind);
+  const critical = Math.random() < DEFAULT_CRITICAL;
+  if (critical) damage *= 1.5;
+  damage = Math.max(1, Math.min(999999, Math.floor(damage)));
+
+  return { damage, critical, miss: false };
 }
 
 export interface MapDrop {
@@ -481,7 +681,7 @@ export class RoomManager {
     }
   }
 
-  /** Start periodic reactor respawn check. Call once at server start. */
+  /** Start periodic reactor + mob respawn check. Call once at server start. */
   startReactorTick(): void {
     setInterval(() => {
       const respawned = tickReactorRespawns();
@@ -494,6 +694,8 @@ export class RoomManager {
           y: reactor.placement.y,
         });
       }
+      // Also tick mob respawns
+      tickMobRespawns();
     }, 1000); // check every 1s
   }
 
@@ -512,6 +714,9 @@ export class RoomManager {
     if (!this.mobAuthority.has(mapId)) {
       this.mobAuthority.set(mapId, client.id);
     }
+
+    // Initialize server-side mob states for this map
+    initMapMobStates(mapId);
   }
 
   private removeClientFromRoom(client: WSClient): void {
@@ -534,7 +739,10 @@ export class RoomManager {
       }
 
       // Clean up empty rooms
-      if (room.size === 0) this.rooms.delete(mapId);
+      if (room.size === 0) {
+        this.rooms.delete(mapId);
+        clearMapMobStates(mapId);
+      }
     }
   }
 
@@ -1208,6 +1416,19 @@ export function handleClientMessage(
     case "mob_state": {
       // Only accept from the mob authority for this map
       if (roomManager.mobAuthority.get(client.mapId) !== client.id) break;
+
+      // Update server-side mob positions from authority (used for range checks)
+      const mobStates = _mapMobStates.get(client.mapId);
+      if (mobStates && Array.isArray(msg.mobs)) {
+        for (const m of msg.mobs) {
+          const st = mobStates.get(m.idx);
+          if (st && !st.dead) {
+            st.x = m.x;
+            st.y = m.y;
+          }
+        }
+      }
+
       // Relay mob state to all OTHER clients in the room
       roomManager.broadcastToRoom(client.mapId, {
         type: "mob_state",
@@ -1216,55 +1437,125 @@ export function handleClientMessage(
       break;
     }
 
-    case "mob_damage": {
-      // Player hit a mob — broadcast to all including authority so it can apply damage
-      roomManager.broadcastToRoom(client.mapId, {
-        type: "mob_damage",
-        attacker_id: client.id,
-        mob_idx: msg.mob_idx,
-        damage: msg.damage,
-        direction: msg.direction,
-      }, client.id);
-      break;
-    }
-
-    case "mob_kill": {
-      // Server-authoritative mob drop generation.
-      // Client reports mob killed at (x, y) — server rolls loot and spawns drop.
+    case "character_attack": {
+      // Server-authoritative attack processing.
+      // Client sends: { type: "character_attack", stance, degenerate }
+      // Server: finds mobs in range, calculates damage, applies HP, detects death, spawns drops.
       if (!client.mapId) break;
-      const mobX = Number(msg.x) || 0;
-      const mobY = Number(msg.y) || 0;
-      const mobIdx = Number(msg.mob_idx);
-      if (!Number.isFinite(mobIdx)) break;
 
-      // Roll loot (may return null = no drop)
-      const loot = rollMobLoot();
-      if (!loot) break;
+      const mobStates = _mapMobStates.get(client.mapId);
+      if (!mobStates) break;
 
-      // Find landing Y from footholds
-      const mapData = getMapData(client.mapId);
-      let destY = mobY;
-      if (mapData) {
-        const groundY = findGroundY(mapData.footholds, mobX, mobY - 20);
-        if (groundY !== null) destY = groundY;
+      const isDegenerate = !!msg.degenerate;
+      const playerLevel = client.stats?.level ?? 1;
+      const { min: pmin, max: pmax } = calcPlayerDamageRange(playerLevel);
+
+      const px = client.x;
+      const py = client.y;
+      const facingLeft = client.facing < 0;
+
+      const rangeLeft  = facingLeft ? px - ATTACK_RANGE_X : px - 10;
+      const rangeRight = facingLeft ? px + 10 : px + ATTACK_RANGE_X;
+      const rangeTop   = py - ATTACK_RANGE_Y;
+      const rangeBottom = py + ATTACK_RANGE_Y;
+
+      // Find closest alive mob in range (mobcount=1 for regular attack)
+      let bestIdx = -1;
+      let bestDist = Infinity;
+      for (const [idx, mob] of mobStates) {
+        if (mob.dead) continue;
+        if (mob.x < rangeLeft || mob.x > rangeRight) continue;
+        if (mob.y < rangeTop || mob.y > rangeBottom) continue;
+        const dist = Math.abs(mob.x - px) + Math.abs(mob.y - py);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestIdx = idx;
+        }
       }
 
-      const drop = roomManager.addDrop(client.mapId, {
-        item_id: loot.item_id,
-        name: "",         // client resolves name from WZ
-        qty: loot.qty,
-        x: mobX,
-        startY: mobY - 20, // arc starts above mob
-        destY,
-        owner_id: client.id, // killer gets loot priority
-        iconKey: "",         // client loads icon from WZ
-        category: loot.category,
+      // Broadcast attack animation to other players
+      roomManager.broadcastToRoom(client.mapId, {
+        type: "player_attack",
+        id: client.id,
+        stance: msg.stance,
+      }, client.id);
+
+      if (bestIdx < 0) break; // no mob in range
+
+      const mob = mobStates.get(bestIdx)!;
+
+      // Look up mob WZ stats via cached mob ID map
+      const mapData = getMapData(client.mapId);
+      const mobIdMap = _mapMobIds.get(client.mapId);
+      const mobId = mobIdMap?.get(bestIdx) ?? "";
+
+      const mobStats = mobId ? getMobStats(mobId) : null;
+      const mobLevel = mobStats?.level ?? 1;
+      const mobWdef = mobStats?.wdef ?? 0;
+      const mobAvoid = mobStats?.avoid ?? 0;
+      const mobKnockback = mobStats?.knockback ?? 1;
+      const mobExp = mobStats?.exp ?? 3;
+
+      const result = calcMobDamage(pmin, pmax, playerLevel, mobLevel, mobWdef, mobAvoid, isDegenerate);
+
+      const attackerIsLeft = px < mob.x;
+      let killed = false;
+
+      if (!result.miss) {
+        mob.hp -= result.damage;
+        if (result.damage >= mobKnockback) {
+          // Knockback will be applied client-side from the mob_damage_result
+        }
+        if (mob.hp <= 0) {
+          mob.hp = 0;
+          mob.dead = true;
+          mob.respawnAt = Date.now() + MOB_RESPAWN_DELAY_MS;
+          killed = true;
+        }
+      }
+
+      // Broadcast damage result to ALL players in room (including attacker)
+      roomManager.broadcastToRoom(client.mapId, {
+        type: "mob_damage_result",
+        attacker_id: client.id,
+        mob_idx: bestIdx,
+        damage: result.damage,
+        critical: result.critical,
+        miss: result.miss,
+        killed,
+        direction: attackerIsLeft ? 1 : -1,
+        new_hp: mob.hp,
+        max_hp: mob.maxHp,
+        knockback: (!result.miss && result.damage >= mobKnockback) ? 1 : 0,
+        exp: killed ? mobExp : 0,
       });
 
-      roomManager.broadcastToRoom(client.mapId, {
-        type: "drop_spawn",
-        drop,
-      });
+      // Spawn drop if mob killed
+      if (killed) {
+        const loot = rollMobLoot();
+        if (loot) {
+          let destY = mob.y;
+          if (mapData) {
+            const groundY = findGroundY(mapData.footholds, mob.x, mob.y - 20);
+            if (groundY !== null) destY = groundY;
+          }
+          const drop = roomManager.addDrop(client.mapId, {
+            item_id: loot.item_id,
+            name: "",
+            qty: loot.qty,
+            x: mob.x,
+            startY: mob.y - 20,
+            destY,
+            owner_id: client.id,
+            iconKey: "",
+            category: loot.category,
+          });
+          roomManager.broadcastToRoom(client.mapId, {
+            type: "drop_spawn",
+            drop,
+          });
+        }
+      }
       break;
     }
 

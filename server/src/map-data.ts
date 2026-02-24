@@ -30,6 +30,16 @@ export interface NpcLifeEntry {
   fh: number;
 }
 
+export interface MobLifeEntry {
+  /** Mob ID from Mob.wz (e.g. "0100100") */
+  id: string;
+  x: number;
+  cy: number;
+  fh: number;
+  /** Whether mob is hidden (hide="1") */
+  hide: boolean;
+}
+
 export interface FootholdInfo {
   id: number;
   x1: number;
@@ -45,6 +55,7 @@ export interface MapInfo {
 export interface MapData {
   portals: PortalInfo[];
   npcs: NpcLifeEntry[];
+  mobs: MobLifeEntry[];
   footholds: FootholdInfo[];
   info: MapInfo;
 }
@@ -83,6 +94,61 @@ export function findGroundY(footholds: FootholdInfo[], x: number, y: number): nu
   }
 
   return bestY;
+}
+
+// ─── Mob Stats (from Mob.wz) ────────────────────────────────────────
+
+export interface MobStats {
+  level: number;
+  maxHP: number;
+  wdef: number;    // PDDamage
+  avoid: number;   // eva
+  knockback: number; // pushed
+  exp: number;
+}
+
+const _mobStatsCache = new Map<string, MobStats | null>();
+
+/** Load mob stats from Mob.wz/<mobId>.img.xml. Cached per mob ID. */
+export function getMobStats(mobId: string): MobStats | null {
+  if (_mobStatsCache.has(mobId)) return _mobStatsCache.get(mobId)!;
+
+  const padded = mobId.padStart(7, "0");
+  const filePath = resolve(PROJECT_ROOT, "resourcesv3", "Mob.wz", `${padded}.img.xml`);
+
+  try {
+    if (!existsSync(filePath)) {
+      _mobStatsCache.set(mobId, null);
+      return null;
+    }
+    const { parseWzXml } = require("./wz-xml.ts");
+    const text = readFileSync(filePath, "utf-8");
+    const json = parseWzXml(text);
+    const sections: any[] = json?.$$;
+    if (!Array.isArray(sections)) { _mobStatsCache.set(mobId, null); return null; }
+
+    const info = sections.find((s: any) => s.$imgdir === "info");
+    if (!info?.$$) { _mobStatsCache.set(mobId, null); return null; }
+
+    let level = 1, maxHP = 100, wdef = 0, avoid = 0, knockback = 1, exp = 0;
+    for (const child of info.$$) {
+      const name = child.$int ?? child.$short ?? "";
+      const val = Number(child.value) || 0;
+      if (name === "level") level = val;
+      else if (name === "maxHP") maxHP = val;
+      else if (name === "PDDamage") wdef = val;
+      else if (name === "eva") avoid = val;
+      else if (name === "pushed") knockback = val;
+      else if (name === "exp") exp = val;
+    }
+
+    const stats: MobStats = { level, maxHP, wdef, avoid, knockback, exp };
+    _mobStatsCache.set(mobId, stats);
+    return stats;
+  } catch {
+    _mobStatsCache.set(mobId, null);
+    return null;
+  }
 }
 
 // ─── NPC Script Destinations (server-authoritative) ─────────────────
@@ -362,7 +428,7 @@ function loadMapData(paddedMapId: string): MapData | null {
 
 function parseMapData(mapJson: any): MapData {
   const sections: any[] = mapJson?.$$;
-  if (!Array.isArray(sections)) return { portals: [], npcs: [], info: { returnMap: 999999999 } };
+  if (!Array.isArray(sections)) return { portals: [], npcs: [], mobs: [], footholds: [], info: { returnMap: 999999999 } };
 
   // ── info section ──
   const infoSection = sections.find((s: any) => s.$imgdir === "info");
@@ -397,23 +463,27 @@ function parseMapData(mapJson: any): MapData {
     }
   }
 
-  // ── life section (NPCs only) ──
+  // ── life section (NPCs and Mobs) ──
   const lifeSection = sections.find((s: any) => s.$imgdir === "life");
   const npcs: NpcLifeEntry[] = [];
+  const mobs: MobLifeEntry[] = [];
   if (lifeSection?.$$) {
     for (const entry of lifeSection.$$) {
       const children: any[] = entry.$$;
       if (!Array.isArray(children)) continue;
-      let type = "", id = "", x = 0, cy = 0, fh = -1;
+      let type = "", id = "", x = 0, cy = 0, fh = -1, hide = false;
       for (const child of children) {
         if (child.$string === "type") type = String(child.value ?? "");
         else if (child.$string === "id") id = String(child.value ?? "");
         else if (child.$int === "x") x = Number(child.value) || 0;
         else if (child.$int === "cy") cy = Number(child.value) || 0;
         else if (child.$int === "fh" || child.$short === "fh") fh = Number(child.value) ?? -1;
+        else if (child.$int === "hide") hide = String(child.value) === "1";
       }
       if (type === "n" && id) {
         npcs.push({ id, x, cy, fh });
+      } else if (type === "m" && id) {
+        mobs.push({ id, x, cy, fh, hide });
       }
     }
   }
@@ -442,7 +512,7 @@ function parseMapData(mapJson: any): MapData {
     }
   }
 
-  return { portals, npcs, footholds, info: { returnMap } };
+  return { portals, npcs, mobs, footholds, info: { returnMap } };
 }
 
 // ─── Internal: NPC Script Loading ───────────────────────────────────

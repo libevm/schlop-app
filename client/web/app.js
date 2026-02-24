@@ -122,7 +122,7 @@ import {
   drawNpcAmbientBubble,
   spawnDamageNumber, updateDamageNumbers, drawDamageNumbers,
   calculatePlayerDamageRange, calculateMobDamage,
-  findMobsInRange, performAttack, applyAttackToMobVisualOnly, applyAttackToMob,
+  findMobsInRange, performAttack, applyAttackToMob,
   updatePlayerAttack, updateMobCombatStates,
   findNpcAtScreen, openNpcDialogue, closeNpcDialogue, advanceNpcDialogue, drawNpcDialogue,
   loadReactorAnimation, syncServerReactors, initReactorRuntimeStates,

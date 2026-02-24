@@ -515,41 +515,51 @@ export function handleServerMessage(msg) {
       break;
     }
 
-    case "mob_damage": {
-      // Another player attacked a mob — authority applies actual state change
-      if (!_isMobAuthority) break;
+    case "mob_damage_result": {
+      // Server-authoritative damage result — apply to local mob state
       const mobIdx = msg.mob_idx;
       const state = lifeRuntimeState.get(mobIdx);
-      if (!state || state.dead || state.dying) break;
+      if (!state) break;
       const life = runtime.map?.lifeEntries[mobIdx];
       if (!life) break;
-      const dmg = msg.damage || 0;
-      state.hp -= dmg;
-      state.nameVisible = true;
-      state.hpShowUntil = performance.now() + 5000;
 
       const worldX = state.phobj ? state.phobj.x : life.x;
       const worldY = state.phobj ? state.phobj.y : life.cy;
-      fn.spawnDamageNumber(worldX, worldY, dmg, false);
-
       const anim = lifeAnimations.get(`m:${life.id}`);
-      void fn.playMobSfx(life.id, "Damage");
+      const isMe = msg.attacker_id === sessionId;
 
-      // Apply knockback
-      const dir = msg.direction || 1;
-      const kbDurationMs = (MOB_KB_COUNTER_END - MOB_KB_COUNTER_START) * (1000 / PHYS_TPS);
-      state.hitStaggerUntil = performance.now() + kbDurationMs;
-      state.kbDir = dir;
-      state.kbStartTime = performance.now();
-      state.hitCounter = MOB_KB_COUNTER_START;
-      state.facing = dir === 1 ? -1 : 1;
-      if (anim?.stances?.["hit1"]) {
-        state.stance = "hit1";
-        state.frameIndex = 0;
-        state.frameTimerMs = 0;
+      // Update HP from server
+      state.hp = msg.new_hp;
+      state.maxHp = msg.max_hp;
+      state.nameVisible = true;
+      state.hpShowUntil = performance.now() + 5000;
+
+      // Spawn damage number
+      if (msg.miss) {
+        fn.spawnDamageNumber(worldX, worldY, 0, false);
+      } else {
+        fn.spawnDamageNumber(worldX, worldY, msg.damage, msg.critical);
+        void fn.playMobSfx(life.id, "Damage");
+
+        // Apply knockback
+        if (msg.knockback && !state.dying) {
+          const dir = msg.direction || 1;
+          const kbDurationMs = (MOB_KB_COUNTER_END - MOB_KB_COUNTER_START) * (1000 / PHYS_TPS);
+          state.hitStaggerUntil = performance.now() + kbDurationMs;
+          state.kbDir = dir;
+          state.kbStartTime = performance.now();
+          state.hitCounter = MOB_KB_COUNTER_START;
+          state.facing = dir === 1 ? -1 : 1;
+          if (anim?.stances?.["hit1"]) {
+            state.stance = "hit1";
+            state.frameIndex = 0;
+            state.frameTimerMs = 0;
+          }
+        }
       }
-      // Check for death
-      if (state.hp <= 0) {
+
+      // Handle death
+      if (msg.killed) {
         state.hp = 0;
         state.dying = true;
         state.dyingElapsed = 0;
@@ -559,6 +569,23 @@ export function handleServerMessage(msg) {
           state.frameTimerMs = 0;
         }
         void fn.playMobSfx(life.id, "Die");
+
+        // Award EXP to attacker
+        if (isMe && msg.exp > 0) {
+          runtime.player.exp += msg.exp;
+          if (runtime.player.exp >= runtime.player.maxExp) {
+            runtime.player.level += 1;
+            runtime.player.exp -= runtime.player.maxExp;
+            runtime.player.maxExp = Math.floor(runtime.player.maxExp * 1.5) + 5;
+            runtime.player.maxHp += 8 + Math.floor(Math.random() * 5);
+            runtime.player.hp = runtime.player.maxHp;
+            runtime.player.maxMp += 4 + Math.floor(Math.random() * 3);
+            runtime.player.mp = runtime.player.maxMp;
+            rlog(`LEVEL UP! Now level ${runtime.player.level}`);
+            fn.saveCharacter();
+            wsSend({ type: "level_up", level: runtime.player.level });
+          }
+        }
       }
       break;
     }

@@ -1798,19 +1798,16 @@ export function performAttack() {
   } else {
     fn.playSfx("Weapon", `${sfxKey}/Attack`);
   }
-  wsSend({ type: "attack", stance: attackStance });
-
-  // Find closest mob in range (mobcount=1 for regular attack)
-  const targets = findMobsInRange(1);
-
-  if (targets.length > 0) {
-    const target = targets[0];
-    // In online non-authority mode: calculate damage locally for visuals,
-    // but send mob_damage to server so authority applies actual state change
-    if (_wsConnected && !_isMobAuthority) {
-      applyAttackToMobVisualOnly(target);
-    } else {
-      applyAttackToMob(target);
+  if (_wsConnected) {
+    // Online: send character_attack to server — server handles mob targeting,
+    // damage calculation, death detection, and drop spawning.
+    wsSend({ type: "character_attack", stance: attackStance, degenerate: isProne });
+  } else {
+    // Offline: legacy client-side combat
+    wsSend({ type: "attack", stance: attackStance });
+    const targets = findMobsInRange(1);
+    if (targets.length > 0) {
+      applyAttackToMob(targets[0]);
     }
   }
 
@@ -1824,50 +1821,8 @@ export function performAttack() {
 }
 
 /**
- * Non-authority attack: show damage visuals locally + send mob_damage to server.
- * The authority will apply actual HP/knockback/death from the mob_damage message.
- */
-export function applyAttackToMobVisualOnly(target) {
-  const state = target.state;
-  const anim = target.anim;
-  const life = target.life;
-  const mobLevel = anim?.level ?? 1;
-  const mobWdef = anim?.wdef ?? 0;
-  const mobAvoid = anim?.avoid ?? 0;
-
-  let { mindamage, maxdamage } = calculatePlayerDamageRange();
-  if (runtime.player.attackDegenerate) { mindamage /= 10; maxdamage /= 10; }
-
-  const result = calculateMobDamage(mindamage, maxdamage, mobLevel, mobWdef, mobAvoid);
-  const worldX = state.phobj ? state.phobj.x : life.x;
-  const worldY = state.phobj ? state.phobj.y : life.cy;
-
-  state.nameVisible = true;
-
-  // Show damage number locally
-  if (result.miss) {
-    spawnDamageNumber(worldX, worldY, 0, false);
-  } else {
-    spawnDamageNumber(worldX, worldY, result.damage, result.critical);
-    state.hpShowUntil = performance.now() + MOB_HP_SHOW_MS;
-  }
-  void fn.playMobSfx(life.id, "Damage");
-
-  // Send to server — authority will apply the real state change
-  if (!result.miss) {
-    const attackerIsLeft = runtime.player.x < worldX;
-    wsSend({
-      type: "mob_damage",
-      mob_idx: target.idx,
-      damage: result.damage,
-      direction: attackerIsLeft ? 1 : -1,
-    });
-  }
-}
-
-/**
  * Apply damage to a mob target. Implements C++ Mob::calculate_damage + apply_damage.
- * Used by authority client (or offline mode).
+ * Used in offline mode only — online combat is server-authoritative via character_attack.
  */
 export function applyAttackToMob(target) {
   const now = performance.now();
@@ -1939,12 +1894,7 @@ export function applyAttackToMob(target) {
     }
     void fn.playMobSfx(life.id, "Die");
 
-    // Tell server the mob died — server rolls loot and spawns drop
-    const mobX = state.phobj ? state.phobj.x : life.x;
-    const mobY = state.phobj ? state.phobj.y : life.cy;
-    wsSend({ type: "mob_kill", mob_idx: target.idx, x: Math.round(mobX), y: Math.round(mobY) });
-
-    // Award EXP (client-side for now — TODO: move to server)
+    // Offline EXP
     runtime.player.exp += 3 + Math.floor(Math.random() * 5);
     if (runtime.player.exp >= runtime.player.maxExp) {
       runtime.player.level += 1;
@@ -1956,7 +1906,6 @@ export function applyAttackToMob(target) {
       runtime.player.mp = runtime.player.maxMp;
       rlog(`LEVEL UP! Now level ${runtime.player.level}`);
       fn.saveCharacter();
-      wsSend({ type: "level_up", level: runtime.player.level });
     }
   }
 }
