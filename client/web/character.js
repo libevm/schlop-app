@@ -613,16 +613,32 @@ export function addPreloadTask(taskMap, key, loader) {
   taskMap.set(key, loader);
 }
 
-export function buildMapAssetPreloadTasks(map) {
-  const taskMap = new Map();
+/**
+ * Build preload task maps split into critical (blocks loading screen) and
+ * deferred (loads in background after map is shown).
+ *
+ * Critical: assets visible at spawn viewport + backgrounds + minimap.
+ * Deferred: distant tiles/objects, extra mob stances, attack animations,
+ *           mob sounds, reactor hit sprites, etc.
+ */
+export function buildMapAssetPreloadTasks(map, spawnX, spawnY) {
+  const critical = new Map();
+  const deferred = new Map();
+  const MARGIN = 300; // px beyond viewport to include
+  const halfW = gameViewWidth() / 2 + MARGIN;
+  const halfH = gameViewHeight() / 2 + MARGIN;
 
+  function isNearSpawn(x, y) {
+    return Math.abs(x - spawnX) < halfW && Math.abs(y - spawnY) < halfH;
+  }
+
+  // ── Backgrounds: always critical (fill entire screen) ──
   for (const background of map.backgrounds ?? []) {
     if (!background.key || !background.bS) continue;
-    addPreloadTask(taskMap, background.key, () => loadBackgroundMeta(background));
-    // Detect and preload animated background frames
+    addPreloadTask(critical, background.key, () => loadBackgroundMeta(background));
     if (background.ani === 1) {
       const animKey = `back-anim:${background.baseKey}`;
-      if (!taskMap.has(animKey)) {
+      if (!critical.has(animKey) && !deferred.has(animKey)) {
         const bgsWithSameBase = (map.backgrounds ?? []).filter(
           (b) => b.baseKey === background.baseKey && b.ani === 1
         );
@@ -633,7 +649,7 @@ export function buildMapAssetPreloadTasks(map) {
             b.frameDelays = cachedBgAnim.delays;
           }
         }
-        addPreloadTask(taskMap, animKey, async () => {
+        addPreloadTask(critical, animKey, async () => {
           const result = await loadAnimatedBackgroundFrames(background);
           if (result) {
             for (const b of bgsWithSameBase) {
@@ -647,28 +663,28 @@ export function buildMapAssetPreloadTasks(map) {
     }
   }
 
+  // ── Tiles & Objects: critical if near spawn, deferred otherwise ──
   for (const layer of map.layers ?? []) {
     for (const tile of layer.tiles ?? []) {
       if (!tile.key || !tile.tileSet) continue;
-      addPreloadTask(taskMap, tile.key, () => loadTileMeta(tile));
+      const target = isNearSpawn(tile.x, tile.y) ? critical : deferred;
+      addPreloadTask(target, tile.key, () => loadTileMeta(tile));
     }
 
     for (const obj of layer.objects ?? []) {
       if (!obj.key) continue;
-      addPreloadTask(taskMap, obj.key, () => loadObjectMeta(obj));
-      // Detect and preload animated object frames
+      const near = isNearSpawn(obj.x, obj.y);
+      // Frame 0 of visible objects is critical; animation discovery always critical
+      // (so frame counts/delays are available), but extra frame images are deferred
+      addPreloadTask(near ? critical : deferred, obj.key, () => loadObjectMeta(obj));
       const animKey = `obj-anim:${obj.baseKey}`;
-      if (!taskMap.has(animKey)) {
-        // Capture all objects sharing the same baseKey so we can assign animation data
+      if (!critical.has(animKey) && !deferred.has(animKey)) {
         const objsWithSameBase = [];
         for (const l of map.layers ?? []) {
           for (const o of l.objects ?? []) {
             if (o.baseKey === obj.baseKey) objsWithSameBase.push(o);
           }
         }
-        // If animation meta is already cached (map transition reusing same
-        // object type), populate the new map's objects immediately — the
-        // loader side-effect won't run when requestMeta returns from cache.
         const cachedAnim = metaCache.get(animKey);
         if (cachedAnim && cachedAnim.delays) {
           for (const o of objsWithSameBase) {
@@ -679,7 +695,9 @@ export function buildMapAssetPreloadTasks(map) {
             o.motion = cachedAnim.motion ?? null;
           }
         }
-        addPreloadTask(taskMap, animKey, async () => {
+        // Object animation metadata discovery: critical for near objects so
+        // frame delays are populated, deferred for distant ones.
+        addPreloadTask(near ? critical : deferred, animKey, async () => {
           const result = await loadAnimatedObjectFrames(obj);
           if (result) {
             for (const o of objsWithSameBase) {
@@ -696,27 +714,31 @@ export function buildMapAssetPreloadTasks(map) {
     }
   }
 
+  // ── Portals: critical if near spawn ──
   for (const portal of map.portalEntries ?? []) {
     if (portalVisibilityMode(portal) === "none") continue;
-
+    const near = isNearSpawn(portal.x, portal.y);
     const frameCount = fn.portalFrameCount(portal);
     for (let frame = 0; frame < frameCount; frame += 1) {
       const key = fn.portalMetaKey(portal, frame);
-      addPreloadTask(taskMap, key, () => fn.loadPortalMeta(portal, frame));
+      addPreloadTask(near ? critical : deferred, key, () => fn.loadPortalMeta(portal, frame));
     }
   }
 
-  // Life (mob/NPC) sprite preload
+  // ── Life (mob/NPC): load animation data + stand frame 0 as critical,
+  //    extra stances (move, hit1, die1) as deferred ──
   const lifeIds = new Set();
   for (const life of map.lifeEntries ?? []) {
     if (life.hide === 1) continue;
     const lifeKey = `${life.type}:${life.id}`;
     if (lifeIds.has(lifeKey)) continue;
     lifeIds.add(lifeKey);
-    addPreloadTask(taskMap, `life-load:${lifeKey}`, async () => {
+
+    // Critical: fetch animation data + decode stand frame 0
+    addPreloadTask(critical, `life-load:${lifeKey}`, async () => {
       const anim = await loadLifeAnimation(life.type, life.id);
       if (!anim) return null;
-      // Register all stance frame images in metaCache so requestImageByKey works
+      // Register ALL stance frames in metaCache (cheap — just stores basedata ref)
       for (const stanceName of Object.keys(anim.stances)) {
         for (const frame of anim.stances[stanceName].frames) {
           if (!metaCache.has(frame.key)) {
@@ -726,18 +748,16 @@ export function buildMapAssetPreloadTasks(map) {
           }
         }
       }
-      // Preload common stance frame images eagerly, then clear basedata to free memory
-      for (const stanceName of ["stand", "move", "hit1", "die1"]) {
-        const stance = anim.stances[stanceName];
-        if (!stance) continue;
-        for (const frame of stance.frames) {
-          await requestImageByKey(frame.key);
-          delete frame.basedata;
-          const cachedMeta = metaCache.get(frame.key);
-          if (cachedMeta) delete cachedMeta.basedata;
-        }
+      // Only decode "stand" frame 0 now — visible immediately
+      const standStance = anim.stances["stand"];
+      if (standStance?.frames?.[0]) {
+        const f = standStance.frames[0];
+        await requestImageByKey(f.key);
+        delete f.basedata;
+        const cm = metaCache.get(f.key);
+        if (cm) delete cm.basedata;
       }
-      // Update mob HP from WZ data now that it's loaded
+      // Update mob HP from WZ data
       if (life.type === "m" && anim.maxHP > 0) {
         for (const [idx, state] of lifeRuntimeState) {
           const l = map.lifeEntries[idx];
@@ -749,47 +769,89 @@ export function buildMapAssetPreloadTasks(map) {
       }
       return anim;
     });
+
+    // Deferred: decode remaining stance frames (move, hit1, die1, stand frames 1+).
+    // Closure captures lifeKey; anim data is available via lifeAnimations after
+    // the critical loader runs loadLifeAnimation.
+    addPreloadTask(deferred, `life-extra:${lifeKey}`, async () => {
+      const anim = lifeAnimations.get(lifeKey);
+      if (!anim) return;
+      for (const stanceName of Object.keys(anim.stances)) {
+        const stance = anim.stances[stanceName];
+        if (!stance) continue;
+        for (let i = 0; i < stance.frames.length; i++) {
+          if (stanceName === "stand" && i === 0) continue;
+          const frame = stance.frames[i];
+          if (imageCache.has(frame.key)) continue;
+          await requestImageByKey(frame.key);
+          delete frame.basedata;
+          const cm = metaCache.get(frame.key);
+          if (cm) delete cm.basedata;
+        }
+      }
+    });
   }
 
-  // Preload mob sound file if map has mobs (22MB JSON — fetch early to avoid lag on first hit)
+  // ── Mob sound: always deferred (22MB JSON, not needed until combat) ──
   const hasMobs = (map.lifeEntries ?? []).some(l => l.type === "m");
   if (hasMobs) {
-    addPreloadTask(taskMap, "sound:Mob.img", async () => {
+    addPreloadTask(deferred, "sound:Mob.img", async () => {
       try { await fetchJson(soundPathFromName("Mob.img")); } catch {}
     });
   }
 
-  // Reactor sprite preload
+  // ── Reactors: idle state 0 frame 0 critical, rest deferred ──
   const reactorIds = new Set();
   for (const reactor of map.reactorEntries ?? []) {
     if (reactorIds.has(reactor.id)) continue;
     reactorIds.add(reactor.id);
-    addPreloadTask(taskMap, `reactor-load:${reactor.id}`, async () => {
+
+    // Collect all frame keys during critical load; deferred phase uses the list
+    // to decode remaining frames (avoids needing access to private reactorAnimations).
+    const reactorFrameKeys = [];
+
+    // Critical: load animation data + idle state 0 frame 0
+    addPreloadTask(critical, `reactor-load:${reactor.id}`, async () => {
       const anim = await loadReactorAnimation(reactor.id);
       if (!anim) return null;
-      // Register all frames (all states, idle + hit) in metaCache and preload images
+      // Register all frames in metaCache and collect keys for deferred phase
       for (const stateData of Object.values(anim.states)) {
-        const allFrames = [...(stateData.idle || []), ...(stateData.hit || [])];
-        for (const frame of allFrames) {
+        for (const frame of [...(stateData.idle || []), ...(stateData.hit || [])]) {
+          reactorFrameKeys.push(frame.key);
           if (!metaCache.has(frame.key)) {
             const m = { basedata: frame.basedata, width: frame.width, height: frame.height };
             if (frame.wzrawformat != null) m.wzrawformat = frame.wzrawformat;
             metaCache.set(frame.key, m);
           }
-          await requestImageByKey(frame.key);
-          delete frame.basedata;
-          const cachedMeta = metaCache.get(frame.key);
-          if (cachedMeta) delete cachedMeta.basedata;
         }
+      }
+      // Decode only idle state 0 frame 0
+      const s0 = anim.states[0];
+      if (s0?.idle?.[0]) {
+        const f = s0.idle[0];
+        await requestImageByKey(f.key);
+        delete f.basedata;
+        const cm = metaCache.get(f.key);
+        if (cm) delete cm.basedata;
       }
       return anim;
     });
+
+    // Deferred: decode remaining reactor frames using collected keys
+    addPreloadTask(deferred, `reactor-extra:${reactor.id}`, async () => {
+      for (const key of reactorFrameKeys) {
+        if (imageCache.has(key)) continue;
+        await requestImageByKey(key);
+        const cm = metaCache.get(key);
+        if (cm) delete cm.basedata;
+      }
+    });
   }
 
-  // Minimap canvas preload
+  // ── Minimap: critical ──
   if (map.miniMap?.basedata) {
     const mmKey = map.miniMap.imageKey;
-    addPreloadTask(taskMap, mmKey, async () => {
+    addPreloadTask(critical, mmKey, async () => {
       const m = {
         basedata: map.miniMap.basedata,
         width: map.miniMap.canvasWidth,
@@ -800,11 +862,13 @@ export function buildMapAssetPreloadTasks(map) {
     });
   }
 
-  return taskMap;
+  return { critical, deferred };
 }
 
-export function addCharacterPreloadTasks(taskMap) {
-  // Preload all possible stances including weapon-specific attack stances
+export function addCharacterPreloadTasks(critical, deferred) {
+  // Critical: current stance (stand1) frame 0
+  const criticalActions = ["stand1"];
+  // Deferred: all other stances and frames
   const allAttackStances = new Set();
   for (const stances of ATTACK_STANCES_BY_TYPE) {
     for (const s of stances) allAttackStances.add(s);
@@ -812,44 +876,88 @@ export function addCharacterPreloadTasks(taskMap) {
   for (const stances of DEGEN_STANCES_BY_TYPE) {
     for (const s of stances) allAttackStances.add(s);
   }
-  const actions = ["stand1", "stand2", "walk1", "walk2", "jump", "ladder", "rope", "prone", "sit",
+  const deferredActions = ["stand2", "walk1", "walk2", "jump", "ladder", "rope", "prone", "sit",
     "proneStab", ...allAttackStances];
 
-  for (const action of actions) {
+  for (const action of criticalActions) {
+    const actionFrames = getCharacterActionFrames(action);
+    // Only frame 0 is critical
+    const frame = actionFrames.length > 0 ? getCharacterFrameData(action, 0) : null;
+    if (frame?.parts?.length) {
+      for (const part of frame.parts) {
+        const key = `char:${action}:0:${part.name}`;
+        addPreloadTask(critical, key, async () => part.meta);
+      }
+    }
+    // Remaining frames deferred
+    for (let fi = 1; fi < Math.min(actionFrames.length, 6); fi++) {
+      const f = getCharacterFrameData(action, fi);
+      if (!f?.parts?.length) continue;
+      for (const part of f.parts) {
+        addPreloadTask(deferred, `char:${action}:${fi}:${part.name}`, async () => part.meta);
+      }
+    }
+  }
+
+  for (const action of deferredActions) {
     const actionFrames = getCharacterActionFrames(action);
     const frameCount = Math.min(actionFrames.length, 6);
-
     for (let fi = 0; fi < frameCount; fi++) {
       const frame = getCharacterFrameData(action, fi);
       if (!frame?.parts?.length) continue;
-
       for (const part of frame.parts) {
-        const key = `char:${action}:${fi}:${part.name}`;
-        addPreloadTask(taskMap, key, async () => part.meta);
+        addPreloadTask(deferred, `char:${action}:${fi}:${part.name}`, async () => part.meta);
       }
     }
   }
 }
 
-export async function preloadMapAssets(map, loadToken) {
-  const taskMap = buildMapAssetPreloadTasks(map);
+/**
+ * Preload map assets in two phases:
+ * 1. Critical (blocks loading screen): spawn-visible tiles/objects, backgrounds,
+ *    minimap, mob/NPC stand frame 0, character stand1 frame 0, nearby portals.
+ * 2. Deferred (returned as async runner, called after map is shown): everything else.
+ *
+ * Returns an async function that runs the deferred phase when called.
+ */
+export async function preloadMapAssets(map, loadToken, spawnX, spawnY) {
+  const { critical, deferred } = buildMapAssetPreloadTasks(map, spawnX, spawnY);
 
   await requestCharacterData();
-  if (loadToken !== runtime.mapLoadToken) return;
+  if (loadToken !== runtime.mapLoadToken) return null;
 
   // Load set effects (Zakum Helmet glow etc.) in background
   loadSetEffects();
 
-  addCharacterPreloadTasks(taskMap);
+  addCharacterPreloadTasks(critical, deferred);
 
-  const tasks = [...taskMap.entries()];
+  // Phase 1: critical assets (blocks loading screen)
+  const tasks = [...critical.entries()];
   runtime.loading.total = tasks.length;
   runtime.loading.loaded = 0;
   runtime.loading.progress = tasks.length > 0 ? 0 : 1;
   runtime.loading.label = `Loading assets 0/${tasks.length}`;
 
   if (tasks.length === 0) {
-    return;
+    return deferred.size > 0 ? async (deferToken) => {
+      const dTasks = [...deferred.entries()];
+      let dCursor = 0;
+      const dWorkers = Array.from({ length: Math.min(4, dTasks.length) }, () =>
+        (async () => {
+          while (true) {
+            const idx = dCursor++;
+            if (idx >= dTasks.length) break;
+            if (deferToken !== runtime.mapLoadToken) break;
+            const [key, loader] = dTasks[idx];
+            try {
+              const meta = await requestMeta(key, loader);
+              if (meta) await requestImageByKey(key);
+            } catch {}
+          }
+        })(),
+      );
+      await Promise.all(dWorkers);
+    } : null;
   }
 
   let cursor = 0;
@@ -891,7 +999,30 @@ export async function preloadMapAssets(map, loadToken) {
   );
 
   await Promise.all(workers);
-  rlog(`preload stats: decoded=${statsDecoded} cached=${statsCached} skipped=${statsSkipped} errors=${statsError} imageCache=${imageCache.size} metaCache=${metaCache.size}`);
+  rlog(`preload critical: decoded=${statsDecoded} cached=${statsCached} skipped=${statsSkipped} errors=${statsError} total=${tasks.length} deferred=${deferred.size}`);
+
+  // Phase 2: return deferred runner (called after loading screen hides)
+  if (deferred.size === 0) return null;
+  return async (deferToken) => {
+    const dTasks = [...deferred.entries()];
+    let dCursor = 0;
+    const dWorkerCount = Math.min(4, dTasks.length); // fewer workers to not starve gameplay
+    const dWorkers = Array.from({ length: dWorkerCount }, () =>
+      (async () => {
+        while (true) {
+          const idx = dCursor++;
+          if (idx >= dTasks.length) break;
+          if (deferToken !== runtime.mapLoadToken) break;
+          const [key, loader] = dTasks[idx];
+          try {
+            const meta = await requestMeta(key, loader);
+            if (meta) await requestImageByKey(key);
+          } catch {}
+        }
+      })(),
+    );
+    await Promise.all(dWorkers);
+  };
 }
 
 

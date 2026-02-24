@@ -16,11 +16,11 @@
 | `physics.js` | 906 | Player physics, footholds, walls, gravity, swimming, camera |
 | `render.js` | 1,036 | Map layers (tiles, objects, BGs), character composition, collision |
 | `sound.js` | 338 | BGM, SFX, UI sounds, mob sounds, audio pools, blob URLs |
-| `character.js` | 1,149 | Character frame building, face animation, equip preload, set effects |
+| `character.js` | 1,280 | Character frame building, face animation, equip preload, set effects |
 | `input.js` | 438 | Keyboard/mouse input, GM commands, chat, settings, canvas resize |
 | `items.js` | 951 | Equipment window, inventory tabs, ground drops, chair, cursor, drag-drop |
 | `save.js` | 1,223 | Weapon/item WZ helpers, save/load, create/login flow, inventory UI |
-| `app.js` | 3,250 | Entry point: game loop, loadMap, portals, HUD, status bar, boot |
+| `app.js` | 3,263 | Entry point: game loop, loadMap, portals, HUD, status bar, boot |
 | `wz-canvas-decode.js` | 179 | Dispatcher: base64→binary + zero-copy ArrayBuffer transfer to workers; exports `decodeRawWzCanvas`, `decodePngToImageBitmap`, `canvasToImageBitmap`, `canvasToDataUrl`, `isRawWzCanvas` |
 | `wz-decode-worker.js` | 483 | Web Worker: receives binary (no atob), inflate (pure JS RFC 1951), listWz AES-XOR decrypt, pixel decode (8 formats), PNG native decode; returns ImageBitmap (zero-copy) or data URL |
 | `wz-xml-adapter.js` | 113 | Harepacker XML DOM → JSON nodes (parses wzrawformat attribute on canvas) |
@@ -510,7 +510,25 @@ Server-authoritative destroyable objects. Reactor 0002001 (wooden box) on map 10
 
 ## Preload System
 
-`preloadMapAssets()`: builds task map → 8 parallel workers → `requestMeta()` → `requestImageByKey()`. Progress → `runtime.loading` for loading screen.
+Two-phase preload in `preloadMapAssets(map, loadToken, spawnX, spawnY)`:
+
+**Phase 1 — Critical (blocks loading screen):**
+- Backgrounds (always visible), minimap
+- Tiles/objects within spawn viewport + 300px margin
+- Portals near spawn
+- Life (mob/NPC) animation data + stand frame 0 only
+- Reactor animation data + idle state 0 frame 0
+- Character `stand1` frame 0 parts
+- 8 parallel async workers, progress → `runtime.loading`
+
+**Phase 2 — Deferred (runs after map is shown):**
+- Distant tiles/objects (rest of map)
+- Extra mob stances (move, hit1, die1) and non-zero frames
+- Reactor hit animations and extra states
+- Character walk, jump, ladder, rope, prone, sit, attack stances
+- Mob sound JSON (22MB, not needed until combat)
+- 4 parallel workers (fewer to avoid starving gameplay)
+- Returned as async runner from `preloadMapAssets`, called by `loadMap` after `loading.active = false`
 
 ## Loading Screen
 

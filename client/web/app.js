@@ -2042,15 +2042,7 @@ async function loadMap(mapId, spawnPortalName = null, spawnFromPortalTransfer = 
       runtime.map.miniMap.imageKey = `minimap:${runtime.mapId}`;
     }
 
-    rlog(`loadMap preloadMapAssets START`);
-    await preloadMapAssets(runtime.map, loadToken);
-    if (loadToken !== runtime.mapLoadToken) { rlog(`loadMap ABORTED (token mismatch after preload)`); return; }
-    rlog(`loadMap preloadMapAssets DONE (${runtime.loading.loaded}/${runtime.loading.total})`);
-
-    buildMapTrapHazardIndex(runtime.map);
-    rlog(`loadMap trapHazards indexed=${runtime.map.trapHazards?.length ?? 0}`);
-
-    // ── Initialize player position + state AFTER assets are loaded ──
+    // ── Compute spawn position BEFORE preload so we know which assets are visible ──
     const spawnPortalByName = spawnPortalName
       ? runtime.map.portalEntries.find((portal) => portal.name === spawnPortalName)
       : null;
@@ -2059,10 +2051,21 @@ async function loadMap(mapId, spawnPortalName = null, spawnFromPortalTransfer = 
       runtime.map.portalEntries.find((portal) => portal.type === 0) ??
       runtime.map.portalEntries[0];
 
-    runtime.player.x = spawnPortal ? spawnPortal.x : 0;
-    runtime.player.y = spawnPortal
+    const spawnX = spawnPortal ? spawnPortal.x : 0;
+    const spawnY = spawnPortal
       ? spawnPortal.y - (spawnFromPortalTransfer ? PORTAL_SPAWN_Y_OFFSET : 0)
       : 0;
+
+    rlog(`loadMap preloadMapAssets START (spawn=${spawnX},${spawnY})`);
+    const deferredRunner = await preloadMapAssets(runtime.map, loadToken, spawnX, spawnY);
+    if (loadToken !== runtime.mapLoadToken) { rlog(`loadMap ABORTED (token mismatch after preload)`); return; }
+    rlog(`loadMap preloadMapAssets DONE (${runtime.loading.loaded}/${runtime.loading.total})`);
+
+    buildMapTrapHazardIndex(runtime.map);
+    rlog(`loadMap trapHazards indexed=${runtime.map.trapHazards?.length ?? 0}`);
+
+    runtime.player.x = spawnX;
+    runtime.player.y = spawnY;
     runtime.player.prevX = runtime.player.x;
     runtime.player.prevY = runtime.player.y;
     runtime.player.vx = 0;
@@ -2118,6 +2121,16 @@ async function loadMap(mapId, spawnPortalName = null, spawnFromPortalTransfer = 
     stopLoginBgm();
     showHudButtons();
     rlog(`loading.active = false (success)`);
+
+    // Kick off deferred asset loading in background (non-critical assets that
+    // weren't visible at spawn: distant tiles/objects, extra mob stances,
+    // character attack stances, mob sounds, etc.)
+    if (deferredRunner) {
+      const deferToken = loadToken;
+      deferredRunner(deferToken).then(() => {
+        rlog(`deferred preload complete (imageCache=${imageCache.size})`);
+      }).catch(() => {});
+    }
 
     // Initialize animation states
     rlog(`loadMap initLifeRuntimeStates...`);
