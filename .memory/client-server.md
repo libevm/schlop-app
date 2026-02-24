@@ -232,7 +232,7 @@ All map changes are **server-authoritative** via `initiateMapChange()`:
 Server owns mob lifetime, HP, combat, and drops. Clients only render.
 
 - **Movement**: Mob authority client (first player in map) runs AI + physics, sends `mob_state` at 10Hz. Server updates tracked positions for range checks. On disconnect, next player promoted.
-- **Combat**: Client sends `character_attack` → server finds mob in range, calculates damage, applies HP, broadcasts `mob_damage_result` to all. Client displays damage numbers, knockback, death from server data.
+- **Combat**: Client sends `character_attack` (with position, stance) → server builds weapon-specific hitbox from WZ Afterimage data, finds mob in range, calculates damage using real weapon stats, broadcasts `mob_damage_result` to all. Client displays damage numbers, knockback, death from server data.
 - **Spawning**: Server initializes mob states from WZ when first player joins map. Dead mobs respawn after 7s server-side.
 - **Drops**: Server rolls loot on mob kill, spawns drop. No client involvement in drop selection.
 - **Offline**: Client falls back to local combat (`applyAttackToMob`) with client-side damage + EXP. No drops.

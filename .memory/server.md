@@ -27,7 +27,7 @@ bun run make-gm NAME        # toggle GM flag
 | File | Lines | Role |
 |------|-------|------|
 | `server.ts` | 692 | HTTP server factory, route dispatch, WebSocket upgrade, CORS, metrics |
-| `ws.ts` | 1,670 | Room manager, WS message handler, map transitions, drops, mob state + combat |
+| `ws.ts` | ~1,800 | Room manager, WS message handler, map transitions, drops, mob state + combat |
 | `db.ts` | 505 | SQLite schema, session/character CRUD, credentials, JQ leaderboard, action logs |
 | `character-api.ts` | 337 | REST `/api/character/*` — create, load, save, claim, login |
 | `admin-api.ts` | 467 | REST `/api/admin/*` — GM-only DB dashboard (tables, rows, SQL, CSV export) |
