@@ -1862,10 +1862,10 @@ function render() {
   drawReactors();
   drawDamageNumbers();
   drawPortals();
-  if (runtime.gmOverlay) drawGmOverlays();
   drawBackgroundLayer(1);
   drawGroundDrops();
   drawVRBoundsOverflowMask();
+  if (runtime.gmOverlay) drawGmOverlays();
   drawChatBubble();
   drawPlayerNameLabel();
   // Remote player name labels + chat bubbles
