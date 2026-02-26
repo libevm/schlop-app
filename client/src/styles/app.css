@@ -1088,6 +1088,11 @@ body:has(.canvas-wrapper.fixed-res) {
   background: linear-gradient(180deg, #fff8e0 0%, #f0e4c0 100%);
   color: #6a4800;
 }
+/* When ghost contains an item icon, it needs relative positioning for the absolute overlay */
+.kb-ghost.kb-has-item {
+  background: linear-gradient(180deg, #e6eef8 0%, #ccd8ea 100%);
+  border-color: #6080b0;
+}
 
 /* Palette as drop target highlight */
 .kb-palette-drop-target {

@@ -590,23 +590,48 @@ function _kbPickUp(info) {
   _kbDrag = info;
   cancelItemDrag(); // cancel inventory drag if any
 
-  // Create ghost element
+  // Create ghost element — show icon/sprite matching key display
   if (_kbGhost) _kbGhost.remove();
   _kbGhost = document.createElement("div");
   _kbGhost.className = "kb-action-chip kb-ghost";
-  const ghostFaceUrl = info.type === "action" && info.id.startsWith("face") ? _faceIconCache.get(info.id) : null;
-  if (ghostFaceUrl) {
-    _kbGhost.classList.add("kb-action-chip-face");
-    const img = document.createElement("img");
-    img.className = "kb-face-chip-icon";
-    img.src = ghostFaceUrl;
-    img.draggable = false;
-    _kbGhost.appendChild(img);
-  } else {
+
+  let hasIcon = false;
+
+  // Face expression → face icon sprite
+  if (info.type === "action" && info.id.startsWith("face")) {
+    const faceUrl = _faceIconCache.get(info.id);
+    if (faceUrl) {
+      _kbGhost.classList.add("kb-action-chip-face");
+      const img = document.createElement("img");
+      img.className = "kb-face-chip-icon";
+      img.src = faceUrl;
+      img.draggable = false;
+      _kbGhost.appendChild(img);
+      hasIcon = true;
+    }
+  }
+
+  // Item → item icon from iconDataUriCache
+  if (!hasIcon && info.type === "item" && info.iconKey) {
+    const iconUri = fn.getIconDataUri ? fn.getIconDataUri(info.iconKey) : null;
+    if (iconUri) {
+      _kbGhost.classList.add("kb-has-item");
+      const img = document.createElement("img");
+      img.className = "kb-item-overlay";
+      img.src = iconUri;
+      img.draggable = false;
+      _kbGhost.appendChild(img);
+      hasIcon = true;
+    }
+  }
+
+  // Fallback: text label
+  if (!hasIcon) {
     _kbGhost.textContent = info.type === "action"
       ? (ACTION_LABELS[info.id] || info.id)
       : (info.name || `#${info.id}`);
   }
+
   document.body.appendChild(_kbGhost);
   buildKeybindsUI(); // refresh highlights
 }
