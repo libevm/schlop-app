@@ -661,6 +661,7 @@ function buildKeybindsUI() {
               img.draggable = false;
               el.appendChild(img);
             } else {
+              el.classList.add("kb-has-action");
               const act = document.createElement("span");
               act.className = "kb-key-action";
               act.textContent = ACTION_LABELS[mapping.id] || mapping.id;
