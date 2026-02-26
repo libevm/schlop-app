@@ -649,6 +649,10 @@ export function createServer(
               },
               achievements: charData.achievements ?? {},
               gm: isGm(db, characterName),
+              lastAttackMs: 0,
+              lastChatMs: 0,
+              lastLootMs: 0,
+              lastFaceMs: 0,
             };
 
             data.authenticated = true;

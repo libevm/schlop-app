@@ -570,7 +570,12 @@ describe("WebSocket server", () => {
         { slot_type: "Weapon", item_id: 1302000 },
       ],
       stats: { level: 99, job: "Warrior", hp: 9999, meso: 999999 },
-      achievements: { jq_quests: { "test-jq": 5 } },
+      achievements: {
+        jq_quests: {
+          "Shumi's Lost Coin": 1,  // valid quest name, +1 increment
+          "fake-quest": 5,           // invalid quest name — should be rejected
+        },
+      },
     });
 
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -594,8 +599,10 @@ describe("WebSocket server", () => {
     expect(data.stats.level).toBe(1); // default level
     expect(data.stats.meso).toBe(0); // default meso
 
-    // Achievements should be merged (server accepts these)
-    expect(data.achievements?.jq_quests?.["test-jq"]).toBe(5);
+    // Valid JQ quest with +1 increment should be accepted
+    expect(data.achievements?.jq_quests?.["Shumi's Lost Coin"]).toBe(1);
+    // Fake quest name should be rejected
+    expect(data.achievements?.jq_quests?.["fake-quest"]).toBeUndefined();
   });
 
   test("disconnect persists server-authoritative state to DB", async () => {

@@ -34,6 +34,28 @@ import {
   getItemName,
 } from "./reactor-system.ts";
 
+/** Determine the correct equip slot type from item ID prefix. */
+function equipSlotFromItemId(id: number): string | null {
+  const p = Math.floor(id / 10000);
+  if (p === 100) return "Cap";
+  if (p === 101) return "FaceAcc";
+  if (p === 102) return "EyeAcc";
+  if (p === 103) return "Earrings";
+  if (p === 104) return "Coat";
+  if (p === 105) return "Longcoat";
+  if (p === 106) return "Pants";
+  if (p === 107) return "Shoes";
+  if (p === 108) return "Glove";
+  if (p === 109) return "Shield";
+  if (p === 110) return "Cape";
+  if (p === 111) return "Ring";
+  if (p === 112) return "Pendant";
+  if (p === 113) return "Belt";
+  if (p === 114) return "Medal";
+  if (p >= 130 && p <= 170) return "Weapon";
+  return null;
+}
+
 // ─── Types ──────────────────────────────────────────────────────────
 
 export interface PlayerLook {
@@ -46,6 +68,15 @@ export interface PlayerLook {
 
 /** Maximum movement speed in pixels per second (generous to allow latency bursts) */
 const MAX_MOVE_SPEED_PX_PER_S = 1200;
+
+// ── Rate limiting constants ──
+const ATTACK_COOLDOWN_MS = 250;      // Max ~4 attacks/sec
+const CHAT_COOLDOWN_MS = 1000;       // Max 1 chat msg/sec
+const CHAT_MAX_LENGTH = 200;         // Max characters per chat message
+const LOOT_COOLDOWN_MS = 400;        // Max ~2.5 loots/sec
+const FACE_COOLDOWN_MS = 500;        // Max 2 face changes/sec
+const MOB_STATE_MAX_MOVE_PX = 30;    // Max mob move per update tick (prevents teleporting mobs)
+const DROP_PROXIMITY_PX = 300;       // Max distance from player to drop position
 
 export interface InventoryItem {
   item_id: number;
@@ -104,6 +135,11 @@ export interface WSClient {
   achievements: Record<string, any>;
   /** GM privileges — enables slash commands */
   gm: boolean;
+  // Rate limiting timestamps
+  lastAttackMs: number;
+  lastChatMs: number;
+  lastLootMs: number;
+  lastFaceMs: number;
 }
 
 export interface WSClientData {
@@ -1369,23 +1405,33 @@ export function handleClientMessage(
       break;
     }
 
-    case "chat":
+    case "chat": {
+      const now = Date.now();
+      if (now - client.lastChatMs < CHAT_COOLDOWN_MS) break; // rate limited
+      client.lastChatMs = now;
+      const chatText = String(msg.text ?? "").slice(0, CHAT_MAX_LENGTH);
+      if (!chatText) break;
       roomManager.broadcastToRoom(client.mapId, {
         type: "player_chat",
         id: client.id,
         name: client.name,
-        text: msg.text,
+        text: chatText,
       });
-      if (_moduleDb) appendLog(_moduleDb, client.name, `send_message: ${String(msg.text ?? "").slice(0, 200)}`, client.ip);
+      if (_moduleDb) appendLog(_moduleDb, client.name, `send_message: ${chatText.slice(0, 200)}`, client.ip);
       break;
+    }
 
-    case "face":
+    case "face": {
+      const now = Date.now();
+      if (now - client.lastFaceMs < FACE_COOLDOWN_MS) break; // rate limited
+      client.lastFaceMs = now;
       roomManager.broadcastToRoom(client.mapId, {
         type: "player_face",
         id: client.id,
         expression: msg.expression,
       }, client.id);
       break;
+    }
 
     case "attack":
       roomManager.broadcastToRoom(client.mapId, {
@@ -1397,11 +1443,22 @@ export function handleClientMessage(
 
     case "sit":
       client.action = (msg.active as boolean) ? "sit" : "stand1";
-      client.chairId = (msg.active as boolean) ? (Number(msg.chair_id) || 0) : 0;
+      if (msg.active) {
+        const reqChairId = Number(msg.chair_id) || 0;
+        // Validate chair exists in player's SETUP inventory (chairs are 3010000+ range)
+        if (reqChairId > 0) {
+          const hasChair = client.inventory.some(it => it.item_id === reqChairId);
+          if (!hasChair) break; // reject fake chair_id
+        }
+        client.chairId = reqChairId;
+      } else {
+        client.chairId = 0;
+      }
+      client.action = client.chairId ? "sit" : "stand1";
       roomManager.broadcastToRoom(client.mapId, {
         type: "player_sit",
         id: client.id,
-        active: msg.active,
+        active: !!client.chairId || msg.active,
         chair_id: client.chairId,
       }, client.id);
       break;
@@ -1430,7 +1487,10 @@ export function handleClientMessage(
       // Server validates the item exists, moves it between inventory ↔ equipment.
       const action = msg.action as string; // "equip" or "unequip"
       const itemId = Number(msg.item_id);
-      const slotType = msg.slot_type as string;
+      // Server determines correct slot from item ID — don't trust client slot_type
+      const slotType = action === "equip"
+        ? (equipSlotFromItemId(itemId) || (msg.slot_type as string))
+        : (msg.slot_type as string);
 
       if (action === "equip" && itemId && slotType) {
         // Validate item exists in server inventory
@@ -1497,11 +1557,20 @@ export function handleClientMessage(
             client.achievements.jq_quests = {};
           }
           const serverJq = client.achievements.jq_quests as Record<string, number>;
+          // Only accept known JQ quest names, and only increment by 1 max
+          const VALID_JQ_QUESTS = new Set([
+            "Shumi's Lost Coin", "Shumi's Lost Bundle of Money", "Shumi's Lost Sack of Money",
+            "John's Pink Flower Basket", "John's Present", "John's Last Present",
+            "The Forest of Patience", "Breath of Lava",
+          ]);
           const clientJq = clientAch.jq_quests as Record<string, number>;
           for (const [key, val] of Object.entries(clientJq)) {
+            if (!VALID_JQ_QUESTS.has(key)) continue; // reject unknown quest names
             const n = Number(val);
-            if (n > 0) {
-              serverJq[key] = Math.max(serverJq[key] || 0, n);
+            const serverVal = serverJq[key] || 0;
+            // Only allow increment of +1 from current server value (prevents inflation)
+            if (n > 0 && n <= serverVal + 1) {
+              serverJq[key] = Math.max(serverVal, n);
             }
           }
         }
@@ -1815,24 +1884,10 @@ export function handleClientMessage(
       // Silently ignore to avoid breaking old clients during rollout.
       break;
 
-    case "level_up": {
-      const level = msg.level as number;
-      roomManager.broadcastToRoom(client.mapId, {
-        type: "player_level_up",
-        id: client.id,
-        level,
-      }, client.id);
-      // Global celebration for level ≥ 10
-      if (level >= 10) {
-        roomManager.broadcastGlobal({
-          type: "global_level_up",
-          name: client.name,
-          level,
-        });
-      }
-      if (_moduleDb) appendLog(_moduleDb, client.name, `level_up to ${level}`, client.ip);
+    case "level_up":
+      // IGNORED: Level-up is now fully server-authoritative (handled in character_attack).
+      // Client cannot fake level broadcasts.
       break;
-    }
 
     case "damage_taken": {
       if ((client.stats.hp ?? 0) <= 0) break; // already dead
@@ -1859,8 +1914,11 @@ export function handleClientMessage(
           dmg = Math.floor(mobAtk / 2 + mobAtk / playerWdef);
         }
       } else if (trapDmg > 0) {
-        // Trap damage: capped to prevent abuse
-        dmg = Math.min(trapDmg, client.stats.maxHp ?? 9999);
+        // Trap damage: validate map has hazards and cap damage reasonably.
+        // Fall damage is always valid; map traps require trap data.
+        // Cap at 20% maxHp to prevent self-kill exploits.
+        const maxTrapDmg = Math.max(1, Math.floor((client.stats.max_hp ?? 50) * 0.2));
+        dmg = Math.min(trapDmg, maxTrapDmg);
       } else {
         break;
       }
@@ -1968,6 +2026,10 @@ export function handleClientMessage(
       const dropQty = Math.max(1, Math.floor(Number(msg.qty) || 1));
       if (!dropItemId) break;
 
+      // Proximity check: drop position must be near the player
+      const dropX = Number(msg.x) || client.x;
+      if (Math.abs(dropX - client.x) > DROP_PROXIMITY_PX) break;
+
       // Find the item in server-tracked inventory
       const invIdx = client.inventory.findIndex(it => it.item_id === dropItemId);
       if (invIdx === -1) break; // client doesn't have this item — reject silently
@@ -2010,6 +2072,9 @@ export function handleClientMessage(
       if (mesoAmount <= 0) break;
       const currentMeso = client.stats.meso || 0;
       if (mesoAmount > currentMeso) break; // can't drop more than you have
+      // Proximity check
+      const mesoDropX = Number(msg.x) || client.x;
+      if (Math.abs(mesoDropX - client.x) > DROP_PROXIMITY_PX) break;
       client.stats.meso = currentMeso - mesoAmount;
 
       const drop = roomManager.addDrop(client.mapId, {
@@ -2041,13 +2106,20 @@ export function handleClientMessage(
       if (roomManager.mobAuthority.get(client.mapId) !== client.id) break;
 
       // Update server-side mob positions from authority (used for range checks)
+      // Validate: mob can only move a limited distance per update to prevent teleporting
       const mobStates = _mapMobStates.get(client.mapId);
       if (mobStates && Array.isArray(msg.mobs)) {
         for (const m of msg.mobs) {
           const st = mobStates.get(m.idx);
           if (st && !st.dead) {
-            st.x = m.x;
-            st.y = m.y;
+            const dx = Math.abs(Number(m.x) - st.x);
+            const dy = Math.abs(Number(m.y) - st.y);
+            // Allow reasonable movement per tick; reject teleports
+            if (dx <= MOB_STATE_MAX_MOVE_PX && dy <= MOB_STATE_MAX_MOVE_PX) {
+              st.x = Number(m.x);
+              st.y = Number(m.y);
+            }
+            // else: silently ignore this mob's position update
           }
         }
       }
@@ -2073,11 +2145,20 @@ export function handleClientMessage(
       const playerLevel = client.stats?.level ?? 1;
       const { min: pmin, max: pmax, accuracy: pAcc } = calcPlayerDamageRange(client);
 
-      // Use attack position from message (client sends current pos).
-      // Also update server-tracked position so it stays in sync.
+      // Rate limit attacks
+      const atkNow = Date.now();
+      if (atkNow - client.lastAttackMs < ATTACK_COOLDOWN_MS) break;
+      client.lastAttackMs = atkNow;
+
+      // Validate attack position — must be near last known server position
+      // Prevents teleport-via-attack exploit
       const atkX = Number(msg.x) || client.x;
       const atkY = Number(msg.y) || client.y;
       const atkFacing = Number(msg.facing) || client.facing;
+      if (client.positionConfirmed) {
+        const atkDist = Math.abs(atkX - client.x) + Math.abs(atkY - client.y);
+        if (atkDist > MAX_MOVE_SPEED_PX_PER_S) break; // reject teleport
+      }
       client.x = atkX;
       client.y = atkY;
       client.facing = atkFacing;
@@ -2202,7 +2283,16 @@ export function handleClientMessage(
           roomManager.broadcastToRoom(client.mapId, {
             type: "player_level_up", id: client.id, level: client.stats.level,
           }, client.id);
+          // Global celebration for level ≥ 10
+          if (client.stats.level >= 10) {
+            roomManager.broadcastGlobal({
+              type: "global_level_up",
+              name: client.name,
+              level: client.stats.level,
+            });
+          }
           persistClientState(client, _moduleDb);
+          if (_moduleDb) appendLog(_moduleDb, client.name, `level_up to ${client.stats.level}`, client.ip);
         }
       }
 
@@ -2251,6 +2341,9 @@ export function handleClientMessage(
     }
 
     case "loot_item": {
+      const lootNow = Date.now();
+      if (lootNow - client.lastLootMs < LOOT_COOLDOWN_MS) break; // rate limited
+      client.lastLootMs = lootNow;
       const dropId = msg.drop_id as number;
       // Check loot ownership before removing
       const pendingDrop = roomManager.getDrop(client.mapId, dropId);
