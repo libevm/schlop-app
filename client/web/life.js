@@ -1919,6 +1919,9 @@ export function applyAttackToMob(target) {
       runtime.player.mp = runtime.player.maxMp;
       rlog(`LEVEL UP! Now level ${runtime.player.level}`);
       fn.saveCharacter();
+      // Play level up effect + sound (C++ CharEffect::LEVELUP)
+      if (fn.triggerLevelUpEffect) fn.triggerLevelUpEffect();
+      if (fn.playSfx) fn.playSfx("Game", "LevelUp");
     }
   }
 }

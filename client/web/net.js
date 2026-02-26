@@ -416,7 +416,7 @@ export function handleServerMessage(msg) {
 
     case "player_level_up": {
       const rp = remotePlayers.get(msg.id);
-      if (rp) rp.levelUpEffect = performance.now() + 3000;
+      if (rp && fn.triggerRemoteLevelUpEffect) fn.triggerRemoteLevelUpEffect(rp);
       break;
     }
 
@@ -673,6 +673,9 @@ export function handleServerMessage(msg) {
             rlog(`LEVEL UP! Now level ${runtime.player.level}`);
             fn.saveCharacter();
             wsSend({ type: "level_up", level: runtime.player.level });
+            // Play level up effect + sound (C++ CharEffect::LEVELUP)
+            if (fn.triggerLevelUpEffect) fn.triggerLevelUpEffect();
+            if (fn.playSfx) fn.playSfx("Game", "LevelUp");
           }
         }
       }
@@ -1318,6 +1321,11 @@ export function drawRemotePlayer(rp) {
     const worldX = rp.renderX + part.offsetX;
     const worldY = rp.renderY + part.offsetY;
     drawWorldImage(part.image, worldX, worldY, { flipped });
+  }
+
+  // Level up effect on remote player
+  if (rp._levelUpState && fn.updateAndDrawRemoteLevelUpEffect) {
+    fn.updateAndDrawRemoteLevelUpEffect(rp, runtime._lastDtMs || 16);
   }
 }
 

@@ -198,6 +198,8 @@ import {
   preloadMapAssets,
   loadSetEffects, findActiveSetEffect,
   updateSetEffectAnimation, updateSetEffectAnimations, drawSetEffect,
+  loadLevelUpEffect, triggerLevelUpEffect,
+  updateAndDrawLocalLevelUpEffect, updateAndDrawRemoteLevelUpEffect, triggerRemoteLevelUpEffect,
   drawChatBubble, drawPlayerNameLabel,
   randomBlinkCooldownMs,
 } from './character.js';
@@ -2371,6 +2373,7 @@ function tick(timestampMs) {
       runtime.tickAccumulatorMs = FIXED_STEP_MS;
     }
 
+    runtime._lastDtMs = elapsed;
     updateCursorAnimation(elapsed);
     updateCursorElement();
 
@@ -3569,6 +3572,8 @@ Object.assign(fn, {
   adjustStanceForRemoteWeapon,
   animateDropPickup, createDropFromServer, lootDropLocally,
   drawSetEffect, findActiveSetEffect,
+  triggerLevelUpEffect, triggerRemoteLevelUpEffect,
+  updateAndDrawLocalLevelUpEffect, updateAndDrawRemoteLevelUpEffect,
   equipSlotFromId, equipWzCategoryFromId,
   getCharacterActionFrames, getEquipFrameParts,
   getFaceExpressionFrames, getFaceFrameMeta,

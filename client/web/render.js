@@ -1048,5 +1048,8 @@ export function drawCharacter() {
   if (blinkColorScale < 0.999) {
     ctx.restore();
   }
+
+  // Level up effect (drawn on top of player)
+  fn.updateAndDrawLocalLevelUpEffect(runtime._lastDtMs || 16);
 }
 
