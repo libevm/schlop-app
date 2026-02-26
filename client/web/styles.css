@@ -1097,7 +1097,21 @@ body:has(.canvas-wrapper.fixed-res) {
 }
 .kb-row {
   display: flex;
+  gap: 0;
+}
+.kb-row-main {
+  display: flex;
   gap: 2px;
+}
+.kb-row-nav {
+  display: flex;
+  gap: 2px;
+  margin-left: 12px;
+}
+.kb-row-nav-empty {
+  /* Reserve same space as 3 nav keys (36*3 + 2*2 gap + 12 margin) */
+  width: 124px;
+  flex-shrink: 0;
 }
 .kb-key {
   position: relative;

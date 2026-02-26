@@ -209,12 +209,20 @@ Reactors and drops are drawn per-layer via callback hooks passed to `drawMapLaye
 - Click quest → drill into specific dialogue
 
 ### Quest Log HUD (`app.js`, C++ UIQuestLog parity)
+- HTML `game-window` element — same style as equip/inventory/stat windows
 - Toggle with Q key (default, matching C++ KeyAction::QUESTLOG)
 - 3 tabs: Available (TAB0), In Progress (TAB1), Completed (TAB2)
-- Available: gold ⚡ prefix, In Progress: blue ◆ (click to forfeit), Completed: green ✓
-- Scrollable (mouse wheel), max 10 visible rows, close with X/Escape
-- `forfeitQuest()` resets state 1→0, server allows backward transition
+- Available: gold ⚡ prefix, In Progress: blue ◆, Completed: green ✓
+- Click quest row to select → detail panel shows below:
+  - NPC portrait (rendered from lifeAnimations to mini canvas) + NPC name
+  - Quest name (bold), parent/category label
+  - State-specific description from QuestInfo.img (numbered fields 0/1/2)
+  - Requirements: item checklist with have/need counts, green/red status
+  - Rewards: EXP, meso, items from Act.img phase 1
+  - "Give Up" button for in-progress quests (calls `forfeitQuest()`)
+- Draggable via `initUIWindowDrag()`, close with X/Escape/Q
 - `getQuestsByState(state)`, `getAvailableQuests()` for populating tabs
+- Quest lightbulb icon: positioned `topY - img.height - 8` (fully above NPC head)
 
 ---
 

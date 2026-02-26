@@ -2081,11 +2081,14 @@ export function findNpcAtScreen(screenClickX, screenClickY) {
     }
 
     // Use a generous hit area (sprite bounds + padding)
+    // Extend upward to include quest icon (44px icon + 8px gap above head)
     const pad = 10;
+    const questIconType = getNpcQuestIconType(life.id);
+    const topExtra = questIconType !== null ? 52 : 0;
     if (
       screenClickX >= drawX - pad &&
       screenClickX <= drawX + img.width + pad &&
-      screenClickY >= drawY - pad &&
+      screenClickY >= drawY - pad - topExtra &&
       screenClickY <= drawY + img.height + pad
     ) {
       return { idx, life, anim, state };
