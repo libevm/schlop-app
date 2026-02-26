@@ -183,7 +183,7 @@ import {
 } from './sound.js';
 
 // Raw WZ canvas decode (for exports with wzrawformat attribute)
-import { canvasToImageBitmap } from './wz-canvas-decode.js';
+import { canvasToImageBitmap, canvasToDataUrl } from './wz-canvas-decode.js';
 
 // Character frame system: composition, face animation, preloading, set effects
 import {
@@ -404,9 +404,49 @@ const FIXED_KEY_ACTIONS = {
 const ACTION_LABELS = {
   attack: "Attack", jump: "Jump", loot: "Pick Up",
   equip: "Equip", inventory: "Items", stat: "Stats", keybinds: "Keys",
-  face1: "😣", face2: "😊", face3: "😟", face4: "😢", face5: "😠",
-  face6: "😲", face7: "😵", face8: "😛", face9: "😴",
+  face1: "Pain", face2: "Happy", face3: "Troubled", face4: "Cry", face5: "Angry",
+  face6: "Surprised", face7: "Shocked", face8: "Tongue", face9: "Snooze",
 };
+
+/** face action ID → WZ expression name (C++ Expression::names) */
+const FACE_EXPRESSION_MAP = {
+  face1: "hit", face2: "smile", face3: "troubled", face4: "cry",
+  face5: "angry", face6: "bewildered", face7: "stunned", face8: "chu", face9: "hum",
+};
+
+/** Cached data URLs for face expression sprites: faceActionId → dataUrl */
+const _faceIconCache = new Map();
+let _faceIconsLoading = false;
+
+/**
+ * Load face expression sprites from the current player's face WZ data.
+ * Decodes the first frame of each expression's "face" canvas node into a data URL.
+ * Called when face data is available and when the keybinds UI opens.
+ */
+async function loadFaceExpressionIcons() {
+  if (_faceIconsLoading) return;
+  if (!runtime.characterFaceData) return;
+  _faceIconsLoading = true;
+
+  for (const [actionId, exprName] of Object.entries(FACE_EXPRESSION_MAP)) {
+    if (_faceIconCache.has(actionId)) continue;
+    try {
+      const frames = getFaceExpressionFrames(exprName);
+      if (frames.length === 0) continue;
+      const frameNode = frames[0];
+      const canvasNode =
+        pickCanvasNode(frameNode, "face") ??
+        pickCanvasNode(frameNode, "0");
+      if (!canvasNode?.basedata) continue;
+      const dataUrl = await canvasToDataUrl(canvasNode);
+      if (dataUrl) _faceIconCache.set(actionId, dataUrl);
+    } catch {}
+  }
+
+  _faceIconsLoading = false;
+  // Refresh keybinds UI if it's open to show the loaded sprites
+  if (keybindsWindowEl && !keybindsWindowEl.classList.contains("hidden")) buildKeybindsUI();
+}
 
 /** All bindable actions — unassigned ones appear in the palette */
 const BINDABLE_ACTIONS = [
@@ -417,15 +457,15 @@ const BINDABLE_ACTIONS = [
   { id: "inventory", label: "Items" },
   { id: "stat", label: "Stats" },
   { id: "keybinds", label: "Keys" },
-  { id: "face1", label: "😣 Pain" },
-  { id: "face2", label: "😊 Happy" },
-  { id: "face3", label: "😟 Troubled" },
-  { id: "face4", label: "😢 Cry" },
-  { id: "face5", label: "😠 Angry" },
-  { id: "face6", label: "😲 Surprised" },
-  { id: "face7", label: "😵 Shocked" },
-  { id: "face8", label: "😛 Tongue" },
-  { id: "face9", label: "😴 Snooze" },
+  { id: "face1", label: "Pain" },
+  { id: "face2", label: "Happy" },
+  { id: "face3", label: "Troubled" },
+  { id: "face4", label: "Cry" },
+  { id: "face5", label: "Angry" },
+  { id: "face6", label: "Surprised" },
+  { id: "face7", label: "Shocked" },
+  { id: "face8", label: "Tongue" },
+  { id: "face9", label: "Snooze" },
 ];
 
 const KB_LAYOUT = [
@@ -508,9 +548,18 @@ function _kbPickUp(info) {
   if (_kbGhost) _kbGhost.remove();
   _kbGhost = document.createElement("div");
   _kbGhost.className = "kb-action-chip kb-ghost";
-  _kbGhost.textContent = info.type === "action"
-    ? (ACTION_LABELS[info.id] || info.id)
-    : (info.name || `#${info.id}`);
+  const ghostFaceUrl = info.type === "action" && info.id.startsWith("face") ? _faceIconCache.get(info.id) : null;
+  if (ghostFaceUrl) {
+    const img = document.createElement("img");
+    img.className = "kb-face-sprite-sm";
+    img.src = ghostFaceUrl;
+    img.draggable = false;
+    _kbGhost.appendChild(img);
+  } else {
+    _kbGhost.textContent = info.type === "action"
+      ? (ACTION_LABELS[info.id] || info.id)
+      : (info.name || `#${info.id}`);
+  }
   document.body.appendChild(_kbGhost);
   buildKeybindsUI(); // refresh highlights
 }
@@ -542,6 +591,8 @@ function _kbEnsureDragListeners() {
 
 function buildKeybindsUI() {
   if (!keybindsGridEl) return;
+  // Trigger face icon loading (no-op if already loaded or loading)
+  loadFaceExpressionIcons();
   keybindsGridEl.innerHTML = "";
   _kbEnsureDragListeners();
 
@@ -571,11 +622,22 @@ function buildKeybindsUI() {
         const mapping = runtime.keymap[key.code];
         if (mapping) {
           if (mapping.type === "action") {
-            const act = document.createElement("span");
-            act.className = "kb-key-action";
-            if (mapping.id.startsWith("face")) act.classList.add("kb-key-emoji");
-            act.textContent = ACTION_LABELS[mapping.id] || mapping.id;
-            el.appendChild(act);
+            const isFace = mapping.id.startsWith("face");
+            const faceUrl = isFace ? _faceIconCache.get(mapping.id) : null;
+            if (faceUrl) {
+              // Render actual face sprite from WZ data
+              const img = document.createElement("img");
+              img.className = "kb-face-sprite";
+              img.src = faceUrl;
+              img.alt = ACTION_LABELS[mapping.id] || mapping.id;
+              img.draggable = false;
+              el.appendChild(img);
+            } else {
+              const act = document.createElement("span");
+              act.className = "kb-key-action";
+              act.textContent = ACTION_LABELS[mapping.id] || mapping.id;
+              el.appendChild(act);
+            }
           } else if (mapping.type === "item") {
             // Get live qty from inventory
             const invItem = playerInventory.find(it => it.id === mapping.id);
@@ -697,7 +759,17 @@ function buildKeybindsUI() {
     for (const action of unassigned) {
       const chip = document.createElement("div");
       chip.className = "kb-action-chip";
-      chip.textContent = action.label;
+      const faceUrl = action.id.startsWith("face") ? _faceIconCache.get(action.id) : null;
+      if (faceUrl) {
+        const img = document.createElement("img");
+        img.className = "kb-face-sprite-sm";
+        img.src = faceUrl;
+        img.alt = action.label;
+        img.draggable = false;
+        chip.appendChild(img);
+      } else {
+        chip.textContent = action.label;
+      }
       // Mousedown → start dragging this action
       chip.addEventListener("click", (e) => {
         e.stopPropagation(); // prevent palette click from cancelling

@@ -989,9 +989,20 @@ body:has(.canvas-wrapper.fixed-res) {
   pointer-events: none;
   margin-top: 2px;
 }
-.kb-key-action.kb-key-emoji {
-  font-size: 16px;
-  margin-top: 0;
+/* Face expression sprite in key slot */
+.kb-face-sprite {
+  max-width: 30px;
+  max-height: 24px;
+  image-rendering: pixelated;
+  pointer-events: none;
+  margin-top: 2px;
+}
+/* Face expression sprite in palette chip / ghost */
+.kb-face-sprite-sm {
+  max-width: 28px;
+  max-height: 22px;
+  image-rendering: pixelated;
+  pointer-events: none;
 }
 .kb-key.kb-key-empty {
   opacity: 0.4;
