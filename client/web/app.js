@@ -404,6 +404,7 @@ const FIXED_KEY_ACTIONS = {
 const ACTION_LABELS = {
   attack: "Attack", jump: "Jump", loot: "Pick Up",
   equip: "Equip", inventory: "Items", stat: "Stats", keybinds: "Keys",
+  minimap: "Mini Map",
   face1: "Pain", face2: "Happy", face3: "Troubled", face4: "Cry", face5: "Angry",
   face6: "Surprised", face7: "Shocked", face8: "Tongue", face9: "Snooze",
 };
@@ -485,6 +486,7 @@ const BINDABLE_ACTIONS = [
   { id: "inventory", label: "Items" },
   { id: "stat", label: "Stats" },
   { id: "keybinds", label: "Keys" },
+  { id: "minimap", label: "Mini Map" },
   { id: "face1", label: "Pain" },
   { id: "face2", label: "Happy" },
   { id: "face3", label: "Troubled" },
@@ -553,6 +555,7 @@ function getDefaultKeymap() {
     KeyE: { type: "action", id: "equip" },
     KeyI: { type: "action", id: "inventory" },
     KeyK: { type: "action", id: "keybinds" },
+    KeyM: { type: "action", id: "minimap" },
     F1: { type: "action", id: "face1" },
     F2: { type: "action", id: "face2" },
     F3: { type: "action", id: "face3" },
@@ -3117,6 +3120,11 @@ function bindInput() {
     if (event.code === runtime.keybinds.inventory && !event.repeat) { toggleUIWindow("inventory"); return; }
     if (event.code === runtime.keybinds.keybinds && !event.repeat) { toggleUIWindow("keybinds"); return; }
     if (event.code === runtime.keybinds.stat && !event.repeat) { toggleUIWindow("stat"); return; }
+    if (event.code === runtime.keybinds.minimap && !event.repeat) {
+      runtime.settings.minimapVisible = !runtime.settings.minimapVisible;
+      if (settingsMinimapToggleEl) settingsMinimapToggleEl.checked = runtime.settings.minimapVisible;
+      return;
+    }
 
     if (!runtime.input.enabled) return;
     if (event.code === runtime.keybinds.loot && !event.repeat) {
