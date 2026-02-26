@@ -164,6 +164,9 @@ Client → ws://server/ws
 | `mob_state` | mobs[] | Mob positions (authority only, 10Hz) |
 | `character_attack` | stance, degenerate, x, y, facing | Attack — server finds mob, calculates damage, spawns drops |
 | `hit_reactor` | reactor_idx | Attack reactor |
+| `quest_accept` | questId | Server validates level/job/prereqs, sets state=1, applies start rewards |
+| `quest_complete` | questId | Server validates state=1 + items, removes items, grants end rewards, sets state=2 |
+| `quest_forfeit` | questId | Server validates state=1, resets to 0 |
 
 ### Server → Client Messages
 
@@ -200,6 +203,8 @@ Client → ws://server/ws
 | `reactor_respawn` | reactor_idx, reactor_id, x, y | room-all | Reactor respawned |
 | `stats_update` | stats{} | sender | Server-authoritative stats push (level, hp, mp, exp, str, dex, int, luk, meso, job) |
 | `inventory_update` | inventory[] | sender | Server-authoritative inventory replace (GM /item) |
+| `quest_result` | action, questId, ok, reason? | sender | Quest action result (accept/complete/forfeit) |
+| `quests_update` | quests{} | sender | Server-authoritative quest states (sent on map join + after quest actions) |
 | `gm_response` | ok, text | sender | GM command result |
 | `jq_reward` | quest_name, item_id, item_name, item_qty, completions, bonus_item_id? | sender | JQ reward |
 | `jq_inventory_full` | — | sender | Inventory full on JQ |

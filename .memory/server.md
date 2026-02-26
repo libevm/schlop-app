@@ -204,6 +204,18 @@ SQLite WAL mode. Path: `./data/maple.db`.
 
 ---
 
+## Quest System (`quest-data.ts`)
+
+- Loads Quest.wz/Check.img.xml + Act.img.xml at server startup (`loadQuestData()`)
+- `QuestDef`: startNpc, endNpc, lvmin, lvmax, jobs, questPrereqs, endItems
+- `QuestReward`: exp, meso, fame, items[] (positive=give, negative=remove)
+- `canAcceptQuest(qid, level, jobId, quests)`: validates level, job, prerequisite quests
+- `canCompleteQuest(qid, quests, countItemFn)`: validates state=1, checks endItems
+- Server handlers: `quest_accept`, `quest_complete`, `quest_forfeit`
+- `applyQuestReward()`: EXP with level-up, meso, item add/remove
+- `quests_update` sent on every map join + after quest actions
+- Client falls back to local quest logic when offline
+
 ## Reactor System (`reactor-system.ts`)
 
 - Multi-hit: 4 HP, 600ms global cooldown, range-validated (120px X, 60px Y)
