@@ -3,6 +3,16 @@
 > Vanilla JS game client with Canvas 2D rendering, WZ asset pipeline, and 15-module ES module structure.
 > Source: `client/web/` (15 JS files, ~16,300 lines).
 
+## ⚠ CSS Build Pipeline — CRITICAL
+
+**Source file**: `client/src/styles/app.css`
+**Output file**: `client/web/styles.css` (generated — DO NOT edit directly)
+**Build command**: `cd client && bun run css`
+
+`styles.css` is Tailwind v4 output. All CSS changes MUST go in `app.css`.
+Editing `styles.css` directly will be silently wiped on next Tailwind rebuild.
+After editing `app.css`, always run `bun run css` to regenerate `styles.css`.
+
 ---
 
 ## Module Layout

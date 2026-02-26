@@ -401,10 +401,137 @@ body:has(.canvas-wrapper.fixed-res) {
   font-size: 11px;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════════
+   STATUS BAR — HP/MP/EXP gauges below chat bar
+   ══════════════════════════════════════════════════════════════════════════════ */
+.status-bar {
+  flex-shrink: 0;
+  padding: 5px 10px 6px;
+  background: linear-gradient(180deg, rgba(16, 22, 38, 0.94), rgba(8, 12, 24, 0.97));
+  border-top: 1px solid rgba(80, 110, 160, 0.25);
+  font-family: "Dotum", "Arial", sans-serif;
+  user-select: none;
+}
+.status-bar-row1 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 5px;
+}
+.status-level {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.sb-level-num {
+  font-size: 12px;
+  font-weight: bold;
+  color: #fbbf24;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+}
+.sb-job {
+  font-size: 10px;
+  color: #7a8ea8;
+  margin-left: 5px;
+}
+.status-gauges {
+  flex: 1;
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+.status-gauge {
+  position: relative;
+  flex: 1;
+  height: 18px;
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid rgba(40, 55, 80, 0.9);
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.06);
+}
+.status-gauge-bg {
+  position: absolute;
+  inset: 0;
+}
+.hp-gauge .status-gauge-bg { background: linear-gradient(180deg, #300a0a, #1a0404); }
+.mp-gauge .status-gauge-bg { background: linear-gradient(180deg, #0a1428, #060c18); }
+.exp-gauge .status-gauge-bg { background: linear-gradient(180deg, #1a1606, #100e02); }
+.status-gauge-fill {
+  position: absolute;
+  top: 0; left: 0; bottom: 0;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+.hp-fill {
+  background: linear-gradient(180deg, #f05050 0%, #d02828 35%, #a01818 65%, #c83030 100%);
+  box-shadow: 0 0 6px rgba(220, 40, 40, 0.4);
+}
+.mp-fill {
+  background: linear-gradient(180deg, #5898ff 0%, #3070e0 35%, #1850c0 65%, #4080f0 100%);
+  box-shadow: 0 0 6px rgba(50, 100, 240, 0.4);
+}
+.exp-fill {
+  background: linear-gradient(180deg, #ffc840 0%, #e0a020 35%, #c08010 65%, #e8b028 100%);
+  box-shadow: 0 0 6px rgba(240, 180, 40, 0.3);
+}
+.status-gauge-fill::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 40%;
+  border-radius: 2px 2px 0 0;
+  background: linear-gradient(180deg, rgba(255,255,255,0.30), rgba(255,255,255,0));
+  pointer-events: none;
+}
+.status-gauge-label {
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 10px;
+  font-weight: bold;
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.9);
+  z-index: 1;
+  letter-spacing: 0.5px;
+}
+.status-gauge-value {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 10px;
+  color: rgba(255,255,255,0.92);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.9);
+  z-index: 1;
+}
+.status-bar-row2 {
+  display: flex;
+}
+.exp-gauge {
+  height: 14px;
+}
+
+/* ─── Character Stat Window ─── */
+.stat-window-body {
+  padding: 8px 12px;
+  font-family: "Dotum", "Arial", sans-serif;
+  font-size: 11px;
+  color: #e2e8f0;
+}
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 0;
+  border-bottom: 1px solid rgba(100,120,160,0.12);
+}
+.stat-row:last-child { border-bottom: none; }
+.stat-label { color: #8899b0; }
+.stat-value { color: #fbbf24; font-weight: bold; }
+
 /* ── Pickup Journal (right-aligned above chat bar) ── */
 .pickup-journal {
   position: absolute;
-  bottom: 34px;
+  bottom: 84px;
   right: 10px;
   z-index: 16;
   display: flex;
@@ -433,7 +560,7 @@ body:has(.canvas-wrapper.fixed-res) {
 /* ── Chat log (history overlay — floats above chat bar, doesn't affect canvas size) ── */
 .chat-log {
   position: absolute;
-  bottom: 34px;
+  bottom: 84px;
   left: 0;
   right: 0;
   height: 140px;
@@ -678,6 +805,47 @@ body:has(.canvas-wrapper.fixed-res) {
   color: #fff;
   text-shadow: 0 0 3px #000, 0 1px 1px #000;
   pointer-events: none;
+}
+
+/* ── Meso bar (inventory footer) ── */
+.inv-meso {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 6px 5px;
+  padding: 3px 5px;
+  background: linear-gradient(180deg, #f0f2f6 0%, #e2e6ee 100%);
+  border: 1px solid #98a8bc;
+  border-radius: 2px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.inv-meso:hover {
+  background: linear-gradient(180deg, #f8f9fc 0%, #eaeef4 100%);
+  border-color: #6888b8;
+}
+.inv-meso:active {
+  background: linear-gradient(180deg, #dce0e8 0%, #d0d6e0 100%);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+.inv-meso-icon {
+  width: 16px;
+  height: 16px;
+  image-rendering: pixelated;
+  flex-shrink: 0;
+}
+.inv-meso-icon[src=""] {
+  display: none;
+}
+#inv-meso-value {
+  font-family: "Dotum", "Arial", sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  color: #2a3a50;
+  flex: 1;
+  text-align: right;
+  letter-spacing: 0.02em;
 }
 
 /* ── Keybinds grid ── */
