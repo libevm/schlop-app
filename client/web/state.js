@@ -270,6 +270,7 @@ export const runtime = {
     hp: 50, maxHp: 50, mp: 5, maxMp: 5, exp: 0, maxExp: 15, meso: 0,
     str: 12, dex: 5, int: 4, luk: 4,
     minDamage: 1, maxDamage: 1, accuracy: 6, critical: 5,
+    stance: 30, // knockback resistance % (C++ 0 for beginner, raised by skills/buffs)
     trapInvincibleUntil: 0, lastTrapHitAt: 0, lastTrapHitDamage: 0,
     fallStartY: 0, knockbackClimbLockUntil: 0,
     chairId: 0,
