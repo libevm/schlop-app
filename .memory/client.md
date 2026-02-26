@@ -53,7 +53,8 @@ wz-xml-adapter.js ← (no deps)
 util.js ← state, wz-xml-adapter, wz-canvas-decode
 sound.js ← state, util
 net.js ← state, util
-life.js ← state, util, net, wz-canvas-decode
+quests.js ← state, util, wz-canvas-decode
+life.js ← state, util, net, wz-canvas-decode, quests
 physics.js ← state, util, life
 render.js ← state, util, net, life, physics, character
 character.js ← state, util, net, life, save, wz-canvas-decode
@@ -175,6 +176,18 @@ Reactors and drops are drawn per-layer via callback hooks passed to `drawMapLaye
 - GM commands: `/mousefly`, `/overlay`, `/help`
 - Chat: Enter to toggle, sent history with arrow recall
 - Mobile: auto-detected touch overlay (D-pad + A/B buttons)
+
+### Quest System (`quests.js`)
+- Parses Quest.wz at load: Check.img (requirements), Say.img (dialogue), Act.img (rewards), QuestInfo.img (metadata)
+- Builds `npcId → [questId]` maps for start NPCs and end NPCs
+- Quest availability checks: player level, job, prerequisite quests
+- Player quest states tracked in `playerQuestStates` Map (0=not started, 1=in-progress, 2=completed)
+- Quest icon animation: loads QuestIcon from UI.wz/UIWindow.img.xml, types 0=lightbulb, 1=in-progress, 2=completable
+- `getNpcQuestIconType(npcId)` → returns icon type to draw above NPC, or null
+- `getQuestDialogueForNpc(npcId)` → returns quest-aware dialogue lines (completable > available > in-progress)
+- Quest dialogue priority: quest dialogue > script dialogue > flavor text
+- Accept/complete quest actions integrated into NPC dialogue options
+- Format quest text strips MapleStory color/formatting codes (#b, #k, #e, #n, #h, #p, #t, etc.)
 
 ---
 
