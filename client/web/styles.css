@@ -811,132 +811,124 @@ body:has(.canvas-wrapper.fixed-res) {
   color: #2a3650;
   border-bottom: 2px solid #4a6490;
 }
-.quest-list {
-  max-height: 220px;
-  overflow-y: auto;
-  padding: 4px 0;
-  background: #eef1f6;
+/* Quest body: side-by-side list + detail */
+.quest-body {
+  display: flex;
+  height: 280px;
 }
-.quest-list::-webkit-scrollbar { width: 6px; }
+.quest-list {
+  width: 180px;
+  min-width: 180px;
+  overflow-y: auto;
+  padding: 2px 0;
+  border-right: 1px solid #9aabbc;
+  background: #dce2ec;
+}
+.quest-list::-webkit-scrollbar { width: 5px; }
 .quest-list::-webkit-scrollbar-thumb { background: rgba(100, 130, 170, 0.4); border-radius: 3px; }
 .quest-row {
   display: flex;
   align-items: center;
-  padding: 3px 8px;
-  font-size: 11px;
+  padding: 3px 6px;
   font-family: "Dotum", Arial, sans-serif;
+  font-size: 10px;
   color: #2a3650;
-  cursor: default;
+  gap: 3px;
+  cursor: pointer;
   user-select: none;
 }
-.quest-row:hover { background: rgba(100, 150, 220, 0.12); cursor: pointer; }
-.quest-row.selected { background: rgba(74, 100, 144, 0.18); border-left: 2px solid #4a6490; }
-.quest-row .quest-prefix {
-  margin-right: 4px;
-  font-size: 10px;
-}
+.quest-row:hover { background: rgba(100, 150, 220, 0.15); }
+.quest-row.selected { background: rgba(74, 100, 144, 0.22); border-left: 2px solid #4a6490; padding-left: 4px; }
+.quest-row .quest-prefix { font-size: 9px; flex-shrink: 0; }
 .quest-row .quest-prefix.avail { color: #906800; }
 .quest-row .quest-prefix.prog  { color: #2060a0; }
 .quest-row .quest-prefix.done  { color: #208040; }
 .quest-row .quest-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.quest-row .quest-forfeit {
-  font-size: 9px;
-  color: #a04040;
-  cursor: pointer;
-  margin-left: 4px;
-  padding: 1px 4px;
-  border: 1px solid #c08080;
-  border-radius: 2px;
-  background: #f0e0e0;
-}
-.quest-row .quest-forfeit:hover { background: #e8c0c0; }
 .quest-empty {
-  padding: 12px 8px;
-  font-size: 11px;
+  padding: 20px 8px;
+  font-size: 10px;
   color: #8898b0;
   text-align: center;
   font-family: "Dotum", Arial, sans-serif;
 }
-/* Quest detail panel */
+/* Quest detail panel (right side) */
 .quest-detail {
-  border-top: 1px solid #9aabbc;
-  padding: 8px;
+  flex: 1;
+  padding: 8px 10px;
   background: #e8edf4;
   font-family: "Dotum", Arial, sans-serif;
   font-size: 11px;
   color: #2a3650;
-  max-height: 240px;
   overflow-y: auto;
 }
-.quest-detail::-webkit-scrollbar { width: 6px; }
+.quest-detail::-webkit-scrollbar { width: 5px; }
 .quest-detail::-webkit-scrollbar-thumb { background: rgba(100, 130, 170, 0.4); border-radius: 3px; }
-.quest-detail-header {
+.quest-detail-empty {
+  height: 100%;
   display: flex;
-  align-items: flex-start;
-  margin-bottom: 6px;
-  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  color: #8898b0;
+  font-size: 10px;
 }
 .quest-detail-npc {
-  width: 60px;
-  min-width: 60px;
   text-align: center;
+  margin-bottom: 6px;
 }
-.quest-detail-npc img {
-  max-width: 56px;
-  max-height: 64px;
+.quest-detail-npc canvas {
   image-rendering: pixelated;
 }
 .quest-detail-npc-name {
   font-size: 9px;
   color: #5a6a80;
   margin-top: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
-.quest-detail-info { flex: 1; }
 .quest-detail-name {
   font-size: 12px;
   font-weight: 700;
-  color: #2a3650;
+  color: #1a2a40;
   margin-bottom: 2px;
 }
 .quest-detail-parent {
   font-size: 9px;
   color: #6080a0;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 .quest-detail-desc {
   font-size: 11px;
   color: #3a4a60;
-  line-height: 1.4;
-  margin-bottom: 6px;
+  line-height: 1.45;
+  margin-bottom: 8px;
 }
 .quest-detail-section {
-  margin-top: 4px;
-  padding-top: 4px;
-  border-top: 1px solid #c8d0dc;
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px solid #c0c8d4;
 }
 .quest-detail-section-title {
   font-size: 10px;
   font-weight: 700;
-  color: #5a6a80;
-  margin-bottom: 2px;
+  color: #4a5a70;
+  margin-bottom: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 .quest-detail-item {
   font-size: 10px;
   color: #3a4a60;
   padding: 1px 0;
 }
-.quest-detail-item .done { color: #208040; }
-.quest-detail-item .need { color: #a04040; }
+.quest-detail-item .done { color: #208040; font-weight: 600; }
+.quest-detail-item .need { color: #a04040; font-weight: 600; }
 .quest-detail-reward {
   font-size: 10px;
-  color: #906800;
+  color: #806000;
   padding: 1px 0;
 }
 .quest-detail-actions {
-  margin-top: 6px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid #c0c8d4;
   display: flex;
   gap: 6px;
 }

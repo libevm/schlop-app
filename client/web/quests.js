@@ -47,6 +47,10 @@ const _questInfo = new Map();
 /** Player quest states: questId → 0|1|2 */
 export const playerQuestStates = new Map();
 
+/** itemId (number) → name (string) — loaded from String.wz */
+const _itemNames = new Map();
+let _itemNamesLoaded = false;
+
 let _questDataLoaded = false;
 
 // ─── Quest Icon Animation ──────────────────────────────────────────────────────
@@ -198,6 +202,52 @@ export async function loadQuestData() {
   }
 
   console.log(`[quests] Loaded ${_questDefs.size} quests, ${_npcStartQuests.size} start NPCs, ${_npcEndQuests.size} end NPCs`);
+
+  // Load item names in background (non-blocking)
+  loadItemNames();
+}
+
+// ─── Item Name Loading ─────────────────────────────────────────────────────────
+
+/** Recursively find all imgdir nodes with a "name" string child → item entries */
+function _collectItemNames(node) {
+  if (!node?.$$) return;
+  for (const child of node.$$) {
+    if (!child.$imgdir || !child.$$) continue;
+    const id = Number(child.$imgdir);
+    if (id > 0) {
+      const nameNode = child.$$.find(c => c.$string === "name");
+      if (nameNode) {
+        _itemNames.set(id, String(nameNode.value));
+        continue; // leaf item node, don't recurse
+      }
+    }
+    // Non-numeric or no "name" child → recurse into subcategories
+    // (e.g. Etc.img > Etc > items, Eqp.img > Eqp > Accessory > items)
+    _collectItemNames(child);
+  }
+}
+
+async function loadItemNames() {
+  if (_itemNamesLoaded) return;
+  _itemNamesLoaded = true;
+
+  const files = [
+    "/resourcesv3/String.wz/Eqp.img.xml",
+    "/resourcesv3/String.wz/Consume.img.xml",
+    "/resourcesv3/String.wz/Etc.img.xml",
+    "/resourcesv3/String.wz/Ins.img.xml",
+    "/resourcesv3/String.wz/Cash.img.xml",
+  ];
+  const results = await Promise.all(files.map(f => fetchJson(f).catch(() => null)));
+  for (const json of results) {
+    if (json) _collectItemNames(json);
+  }
+  console.log(`[quests] Loaded ${_itemNames.size} item names`);
+}
+
+export function getItemName(itemId) {
+  return _itemNames.get(Number(itemId)) || null;
 }
 
 // ─── Quest Icon Loading ────────────────────────────────────────────────────────

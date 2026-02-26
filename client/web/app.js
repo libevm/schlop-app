@@ -150,6 +150,7 @@ import {
   playerQuestStates, getQuestInfo, getQuestDef, getQuestAct,
   serializeQuestStates, forfeitQuest,
   getQuestsByState, getAvailableQuests, countItemInInventory,
+  getItemName,
 } from './quests.js';
 
 // Player physics, foothold helpers, wall collision, camera
@@ -1535,8 +1536,8 @@ function refreshQuestLog() {
       : _questLogTab === "progress" ? "No quests in progress"
       : "No completed quests";
     listEl.appendChild(empty);
-    if (detailEl) { detailEl.style.display = "none"; }
     _questLogSelectedQid = null;
+    showQuestDetail(null);
     return;
   }
 
@@ -1575,26 +1576,41 @@ function refreshQuestLog() {
 
 function showQuestDetail(qid) {
   const detailEl = document.getElementById("quest-detail");
-  if (!detailEl || !qid) { if (detailEl) detailEl.style.display = "none"; return; }
+  if (!detailEl) return;
+
+  if (!qid) {
+    detailEl.innerHTML = '<div class="quest-detail-empty">Select a quest</div>';
+    return;
+  }
 
   const info = getQuestInfo(qid);
   const def = getQuestDef(qid);
   const state = playerQuestStates.get(qid) || 0;
-  if (!info) { detailEl.style.display = "none"; return; }
+  if (!info) {
+    detailEl.innerHTML = '<div class="quest-detail-empty">Select a quest</div>';
+    return;
+  }
 
-  detailEl.style.display = "";
   detailEl.innerHTML = "";
 
-  // Header: NPC portrait + quest name
-  const header = document.createElement("div");
-  header.className = "quest-detail-header";
+  // Quest name
+  const nameEl = document.createElement("div");
+  nameEl.className = "quest-detail-name";
+  nameEl.textContent = info.name || "Quest " + qid;
+  detailEl.appendChild(nameEl);
 
-  // NPC portrait
+  if (info.parent) {
+    const parentEl = document.createElement("div");
+    parentEl.className = "quest-detail-parent";
+    parentEl.textContent = info.parent;
+    detailEl.appendChild(parentEl);
+  }
+
+  // NPC portrait (centered)
   const npcId = state >= 1 ? def?.endNpc : def?.startNpc;
   if (npcId) {
     const npcDiv = document.createElement("div");
     npcDiv.className = "quest-detail-npc";
-    // Try to get the NPC sprite from loaded life animations
     const cacheKey = `n:${npcId}`;
     const anim = lifeAnimations.get(cacheKey);
     if (anim) {
@@ -1602,55 +1618,37 @@ function showQuestDetail(qid) {
       if (stance?.frames?.[0]) {
         const img = getImageByKey(stance.frames[0].key);
         if (img) {
-          const imgEl = document.createElement("canvas");
-          const s = Math.min(1, 56 / img.width, 64 / img.height);
-          imgEl.width = Math.round(img.width * s);
-          imgEl.height = Math.round(img.height * s);
-          imgEl.getContext("2d").drawImage(img, 0, 0, imgEl.width, imgEl.height);
-          npcDiv.appendChild(imgEl);
+          const maxW = 80, maxH = 80;
+          const s = Math.min(1, maxW / img.width, maxH / img.height);
+          const cv = document.createElement("canvas");
+          cv.width = Math.round(img.width * s);
+          cv.height = Math.round(img.height * s);
+          cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+          npcDiv.appendChild(cv);
         }
       }
       if (anim.name) {
-        const nameEl = document.createElement("div");
-        nameEl.className = "quest-detail-npc-name";
-        nameEl.textContent = anim.name;
-        npcDiv.appendChild(nameEl);
+        const npcNameEl = document.createElement("div");
+        npcNameEl.className = "quest-detail-npc-name";
+        npcNameEl.textContent = anim.name;
+        npcDiv.appendChild(npcNameEl);
       }
     }
-    header.appendChild(npcDiv);
-  }
-
-  // Quest info
-  const infoDiv = document.createElement("div");
-  infoDiv.className = "quest-detail-info";
-
-  const nameEl = document.createElement("div");
-  nameEl.className = "quest-detail-name";
-  nameEl.textContent = info.name || "Quest " + qid;
-  infoDiv.appendChild(nameEl);
-
-  if (info.parent) {
-    const parentEl = document.createElement("div");
-    parentEl.className = "quest-detail-parent";
-    parentEl.textContent = info.parent;
-    infoDiv.appendChild(parentEl);
+    detailEl.appendChild(npcDiv);
   }
 
   // Description based on state
-  const descKey = String(state); // "0"=not started, "1"=in progress, "2"=completed
+  const descKey = String(state);
   const desc = info.desc?.[descKey] || info.summary || "";
   if (desc) {
     const descEl = document.createElement("div");
     descEl.className = "quest-detail-desc";
     descEl.textContent = desc;
-    infoDiv.appendChild(descEl);
+    detailEl.appendChild(descEl);
   }
 
-  header.appendChild(infoDiv);
-  detailEl.appendChild(header);
-
-  // Requirements section (for in-progress quests)
-  if (state === 1 && def?.endItems?.length) {
+  // Requirements section (for available and in-progress quests)
+  if (state <= 1 && def?.endItems?.length) {
     const section = document.createElement("div");
     section.className = "quest-detail-section";
     const title = document.createElement("div");
@@ -1661,9 +1659,10 @@ function showQuestDetail(qid) {
     for (const req of def.endItems) {
       const item = document.createElement("div");
       item.className = "quest-detail-item";
-      const have = countItemInInventory(req.id);
+      const have = state === 1 ? countItemInInventory(req.id) : 0;
       const cls = have >= req.count ? "done" : "need";
-      item.innerHTML = `Item ${req.id}: <span class="${cls}">${have}/${req.count}</span>`;
+      const name = getItemName(req.id) || `Item #${req.id}`;
+      item.innerHTML = `${name}: <span class="${cls}">${have}/${req.count}</span>`;
       section.appendChild(item);
     }
     detailEl.appendChild(section);
@@ -1671,7 +1670,6 @@ function showQuestDetail(qid) {
 
   // Rewards section
   const act = getQuestAct(qid);
-  const reward = state >= 1 ? act?.["1"] : act?.["0"];
   const endReward = act?.["1"];
   if (endReward && (endReward.exp || endReward.meso || endReward.items?.length)) {
     const section = document.createElement("div");
@@ -1684,19 +1682,20 @@ function showQuestDetail(qid) {
     if (endReward.exp) {
       const r = document.createElement("div");
       r.className = "quest-detail-reward";
-      r.textContent = `EXP: ${endReward.exp}`;
+      r.textContent = `EXP: ${endReward.exp.toLocaleString()}`;
       section.appendChild(r);
     }
     if (endReward.meso) {
       const r = document.createElement("div");
       r.className = "quest-detail-reward";
-      r.textContent = `Meso: ${endReward.meso}`;
+      r.textContent = `Meso: ${endReward.meso.toLocaleString()}`;
       section.appendChild(r);
     }
     for (const it of (endReward.items || []).filter(i => i.count > 0)) {
       const r = document.createElement("div");
       r.className = "quest-detail-reward";
-      r.textContent = `Item ${it.id} ×${it.count}`;
+      const name = getItemName(it.id) || `Item #${it.id}`;
+      r.textContent = `${name} ×${it.count}`;
       section.appendChild(r);
     }
     detailEl.appendChild(section);
