@@ -497,6 +497,7 @@ if (!runtime.keymap) runtime.keymap = getDefaultKeymap();
 
 // ── Keyboard drag state ──
 let _kbDrag = null;  // { type, id, name?, iconKey?, qty?, sourceCode? } or null
+let _lastItemUseTime = 0;
 let _kbGhost = null; // floating DOM element following cursor
 
 function _kbStartDrag(info, e) {
@@ -583,7 +584,12 @@ function buildKeybindsUI() {
             act.textContent = ACTION_LABELS[mapping.id] || mapping.id;
             el.appendChild(act);
           } else if (mapping.type === "item") {
+            // Get live qty from inventory
+            const invItem = playerInventory.find(it => it.id === mapping.id);
+            const liveQty = invItem ? invItem.qty : 0;
+
             el.classList.add("kb-has-item");
+            if (liveQty === 0) el.classList.add("kb-key-empty");
             const iconUri = fn.getIconDataUri ? fn.getIconDataUri(mapping.iconKey) : null;
             if (iconUri) {
               const img = document.createElement("img");
@@ -596,10 +602,10 @@ function buildKeybindsUI() {
               act.textContent = mapping.name || `#${mapping.id}`;
               el.appendChild(act);
             }
-            if (mapping.qty > 1) {
+            if (liveQty > 1) {
               const qtyEl = document.createElement("span");
               qtyEl.className = "slot-qty";
-              qtyEl.textContent = mapping.qty;
+              qtyEl.textContent = liveQty;
               el.appendChild(qtyEl);
             }
           }
@@ -2866,35 +2872,47 @@ function bindInput() {
     // ── Keymap-driven action dispatch ──
     {
       const km = runtime.keymap?.[event.code];
-      if (km && km.type === "action" && !event.repeat) {
-        event.preventDefault();
-        const winActions = { equip: 1, inventory: 1, keybinds: 1, stat: 1 };
-        if (winActions[km.id]) { toggleUIWindow(km.id); return; }
-        if (runtime.input.enabled) {
-          if (km.id === "attack") { performAttack(); return; }
-          if (km.id === "jump") {
-            if (!runtime.input.jumpHeld) runtime.input.jumpQueued = true;
-            runtime.input.jumpHeld = true;
-            return;
-          }
-          if (km.id === "loot") { tryLootDrop(); return; }
-          // Face expressions
-          const FACE_MAP = {
-            face1: "hit", face2: "smile", face3: "troubled", face4: "cry",
-            face5: "angry", face6: "bewildered", face7: "stunned", face8: "chu", face9: "hum",
-          };
-          if (FACE_MAP[km.id]) {
-            const now = performance.now();
-            if (now - _lastEmoteTime < 1000) return;
-            setLastEmoteTime(now);
-            const expr = FACE_MAP[km.id];
-            runtime.faceAnimation.overrideExpression = expr;
-            runtime.faceAnimation.overrideUntilMs = now + 2500;
-            runtime.faceAnimation.expression = expr;
-            runtime.faceAnimation.frameIndex = 0;
-            runtime.faceAnimation.frameTimerMs = 0;
-            wsSend({ type: "face", expression: expr });
-            return;
+      if (km && !event.repeat) {
+        // Item hotkeys — use consumable (200ms cooldown)
+        if (km.type === "item" && runtime.input.enabled) {
+          event.preventDefault();
+          const now = performance.now();
+          if (now - _lastItemUseTime < 200) return;
+          _lastItemUseTime = now;
+          wsSend({ type: "use_item", item_id: km.id });
+          return;
+        }
+        // Action hotkeys
+        if (km.type === "action") {
+          event.preventDefault();
+          const winActions = { equip: 1, inventory: 1, keybinds: 1, stat: 1 };
+          if (winActions[km.id]) { toggleUIWindow(km.id); return; }
+          if (runtime.input.enabled) {
+            if (km.id === "attack") { performAttack(); return; }
+            if (km.id === "jump") {
+              if (!runtime.input.jumpHeld) runtime.input.jumpQueued = true;
+              runtime.input.jumpHeld = true;
+              return;
+            }
+            if (km.id === "loot") { tryLootDrop(); return; }
+            // Face expressions
+            const FACE_MAP = {
+              face1: "hit", face2: "smile", face3: "troubled", face4: "cry",
+              face5: "angry", face6: "bewildered", face7: "stunned", face8: "chu", face9: "hum",
+            };
+            if (FACE_MAP[km.id]) {
+              const now = performance.now();
+              if (now - _lastEmoteTime < 1000) return;
+              setLastEmoteTime(now);
+              const expr = FACE_MAP[km.id];
+              runtime.faceAnimation.overrideExpression = expr;
+              runtime.faceAnimation.overrideUntilMs = now + 2500;
+              runtime.faceAnimation.expression = expr;
+              runtime.faceAnimation.frameIndex = 0;
+              runtime.faceAnimation.frameTimerMs = 0;
+              wsSend({ type: "face", expression: expr });
+              return;
+            }
           }
         }
       }

@@ -501,8 +501,36 @@ export function handleServerMessage(msg) {
     }
 
     case "inventory_update": {
-      // Server-authoritative inventory replace (from GM /item command, etc.)
-      // TODO: full inventory sync from server
+      // Server-authoritative inventory sync
+      if (!Array.isArray(msg.inventory)) break;
+      playerInventory.length = 0;
+      for (const it of msg.inventory) {
+        const itemId = it.item_id;
+        const name = fn.loadItemName ? (fn.loadItemName(itemId) || "") : "";
+        const invType = it.inv_type || "USE";
+        const category = it.category || null;
+        // Build icon key for rendering
+        const padded = String(itemId).padStart(8, "0");
+        let iconKey = "";
+        if (invType === "EQUIP") {
+          const wzCat = category || fn.equipWzCategoryFromId?.(itemId) || "Cap";
+          iconKey = `Character/${wzCat}/${padded}`;
+        } else {
+          const folderMap = { USE: "Consume", SETUP: "Install", ETC: "Etc", CASH: "Cash" };
+          const prefix = padded.slice(0, 4);
+          iconKey = `Item/${folderMap[invType] || "Etc"}/${prefix}/${padded}`;
+        }
+        playerInventory.push({
+          id: itemId,
+          name,
+          qty: it.qty || 1,
+          iconKey,
+          invType,
+          slot: it.slot ?? playerInventory.length,
+          category,
+        });
+      }
+      fn.refreshUIWindows?.();
       break;
     }
 

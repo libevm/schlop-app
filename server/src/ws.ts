@@ -598,6 +598,65 @@ function getWeaponWatk(weaponItemId: number): number {
   return watk;
 }
 
+/** Consumable item spec cache: itemId → { hp, mp, hpR, mpR, time } */
+interface ItemSpec {
+  hp: number;   // flat HP restore
+  mp: number;   // flat MP restore
+  hpR: number;  // HP % restore (0-100 → 0.0-1.0)
+  mpR: number;  // MP % restore (0-100 → 0.0-1.0)
+  time: number; // buff duration in ms (-1 = instant)
+  speed: number; // speed buff
+  jump: number;  // jump buff
+  pad: number;   // WATK buff
+  pdd: number;   // WDEF buff
+}
+const _itemSpecCache = new Map<number, ItemSpec | null>();
+
+function getItemSpec(itemId: number): ItemSpec | null {
+  if (_itemSpecCache.has(itemId)) return _itemSpecCache.get(itemId)!;
+
+  const prefix = String(itemId).slice(0, 4); // e.g. "0200"
+  const padded = String(itemId).padStart(8, "0");
+  const { resolve: rp } = require("path");
+  const { existsSync: ex, readFileSync: rf } = require("fs");
+  const { parseWzXml: pz } = require("./wz-xml.ts");
+  const PROJECT_ROOT = rp(__dirname, "../..");
+  const fp = rp(PROJECT_ROOT, "resourcesv3", "Item.wz", "Consume", `${prefix}.img.xml`);
+
+  if (!ex(fp)) { _itemSpecCache.set(itemId, null); return null; }
+
+  try {
+    const json = pz(rf(fp, "utf-8"));
+    const itemDir = json?.$$?.find((s: any) => s.$imgdir === padded);
+    if (!itemDir?.$$) { _itemSpecCache.set(itemId, null); return null; }
+
+    // Look for "specEx" first, then "spec" (matches Cosmic's ItemInformationProvider)
+    let specDir = itemDir.$$.find((s: any) => s.$imgdir === "specEx");
+    if (!specDir) specDir = itemDir.$$.find((s: any) => s.$imgdir === "spec");
+    if (!specDir?.$$) { _itemSpecCache.set(itemId, null); return null; }
+
+    const spec: ItemSpec = { hp: 0, mp: 0, hpR: 0, mpR: 0, time: -1, speed: 0, jump: 0, pad: 0, pdd: 0 };
+    for (const child of specDir.$$) {
+      const name = child.$int ?? child.$short ?? child.$string;
+      const val = Number(child.value) || 0;
+      if (name === "hp") spec.hp = val;
+      else if (name === "mp") spec.mp = val;
+      else if (name === "hpR") spec.hpR = val / 100.0;
+      else if (name === "mpR") spec.mpR = val / 100.0;
+      else if (name === "time") spec.time = val;
+      else if (name === "speed") spec.speed = val;
+      else if (name === "jump") spec.jump = val;
+      else if (name === "pad") spec.pad = val;
+      else if (name === "pdd") spec.pdd = val;
+    }
+    _itemSpecCache.set(itemId, spec);
+    return spec;
+  } catch {
+    _itemSpecCache.set(itemId, null);
+    return null;
+  }
+}
+
 /**
  * Calculate player damage range — mirrors C++ CharStats::close_totalstats().
  *
@@ -1798,6 +1857,61 @@ export function handleClientMessage(
         id: client.id,
       }, client.id);
       break;
+
+    case "use_item": {
+      // Server-authoritative: consume a USE item, apply spec effects (HP/MP restore)
+      const useItemId = Number(msg.item_id);
+      if (!useItemId) break;
+
+      // Must be a USE item (2xxxxxxx)
+      if (useItemId < 2000000 || useItemId >= 3000000) break;
+
+      // Find in server inventory
+      const useIdx = client.inventory.findIndex(it => it.item_id === useItemId);
+      if (useIdx === -1) break; // don't have it
+
+      // Check alive
+      const curHp = client.stats.hp ?? 1;
+      if (curHp <= 0) break;
+
+      // Load item spec from WZ
+      const spec = getItemSpec(useItemId);
+      if (!spec) break; // no spec = not a consumable
+
+      // Deduct 1 from inventory
+      if (client.inventory[useIdx].qty <= 1) {
+        client.inventory.splice(useIdx, 1);
+      } else {
+        client.inventory[useIdx].qty -= 1;
+      }
+
+      // Apply HP/MP recovery (Cosmic StatEffect.calcHPChange / calcMPChange)
+      const maxHp = client.stats.maxHp ?? 50;
+      const maxMp = client.stats.maxMp ?? 50;
+      let hpChange = spec.hp + Math.floor(maxHp * spec.hpR);
+      let mpChange = spec.mp + Math.floor(maxMp * spec.mpR);
+
+      let newHp = Math.min(maxHp, Math.max(0, (client.stats.hp ?? 0) + hpChange));
+      let newMp = Math.min(maxMp, Math.max(0, (client.stats.mp ?? 0) + mpChange));
+      client.stats.hp = newHp;
+      client.stats.mp = newMp;
+
+      // Send inventory update
+      ws.send(JSON.stringify({
+        type: "inventory_update",
+        inventory: client.inventory,
+      }));
+
+      // Send stats update
+      ws.send(JSON.stringify({
+        type: "stats_update",
+        stats: buildStatsPayload(client),
+      }));
+
+      // Persist
+      persistClientState(client, _moduleDb);
+      break;
+    }
 
     case "drop_item": {
       // Server-authoritative: validate item exists in server inventory, remove it, create drop

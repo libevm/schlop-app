@@ -934,6 +934,9 @@ body:has(.canvas-wrapper.fixed-res) {
   font-size: 16px;
   margin-top: 0;
 }
+.kb-key.kb-key-empty {
+  opacity: 0.4;
+}
 .kb-key.kb-has-item {
   background: linear-gradient(180deg, #e6eef8 0%, #ccd8ea 100%);
   border-color: #6080b0;

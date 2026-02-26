@@ -897,6 +897,8 @@ export function refreshUIWindows() {
   refreshInvGrid();
   updateStatusBar();
   updateStatWindow();
+  // Refresh keybinds if visible (updates item qty on keys)
+  if (fn.buildKeybindsUI) fn.buildKeybindsUI();
 }
 
 function updateStatusBar() {
