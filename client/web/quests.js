@@ -341,47 +341,112 @@ export function getNpcQuestIconType(npcId) {
  */
 export function getQuestDialogueForNpc(npcId) {
   const npcIdStr = String(npcId);
-
-  // 1. Completable quests
   const endQuests = _npcEndQuests.get(npcIdStr) || [];
-  for (const qid of endQuests) {
-    if (!isQuestCompletable(qid)) continue;
-    const say = _questSay.get(qid);
-    const info = _questInfo.get(qid);
-    const act = _questAct.get(qid);
-    const endReward = act?.["1"];
+  const startQuests = _npcStartQuests.get(npcIdStr) || [];
 
+  // Collect completable quests
+  const completable = [];
+  for (const qid of endQuests) {
+    if (isQuestCompletable(qid)) completable.push(qid);
+  }
+
+  // Collect available quests
+  const available = [];
+  for (const qid of startQuests) {
+    if (isQuestAvailable(qid)) available.push(qid);
+  }
+
+  // Collect in-progress quests
+  const inProgress = [];
+  for (const qid of [...endQuests, ...startQuests]) {
+    if (isQuestInProgress(qid) && !completable.includes(qid) && !inProgress.includes(qid)) {
+      inProgress.push(qid);
+    }
+  }
+
+  // If nothing, return null
+  if (completable.length === 0 && available.length === 0 && inProgress.length === 0) {
+    return null;
+  }
+
+  // Build quest menu — shows all available/completable/in-progress at once
+  // This is the "quest list" view matching the MapleStory reference
+  const questOptions = [];
+
+  for (const qid of completable) {
+    const def = _questDefs.get(qid);
+    const info = _questInfo.get(qid);
+    questOptions.push({
+      questId: qid,
+      label: `(Lv.${def?.lvmin || 1}) ${info?.name || "Quest " + qid}`,
+      category: "completable",
+    });
+  }
+
+  for (const qid of available) {
+    const def = _questDefs.get(qid);
+    const info = _questInfo.get(qid);
+    questOptions.push({
+      questId: qid,
+      label: `(Lv.${def?.lvmin || 1}) ${info?.name || "Quest " + qid}`,
+      category: "available",
+    });
+  }
+
+  for (const qid of inProgress) {
+    const def = _questDefs.get(qid);
+    const info = _questInfo.get(qid);
+    questOptions.push({
+      questId: qid,
+      label: `(Lv.${def?.lvmin || 1}) ${info?.name || "Quest " + qid}`,
+      category: "in-progress",
+    });
+  }
+
+  return {
+    phase: "quest_list",
+    questOptions,
+    // lines[0] is the quest list view (special rendering)
+    lines: [{
+      type: "quest_list",
+      questOptions,
+    }],
+  };
+}
+
+/**
+ * Build dialogue lines for a specific quest once selected from the list.
+ * Returns array of line objects for the NPC dialogue.
+ */
+export function getQuestSpecificDialogue(qid, category) {
+  qid = String(qid);
+  const say = _questSay.get(qid);
+  const info = _questInfo.get(qid);
+  const def = _questDefs.get(qid);
+  const act = _questAct.get(qid);
+
+  if (category === "completable") {
+    const endReward = act?.["1"];
     const lines = [];
-    // End dialogue lines
     const endLines = say?.["1"] || [];
     for (const line of endLines) {
       lines.push(formatQuestText(line));
     }
     if (lines.length === 0) {
-      lines.push(info?.name ? `You've completed "${info.name}"!` : "Quest complete!");
+      lines.push(info?.name ? `You've done it! "${info.name}" is complete!` : "Quest complete!");
     }
-
     // Reward summary
     const rewards = [];
-    if (endReward?.exp) rewards.push(`EXP: ${endReward.exp}`);
-    if (endReward?.meso) rewards.push(`Meso: ${endReward.meso}`);
+    if (endReward?.exp) rewards.push(`${endReward.exp} EXP`);
+    if (endReward?.meso) rewards.push(`${endReward.meso} meso`);
     if (rewards.length) {
       lines.push(`Rewards: ${rewards.join(", ")}`);
     }
-
-    // Mark as completed
-    lines.push({ type: "quest_complete", questId: qid, text: "[Quest Complete]" });
-
-    return { questId: qid, phase: "end", lines };
+    lines.push({ type: "quest_complete", questId: qid, text: "Complete Quest" });
+    return lines;
   }
 
-  // 2. Available quests
-  const startQuests = _npcStartQuests.get(npcIdStr) || [];
-  for (const qid of startQuests) {
-    if (!isQuestAvailable(qid)) continue;
-    const say = _questSay.get(qid);
-    const info = _questInfo.get(qid);
-
+  if (category === "available") {
     const lines = [];
     const startLines = say?.["0"] || [];
     for (const line of startLines) {
@@ -393,20 +458,12 @@ export function getQuestDialogueForNpc(npcId) {
     if (lines.length === 0) {
       lines.push("I have a quest for you.");
     }
-
-    // Accept option
-    lines.push({ type: "quest_accept", questId: qid, text: `[Accept Quest: ${info?.name || "Quest"}]` });
-
-    return { questId: qid, phase: "start", lines };
+    lines.push({ type: "quest_accept", questId: qid, text: `Accept` });
+    return lines;
   }
 
-  // 3. In-progress quests at end NPC (missing items)
-  for (const qid of endQuests) {
-    if (!isQuestInProgress(qid)) continue;
-    const def = _questDefs.get(qid);
-    const info = _questInfo.get(qid);
+  if (category === "in-progress") {
     const lines = [];
-
     if (def?.endItems?.length) {
       lines.push(info?.demandSummary || "You still need to collect the required items.");
       for (const req of def.endItems) {
@@ -417,21 +474,10 @@ export function getQuestDialogueForNpc(npcId) {
     } else {
       lines.push(info?.summary || "You're still working on that quest...");
     }
-
-    return { questId: qid, phase: "progress", lines };
+    return lines;
   }
 
-  // 4. In-progress quests at start NPC (reminder)
-  for (const qid of startQuests) {
-    if (!isQuestInProgress(qid)) continue;
-    const info = _questInfo.get(qid);
-    return {
-      questId: qid, phase: "progress",
-      lines: [info?.summary || "You're still working on that quest..."],
-    };
-  }
-
-  return null;
+  return ["..."];
 }
 
 /**

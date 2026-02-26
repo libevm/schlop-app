@@ -45,7 +45,7 @@ import {
 } from "./util.js";
 import { wsSend, _wsConnected, _isMobAuthority } from "./net.js";
 import { canvasToImageBitmap } from "./wz-canvas-decode.js";
-import { getNpcQuestIconType, drawQuestIcon, updateQuestIconAnimation, getQuestDialogueForNpc, acceptQuest, completeQuest } from "./quests.js";
+import { getNpcQuestIconType, drawQuestIcon, updateQuestIconAnimation, getQuestDialogueForNpc, getQuestSpecificDialogue, acceptQuest, completeQuest } from "./quests.js";
 
 // ─── Life (Mob/NPC) Sprite System ─────────────────────────────────────────────
 // (lifeAnimations moved to state.js)
@@ -2114,7 +2114,7 @@ export function openNpcDialogue(npcResult) {
 
   let lines;
   if (questDialogue) {
-    // Quest dialogue — convert to displayable lines
+    // Quest list or specific quest dialogue
     lines = questDialogue.lines.map(l => {
       if (typeof l === "object" && l.type === "quest_accept") {
         return { type: "option", label: l.text, action: () => { acceptQuest(l.questId); closeNpcDialogue(); } };
@@ -2154,8 +2154,9 @@ export function openNpcDialogue(npcResult) {
     hoveredOption: -1,
     scriptId: questDialogue ? "" : (anim.scriptId || ""),
     questId: questDialogue?.questId || null,
+    npcWzId,
   };
-  rlog(`NPC dialogue opened: ${anim.name} (${life.id}), script=${anim.scriptId || "none"}, quest=${questDialogue?.questId || "none"}, ${lines.length} lines`);
+  rlog(`NPC dialogue opened: ${anim.name} (${life.id}), script=${anim.scriptId || "none"}, quest=${questDialogue?.phase || "none"}, ${lines.length} lines`);
 }
 
 export function closeNpcDialogue() {
@@ -2187,9 +2188,11 @@ export function drawNpcDialogue() {
 
   const d = runtime.npcDialogue;
   const currentLine = d.lines[d.lineIndex] ?? "";
+  const isQuestList = typeof currentLine === "object" && currentLine.type === "quest_list";
   const isOptionLine = typeof currentLine === "object" && currentLine.options;
   const isQuestAction = typeof currentLine === "object" && currentLine.type === "option";
-  const text = isQuestAction ? ""
+  const text = isQuestList ? ""
+    : isQuestAction ? ""
     : isOptionLine ? currentLine.text
     : String(currentLine);
   const options = isOptionLine ? currentLine.options
@@ -2214,188 +2217,231 @@ export function drawNpcDialogue() {
   }
 
   // Layout constants
-  const portraitW = npcImg ? Math.min(120, npcImg.width) : 0;
-  const portraitArea = portraitW > 0 ? portraitW + 16 : 0;
-  const boxW = 500;
+  const portraitMaxW = 120;
+  const portraitMaxH = 140;
+  const portraitW = npcImg ? Math.min(portraitMaxW, npcImg.width) : 0;
+  const portraitArea = portraitW > 0 ? portraitW + 20 : 0;
+  const boxW = 510;
   const lineHeight = 18;
-  const optionLineHeight = 26;
+  const optionLineHeight = 22;
   const padding = 16;
-  const headerH = 24;
   const textAreaW = boxW - padding * 2 - portraitArea;
+  const npcNameLabelH = 20;
 
-  // Measure text
   ctx.save();
   ctx.font = '13px "Dotum", Arial, sans-serif';
-  const wrappedLines = wrapText(ctx, text, textAreaW);
-  const textH = wrappedLines.length * lineHeight;
 
-  // Measure options
-  const optionsH = options.length > 0 ? options.length * optionLineHeight + 10 : 0;
+  // ── Measure content height ──
+  let contentItemsH = 0;
+  if (isQuestList) {
+    const qo = currentLine.questOptions;
+    // "AVAILABLE QUESTS" header + quest entries
+    contentItemsH = 28 + qo.length * optionLineHeight + 8;
+  } else {
+    const wrappedLines = wrapText(ctx, text, textAreaW);
+    contentItemsH = wrappedLines.length * lineHeight;
+    if (options.length > 0) contentItemsH += 8 + options.length * optionLineHeight;
+  }
 
-  // Box height: fit portrait, text, and options
-  const portraitH = npcImg ? Math.min(140, npcImg.height) : 0;
-  const contentH = Math.max(textH + optionsH + padding, portraitH + 8);
-  const footerH = 36;
-  const footerGap = 8;
-  const boxH = headerH + contentH + padding + footerGap + footerH;
+  const portraitH = npcImg ? Math.min(portraitMaxH, npcImg.height) : 0;
+  const contentH = Math.max(contentItemsH + padding, portraitH + npcNameLabelH + 12);
+  const footerH = 32;
+  const boxH = contentH + padding + footerH + 8;
 
   const boxX = Math.round((canvasEl.width - boxW) / 2);
   const boxY = Math.round((canvasEl.height - boxH) / 2);
   _npcDialogueBoxBounds = { x: boxX, y: boxY, w: boxW, h: boxH };
 
-  // ── HUD-themed background ──
-  const bgGrad = ctx.createLinearGradient(boxX, boxY, boxX, boxY + boxH);
-  bgGrad.addColorStop(0, "#d4dce8");
-  bgGrad.addColorStop(1, "#c0cbdb");
-  roundRect(ctx, boxX, boxY, boxW, boxH, 4);
-  ctx.fillStyle = bgGrad;
-  ctx.fill();
-  ctx.strokeStyle = "#8a9bb5";
-  ctx.lineWidth = 2;
-  roundRect(ctx, boxX, boxY, boxW, boxH, 4);
-  ctx.stroke();
-
-  // Drop shadow behind the whole box
-  ctx.shadowColor = "rgba(0,0,0,0.25)";
-  ctx.shadowBlur = 8;
-  ctx.shadowOffsetX = 1;
-  ctx.shadowOffsetY = 2;
-  roundRect(ctx, boxX, boxY, boxW, boxH, 4);
+  // ── Outer box — light blue border (MapleStory style) ──
+  ctx.shadowColor = "rgba(0,0,0,0.18)";
+  ctx.shadowBlur = 10;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 3;
+  roundRect(ctx, boxX, boxY, boxW, boxH, 6);
+  ctx.fillStyle = "#c8d8ec";
   ctx.fill();
   ctx.shadowColor = "transparent";
   ctx.shadowBlur = 0;
 
-  // ── Title bar ──
-  const titleGrad = ctx.createLinearGradient(boxX, boxY, boxX, boxY + headerH);
-  titleGrad.addColorStop(0, "#6b82a8");
-  titleGrad.addColorStop(1, "#4a6490");
-  ctx.fillStyle = titleGrad;
-  roundRect(ctx, boxX, boxY, boxW, headerH, 4, true);
-  ctx.fill();
-  ctx.strokeStyle = "#3d5578";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(boxX + 1, boxY + headerH);
-  ctx.lineTo(boxX + boxW - 1, boxY + headerH);
+  // Blue border
+  ctx.strokeStyle = "#7eade6";
+  ctx.lineWidth = 3;
+  roundRect(ctx, boxX, boxY, boxW, boxH, 6);
   ctx.stroke();
 
-  // NPC name
-  ctx.fillStyle = "#fff";
-  ctx.font = 'bold 11px "Dotum", Arial, sans-serif';
-  ctx.textAlign = "left";
-  ctx.textBaseline = "top";
-  ctx.shadowColor = "rgba(0,0,0,0.5)";
-  ctx.shadowOffsetY = 1;
-  let headerText = d.npcName;
-  if (d.npcFunc) headerText += `  (${d.npcFunc})`;
-  ctx.fillText(headerText, boxX + 8, boxY + 7);
-  ctx.shadowColor = "transparent";
-  ctx.shadowOffsetY = 0;
-
-  // ── Content inset ──
+  // ── Inner content area (white) ──
   const insetX = boxX + 6;
-  const insetY = boxY + headerH + 6;
+  const insetY = boxY + 6;
   const insetW = boxW - 12;
-  const insetH = contentH + padding;
-  const insetGrad = ctx.createLinearGradient(insetX, insetY, insetX, insetY + insetH);
-  insetGrad.addColorStop(0, "#e8edf4");
-  insetGrad.addColorStop(1, "#d8dfe9");
-  ctx.fillStyle = insetGrad;
-  roundRect(ctx, insetX, insetY, insetW, insetH, 2);
+  const insetH = boxH - 12 - footerH;
+  ctx.fillStyle = "#f5f7fb";
+  roundRect(ctx, insetX, insetY, insetW, insetH, 3);
   ctx.fill();
-  ctx.strokeStyle = "#9aa8bc";
+  ctx.strokeStyle = "#b8cce4";
   ctx.lineWidth = 1;
-  roundRect(ctx, insetX, insetY, insetW, insetH, 2);
+  roundRect(ctx, insetX, insetY, insetW, insetH, 3);
   ctx.stroke();
 
-  // Draw NPC portrait on the left
+  // ── NPC portrait on the left ──
   if (npcImg && portraitW > 0) {
-    const scale = Math.min(1, 120 / npcImg.width, 140 / npcImg.height);
+    const scale = Math.min(1, portraitMaxW / npcImg.width, portraitMaxH / npcImg.height);
     const drawW = Math.round(npcImg.width * scale);
     const drawH = Math.round(npcImg.height * scale);
-    const portraitX = insetX + 8 + Math.round((portraitW - drawW) / 2);
-    const portraitY = insetY + Math.round((insetH - drawH) / 2);
+    const portraitX = insetX + 10 + Math.round((portraitW - drawW) / 2);
+    const portraitY = insetY + 8 + Math.round(((insetH - npcNameLabelH - 12) - drawH) / 2);
     ctx.drawImage(npcImg, portraitX, portraitY, drawW, drawH);
+
+    // NPC name label below portrait (dark box with white text)
+    const nameLabelW = portraitW + 12;
+    const nameLabelX = insetX + 4;
+    const nameLabelY = insetY + insetH - npcNameLabelH - 4;
+    ctx.fillStyle = "rgba(40, 55, 80, 0.85)";
+    roundRect(ctx, nameLabelX, nameLabelY, nameLabelW, npcNameLabelH, 2);
+    ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.font = 'bold 10px "Dotum", Arial, sans-serif';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(d.npcName, nameLabelX + nameLabelW / 2, nameLabelY + npcNameLabelH / 2);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
   }
 
-  // Dialogue text
-  ctx.fillStyle = "#2a3650";
-  ctx.font = '13px "Dotum", Arial, sans-serif';
-  const textX = insetX + 10 + portraitArea;
-  for (let i = 0; i < wrappedLines.length; i++) {
-    ctx.fillText(wrappedLines[i], textX, insetY + 10 + i * lineHeight);
-  }
+  // ── Text area (right of portrait) ──
+  const textX = insetX + 12 + portraitArea;
+  let curY = insetY + 10;
 
-  // Options (clickable list)
-  if (options.length > 0) {
-    const optStartY = insetY + 10 + textH + 10;
-    ctx.font = '13px "Dotum", Arial, sans-serif';
+  if (isQuestList) {
+    // ── Quest list view (MapleStory style) ──
+    const qo = currentLine.questOptions;
 
-    for (let i = 0; i < options.length; i++) {
-      const optY = optStartY + i * optionLineHeight;
+    // "AVAILABLE QUESTS" header
+    ctx.font = 'bold 12px "Dotum", Arial, sans-serif';
+    ctx.fillStyle = "#c09020";
+    ctx.fillText("⚡ AVAILABLE QUESTS", textX, curY);
+    curY += 24;
+
+    // Thin separator line
+    ctx.strokeStyle = "#d0d8e4";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(textX, curY);
+    ctx.lineTo(textX + textAreaW - 8, curY);
+    ctx.stroke();
+    curY += 6;
+
+    // Quest entries
+    ctx.font = '12px "Dotum", Arial, sans-serif';
+    for (let i = 0; i < qo.length; i++) {
+      const optY = curY + i * optionLineHeight;
       const isHovered = d.hoveredOption === i;
+      const q = qo[i];
+
+      // Category indicator
+      let catColor = "#2a3650";
+      let prefix = "▸ ";
+      if (q.category === "completable") { catColor = "#208020"; prefix = "✦ "; }
+      else if (q.category === "in-progress") { catColor = "#6080b0"; prefix = "◆ "; }
 
       if (isHovered) {
-        ctx.fillStyle = "rgba(74, 100, 144, 0.15)";
-        roundRect(ctx, textX - 4, optY - 2, textAreaW + 8, optionLineHeight, 2);
+        ctx.fillStyle = "rgba(100, 150, 220, 0.12)";
+        roundRect(ctx, textX - 4, optY - 2, textAreaW, optionLineHeight, 2);
         ctx.fill();
       }
 
-      ctx.fillStyle = isHovered ? "#4a6490" : "#2a3650";
-      ctx.font = isHovered ? 'bold 13px "Dotum", Arial, sans-serif' : '13px "Dotum", Arial, sans-serif';
-      ctx.fillText(`▸ ${options[i].label}`, textX + 4, optY + 4);
+      ctx.fillStyle = isHovered ? "#c04040" : catColor;
+      ctx.font = isHovered ? 'bold 12px "Dotum", Arial, sans-serif' : '12px "Dotum", Arial, sans-serif';
+      ctx.fillText(`${prefix}${q.label}`, textX + 8, optY + 4);
 
       _npcDialogueOptionHitBoxes.push({
-        x: textX - 4,
-        y: optY - 2,
-        w: textAreaW + 8,
-        h: optionLineHeight,
+        x: textX - 4, y: optY - 2,
+        w: textAreaW, h: optionLineHeight,
         index: i,
       });
     }
+  } else {
+    // ── Regular dialogue / quest-specific view ──
+    ctx.fillStyle = "#2a3650";
+    ctx.font = '13px "Dotum", Arial, sans-serif';
+    const wrappedLines = wrapText(ctx, text, textAreaW);
+    for (let i = 0; i < wrappedLines.length; i++) {
+      ctx.fillText(wrappedLines[i], textX, curY + i * lineHeight);
+    }
+    curY += wrappedLines.length * lineHeight;
+
+    // Options (accept/complete buttons)
+    if (options.length > 0) {
+      curY += 8;
+      for (let i = 0; i < options.length; i++) {
+        const optY = curY + i * optionLineHeight;
+        const isHovered = d.hoveredOption === i;
+
+        if (isHovered) {
+          ctx.fillStyle = "rgba(100, 150, 220, 0.12)";
+          roundRect(ctx, textX - 4, optY - 2, textAreaW, optionLineHeight, 2);
+          ctx.fill();
+        }
+
+        ctx.fillStyle = isHovered ? "#c04040" : "#2060b0";
+        ctx.font = isHovered ? 'bold 13px "Dotum", Arial, sans-serif' : '13px "Dotum", Arial, sans-serif';
+        ctx.fillText(`▸ ${options[i].label}`, textX + 4, optY + 4);
+
+        _npcDialogueOptionHitBoxes.push({
+          x: textX - 4, y: optY - 2,
+          w: textAreaW, h: optionLineHeight,
+          index: i,
+        });
+      }
+    }
   }
 
-  // ── Footer: Cancel + Next buttons ──
-  const footerY = boxY + boxH - footerH;
-  const btnH = 20;
+  // ── Footer buttons ──
+  const footerY = boxY + boxH - footerH - 3;
+  const btnH = 22;
   const btnY = footerY + Math.round((footerH - btnH) / 2);
   const btnGap = 8;
 
-  // Helper to draw a footer button
-  function drawFooterBtn(label, bx, bw, hoverIndex) {
+  function drawFooterBtn(label, bx, bw, hoverIndex, style) {
     const isHov = d.hoveredOption === hoverIndex;
+    const colors = style === "green"
+      ? { top: isHov ? "#70c070" : "#58b858", bot: isHov ? "#50a850" : "#409840", border: isHov ? "#308830" : "#388838", text: "#fff" }
+      : style === "blue"
+      ? { top: isHov ? "#6aade8" : "#5a9dd8", bot: isHov ? "#4a8dc8" : "#4080c0", border: isHov ? "#3070a0" : "#3878a8", text: "#fff" }
+      : { top: isHov ? "#eef2f8" : "#e4e8f0", bot: isHov ? "#d8dce8" : "#cdd4e0", border: isHov ? "#8aa0c0" : "#9aacbc", text: "#4a6490" };
     const g = ctx.createLinearGradient(bx, btnY, bx, btnY + btnH);
-    g.addColorStop(0, isHov ? "#f4f6fa" : "#eef1f6");
-    g.addColorStop(1, isHov ? "#e0e6f0" : "#d8dee8");
+    g.addColorStop(0, colors.top);
+    g.addColorStop(1, colors.bot);
     ctx.fillStyle = g;
-    roundRect(ctx, bx, btnY, bw, btnH, 2);
+    roundRect(ctx, bx, btnY, bw, btnH, 3);
     ctx.fill();
-    ctx.strokeStyle = isHov ? "#6080b0" : "#8a9bb5";
+    ctx.strokeStyle = colors.border;
     ctx.lineWidth = 1;
-    roundRect(ctx, bx, btnY, bw, btnH, 2);
+    roundRect(ctx, bx, btnY, bw, btnH, 3);
     ctx.stroke();
-    ctx.fillStyle = isHov ? "#2a3650" : "#4a6490";
+    ctx.fillStyle = colors.text;
     ctx.font = 'bold 10px "Dotum", Arial, sans-serif';
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(label, bx + bw / 2, btnY + btnH / 2);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
     _npcDialogueOptionHitBoxes.push({ x: bx, y: btnY, w: bw, h: btnH, index: hoverIndex });
   }
 
-  // Cancel button (right-most)
-  const cancelBtnW = 56;
-  const cancelBtnX = boxX + boxW - padding - cancelBtnW;
-  drawFooterBtn("Cancel", cancelBtnX, cancelBtnW, -99);
+  // "END CHAT" button (green, left)
+  const endChatW = 72;
+  const endChatX = boxX + padding;
+  drawFooterBtn("END CHAT", endChatX, endChatW, -99, "green");
 
-  // Next button — show on text pages always, and on option pages if more pages follow
+  // Next button — show on text pages if more pages follow
   const hasMorePages = d.lineIndex < d.lines.length - 1;
-  if (!isOptionLine || hasMorePages) {
+  if (!isQuestList && !isOptionLine && hasMorePages) {
     const pageInfo = d.lines.length > 1 ? `  ${d.lineIndex + 1}/${d.lines.length}` : "";
-    const nextLabel = `Next${pageInfo}`;
+    const nextLabel = `NEXT ▸${pageInfo}`;
     ctx.font = 'bold 10px "Dotum", Arial, sans-serif';
-    const nextBtnW = Math.round(ctx.measureText(nextLabel).width) + 20;
-    const nextBtnX = cancelBtnX - btnGap - nextBtnW;
-    drawFooterBtn(nextLabel, nextBtnX, nextBtnW, -98);
+    const nextBtnW = Math.round(ctx.measureText(nextLabel).width) + 24;
+    const nextBtnX = boxX + boxW - padding - nextBtnW;
+    drawFooterBtn(nextLabel, nextBtnX, nextBtnW, -98, "blue");
   }
 
   ctx.restore();

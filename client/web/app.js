@@ -146,6 +146,7 @@ import {
 
 import {
   loadQuestData, loadQuestIcons, updateQuestIconAnimation,
+  getQuestSpecificDialogue, acceptQuest, completeQuest,
 } from './quests.js';
 
 // Player physics, foothold helpers, wall collision, camera
@@ -2923,7 +2924,28 @@ function bindInput() {
             return;
           }
           const currentLine = runtime.npcDialogue.lines[runtime.npcDialogue.lineIndex];
-          if (typeof currentLine === "object" && currentLine.type === "option" && currentLine.action) {
+          if (typeof currentLine === "object" && currentLine.type === "quest_list") {
+            // Quest list — drill into the selected quest
+            const qo = currentLine.questOptions[hb.index];
+            if (qo) {
+              rlog(`Quest selected from list: ${qo.label} (${qo.category})`);
+              const questLines = getQuestSpecificDialogue(qo.questId, qo.category);
+              // Convert quest action lines to option objects
+              const converted = questLines.map(l => {
+                if (typeof l === "object" && l.type === "quest_accept") {
+                  return { type: "option", label: l.text, action: () => { acceptQuest(l.questId); closeNpcDialogue(); } };
+                }
+                if (typeof l === "object" && l.type === "quest_complete") {
+                  return { type: "option", label: l.text, action: () => { completeQuest(l.questId); closeNpcDialogue(); } };
+                }
+                return l;
+              });
+              runtime.npcDialogue.lines = converted;
+              runtime.npcDialogue.lineIndex = 0;
+              runtime.npcDialogue.hoveredOption = -1;
+              runtime.npcDialogue.questId = qo.questId;
+            }
+          } else if (typeof currentLine === "object" && currentLine.type === "option" && currentLine.action) {
             // Quest accept/complete action
             rlog(`Quest option selected: ${currentLine.label}`);
             currentLine.action();
