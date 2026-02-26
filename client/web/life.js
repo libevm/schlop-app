@@ -2369,8 +2369,8 @@ export function drawNpcDialogue() {
     }
     curY += wrappedLines.length * lineHeight;
 
-    // Options (accept/complete buttons)
-    if (options.length > 0) {
+    // Options (for non-quest action lines — quest accept/complete handled by footer buttons)
+    if (options.length > 0 && !isQuestAction) {
       curY += 8;
       for (let i = 0; i < options.length; i++) {
         const optY = curY + i * optionLineHeight;
@@ -2428,20 +2428,35 @@ export function drawNpcDialogue() {
     _npcDialogueOptionHitBoxes.push({ x: bx, y: btnY, w: bw, h: btnH, index: hoverIndex });
   }
 
-  // "END CHAT" button (green, left)
+  // "END CHAT" / "DECLINE" button (left)
   const endChatW = 72;
   const endChatX = boxX + padding;
-  drawFooterBtn("END CHAT", endChatX, endChatW, -99, "green");
-
-  // Next button — show on text pages if more pages follow
-  const hasMorePages = d.lineIndex < d.lines.length - 1;
-  if (!isQuestList && !isOptionLine && hasMorePages) {
-    const pageInfo = d.lines.length > 1 ? `  ${d.lineIndex + 1}/${d.lines.length}` : "";
-    const nextLabel = `NEXT ▸${pageInfo}`;
-    ctx.font = 'bold 10px "Dotum", Arial, sans-serif';
-    const nextBtnW = Math.round(ctx.measureText(nextLabel).width) + 24;
-    const nextBtnX = boxX + boxW - padding - nextBtnW;
-    drawFooterBtn(nextLabel, nextBtnX, nextBtnW, -98, "blue");
+  const isQuestAcceptPage = isQuestAction && currentLine.label === "Accept";
+  const isQuestCompletePage = isQuestAction && currentLine.label === "Complete Quest";
+  if (isQuestAcceptPage) {
+    // C++ SENDACCEPTDECLINE: "Accept" (green) + "Decline" (red-ish)
+    drawFooterBtn("DECLINE", endChatX, endChatW, -99, "default");
+    const acceptBtnW = 72;
+    const acceptBtnX = boxX + boxW - padding - acceptBtnW;
+    drawFooterBtn("ACCEPT", acceptBtnX, acceptBtnW, 0, "green");
+  } else if (isQuestCompletePage) {
+    // C++ QCYES/QCNO: "Complete" (green) + "Not Yet" (grey)
+    drawFooterBtn("NOT YET", endChatX, endChatW, -99, "default");
+    const completeBtnW = 80;
+    const completeBtnX = boxX + boxW - padding - completeBtnW;
+    drawFooterBtn("COMPLETE", completeBtnX, completeBtnW, 0, "green");
+  } else {
+    drawFooterBtn("END CHAT", endChatX, endChatW, -99, "green");
+    // Next button — show on text pages if more pages follow
+    const hasMorePages = d.lineIndex < d.lines.length - 1;
+    if (!isQuestList && !isOptionLine && hasMorePages) {
+      const pageInfo = d.lines.length > 1 ? `  ${d.lineIndex + 1}/${d.lines.length}` : "";
+      const nextLabel = `NEXT ▸${pageInfo}`;
+      ctx.font = 'bold 10px "Dotum", Arial, sans-serif';
+      const nextBtnW = Math.round(ctx.measureText(nextLabel).width) + 24;
+      const nextBtnX = boxX + boxW - padding - nextBtnW;
+      drawFooterBtn(nextLabel, nextBtnX, nextBtnW, -98, "blue");
+    }
   }
 
   ctx.restore();

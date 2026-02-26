@@ -746,6 +746,46 @@ export function deserializeQuestStates(obj) {
   }
 }
 
+/**
+ * Forfeit/give up a quest — reset state to 0 (not started).
+ */
+export function forfeitQuest(qid) {
+  qid = String(qid);
+  const info = _questInfo.get(qid);
+  playerQuestStates.delete(qid);
+  fn.addSystemChatMessage?.(`[Quest] Forfeited: ${info?.name || "Quest " + qid}`);
+  fn.saveCharacter?.();
+  console.log(`[quests] Forfeited quest ${qid}: ${info?.name || "unknown"}`);
+}
+
+/**
+ * Get all quests with a specific state. Returns array of { qid, info, def }.
+ */
+export function getQuestsByState(state) {
+  const results = [];
+  for (const [qid, s] of playerQuestStates) {
+    if (s !== state) continue;
+    const info = _questInfo.get(qid);
+    const def = _questDefs.get(qid);
+    if (info?.name && isKorean(info.name)) continue;
+    results.push({ qid, info, def });
+  }
+  return results;
+}
+
+/**
+ * Get all available quests for the player. Returns array of { qid, info, def }.
+ */
+export function getAvailableQuests() {
+  const results = [];
+  for (const [qid, def] of _questDefs) {
+    if (!isQuestAvailable(qid)) continue;
+    const info = _questInfo.get(qid);
+    results.push({ qid, info, def });
+  }
+  return results;
+}
+
 export function getQuestInfo(qid) { return _questInfo.get(String(qid)); }
 export function getQuestDef(qid) { return _questDefs.get(String(qid)); }
 export function isDataLoaded() { return _questDataLoaded; }

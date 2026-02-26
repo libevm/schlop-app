@@ -298,7 +298,7 @@ export const runtime = {
     moveLeft: "ArrowLeft", moveRight: "ArrowRight",
     moveUp: "ArrowUp", moveDown: "ArrowDown",
     attack: "KeyC", jump: "Space", loot: "KeyZ",
-    equip: "KeyE", inventory: "KeyI", keybinds: "KeyK", stat: "KeyS", minimap: "KeyM",
+    equip: "KeyE", inventory: "KeyI", keybinds: "KeyK", stat: "KeyS", minimap: "KeyM", questlog: "KeyQ",
     face1: "Digit1", face2: "Digit2", face3: "Digit3",
     face4: "Digit4", face5: "Digit5", face6: "Digit6",
     face7: "Digit7", face8: "Digit8", face9: "Digit9",

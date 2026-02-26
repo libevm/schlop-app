@@ -147,6 +147,9 @@ import {
 import {
   loadQuestData, loadQuestIcons, updateQuestIconAnimation,
   getQuestSpecificDialogue, acceptQuest, completeQuest,
+  playerQuestStates, getQuestInfo, getQuestDef,
+  serializeQuestStates, forfeitQuest,
+  getQuestsByState, getAvailableQuests,
 } from './quests.js';
 
 // Player physics, foothold helpers, wall collision, camera
@@ -411,7 +414,7 @@ const FIXED_KEY_ACTIONS = {
 const ACTION_LABELS = {
   attack: "Attack", jump: "Jump", loot: "Pick Up",
   equip: "Equip", inventory: "Items", stat: "Stats", keybinds: "Keys",
-  minimap: "Mini Map",
+  minimap: "Mini Map", questlog: "Quest Log",
   face1: "Pain", face2: "Happy", face3: "Troubled", face4: "Cry", face5: "Angry",
   face6: "Surprised", face7: "Shocked", face8: "Tongue", face9: "Snooze",
 };
@@ -494,6 +497,7 @@ const BINDABLE_ACTIONS = [
   { id: "stat", label: "Stats" },
   { id: "keybinds", label: "Keys" },
   { id: "minimap", label: "Mini Map" },
+  { id: "questlog", label: "Quest Log" },
   { id: "face1", label: "Pain" },
   { id: "face2", label: "Happy" },
   { id: "face3", label: "Troubled" },
@@ -563,6 +567,7 @@ function getDefaultKeymap() {
     KeyI: { type: "action", id: "inventory" },
     KeyK: { type: "action", id: "keybinds" },
     KeyM: { type: "action", id: "minimap" },
+    KeyQ: { type: "action", id: "questlog" },
     F1: { type: "action", id: "face1" },
     F2: { type: "action", id: "face2" },
     F3: { type: "action", id: "face3" },
@@ -1508,6 +1513,163 @@ function drawMapBanner() {
   ctx.restore();
 }
 
+// ── Quest Log HUD ──────────────────────────────────────────────────────────
+let _questLogVisible = false;
+let _questLogTab = 0; // 0=available, 1=in-progress, 2=completed
+let _questLogScroll = 0;
+let _questLogHitBoxes = [];
+let _questLogBounds = null;
+
+function drawQuestLog() {
+  _questLogHitBoxes = [];
+  _questLogBounds = null;
+  if (!_questLogVisible) return;
+
+  const TAB_LABELS = ["Available", "In Progress", "Completed"];
+  const boxW = 280;
+  const headerH = 28;
+  const tabH = 24;
+  const rowH = 22;
+  const maxRows = 10;
+  const padding = 8;
+  const footerH = 28;
+  const boxX = Math.round((canvasEl.width - boxW) / 2);
+  const boxY = 40;
+
+  // Gather quest data based on active tab
+  let quests = [];
+  if (_questLogTab === 0) quests = getAvailableQuests();
+  else if (_questLogTab === 1) quests = getQuestsByState(1);
+  else quests = getQuestsByState(2);
+
+  const contentRows = Math.min(quests.length, maxRows);
+  const contentH = Math.max(contentRows * rowH + padding * 2, 60);
+  const boxH = headerH + tabH + contentH + footerH;
+  _questLogBounds = { x: boxX, y: boxY, w: boxW, h: boxH };
+
+  ctx.save();
+
+  // ── Background ──
+  ctx.shadowColor = "rgba(0,0,0,0.2)";
+  ctx.shadowBlur = 8;
+  ctx.shadowOffsetY = 2;
+  roundRect(ctx, boxX, boxY, boxW, boxH, 4);
+  ctx.fillStyle = "#c8d8ec";
+  ctx.fill();
+  ctx.shadowColor = "transparent";
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = "#7eade6";
+  ctx.lineWidth = 2;
+  roundRect(ctx, boxX, boxY, boxW, boxH, 4);
+  ctx.stroke();
+
+  // ── Title bar ──
+  const titleGrad = ctx.createLinearGradient(boxX, boxY, boxX, boxY + headerH);
+  titleGrad.addColorStop(0, "#6b82a8");
+  titleGrad.addColorStop(1, "#4a6490");
+  ctx.fillStyle = titleGrad;
+  roundRect(ctx, boxX, boxY, boxW, headerH, 4, true);
+  ctx.fill();
+  ctx.fillStyle = "#fff";
+  ctx.font = 'bold 12px "Dotum", Arial, sans-serif';
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText("Quest Log", boxX + 10, boxY + headerH / 2);
+
+  // Close button
+  ctx.textAlign = "right";
+  ctx.fillText("✕", boxX + boxW - 10, boxY + headerH / 2);
+  _questLogHitBoxes.push({ x: boxX + boxW - 24, y: boxY + 2, w: 22, h: headerH - 4, action: "close" });
+
+  // ── Tabs ──
+  const tabY = boxY + headerH;
+  const tabW = Math.floor(boxW / 3);
+  for (let i = 0; i < 3; i++) {
+    const tx = boxX + i * tabW;
+    const isActive = _questLogTab === i;
+    ctx.fillStyle = isActive ? "#e8edf4" : "#c0cbdb";
+    ctx.fillRect(tx, tabY, tabW, tabH);
+    ctx.strokeStyle = "#9aa8bc";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(tx, tabY, tabW, tabH);
+    ctx.fillStyle = isActive ? "#2a3650" : "#6080a0";
+    ctx.font = (isActive ? "bold " : "") + '10px "Dotum", Arial, sans-serif';
+    ctx.textAlign = "center";
+    ctx.fillText(TAB_LABELS[i], tx + tabW / 2, tabY + tabH / 2);
+    _questLogHitBoxes.push({ x: tx, y: tabY, w: tabW, h: tabH, action: "tab", tabIndex: i });
+  }
+
+  // ── Content area ──
+  const contentY = tabY + tabH;
+  ctx.fillStyle = "#f5f7fb";
+  ctx.fillRect(boxX + 2, contentY, boxW - 4, contentH);
+  ctx.strokeStyle = "#b8cce4";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(boxX + 2, contentY, boxW - 4, contentH);
+
+  // Quest rows
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  if (quests.length === 0) {
+    ctx.fillStyle = "#8898b0";
+    ctx.font = '11px "Dotum", Arial, sans-serif';
+    ctx.fillText(_questLogTab === 0 ? "No available quests" : _questLogTab === 1 ? "No quests in progress" : "No completed quests", boxX + 14, contentY + 30);
+  } else {
+    const startIdx = Math.max(0, Math.min(_questLogScroll, quests.length - maxRows));
+    for (let i = 0; i < maxRows && startIdx + i < quests.length; i++) {
+      const q = quests[startIdx + i];
+      const ry = contentY + padding + i * rowH;
+
+      // Category color
+      let color = "#2a3650";
+      let prefix = "";
+      if (_questLogTab === 0) { color = "#906800"; prefix = "⚡ "; }
+      else if (_questLogTab === 1) { color = "#2060a0"; prefix = "◆ "; }
+      else { color = "#208040"; prefix = "✓ "; }
+
+      ctx.fillStyle = color;
+      ctx.font = '11px "Dotum", Arial, sans-serif';
+      const lvText = q.def?.lvmin ? `(Lv.${q.def.lvmin}) ` : "";
+      const nameText = q.info?.name || "Quest " + q.qid;
+      const fullText = `${prefix}${lvText}${nameText}`;
+      // Truncate if too long
+      const maxTextW = boxW - 24;
+      let displayText = fullText;
+      while (ctx.measureText(displayText).width > maxTextW && displayText.length > 10) {
+        displayText = displayText.slice(0, -4) + "...";
+      }
+      ctx.fillText(displayText, boxX + 12, ry + rowH / 2);
+
+      // If in-progress tab, make rows clickable (for forfeit)
+      if (_questLogTab === 1) {
+        _questLogHitBoxes.push({ x: boxX + 4, y: ry, w: boxW - 8, h: rowH, action: "forfeit", questId: q.qid, questName: q.info?.name || q.qid });
+      }
+    }
+
+    // Scroll indicator
+    if (quests.length > maxRows) {
+      const scrollBarH = contentH - padding * 2;
+      const thumbH = Math.max(20, scrollBarH * (maxRows / quests.length));
+      const thumbY = contentY + padding + (scrollBarH - thumbH) * (startIdx / (quests.length - maxRows));
+      ctx.fillStyle = "rgba(100, 130, 170, 0.3)";
+      roundRect(ctx, boxX + boxW - 10, thumbY, 6, thumbH, 3);
+      ctx.fill();
+    }
+  }
+
+  // ── Footer ──
+  const footerY = boxY + boxH - footerH;
+  ctx.fillStyle = "#d8dfe9";
+  ctx.fillRect(boxX + 2, footerY, boxW - 4, footerH - 2);
+  ctx.fillStyle = "#6080a0";
+  ctx.font = '10px "Dotum", Arial, sans-serif';
+  ctx.textAlign = "center";
+  const total = playerQuestStates.size;
+  ctx.fillText(`${quests.length} quest${quests.length !== 1 ? "s" : ""} shown (Q to toggle)`, boxX + boxW / 2, footerY + footerH / 2);
+
+  ctx.restore();
+}
+
 let minimapToggleHitBox = null; // { x, y, w, h } in canvas coords
 let minimapCollapsed = false;
 
@@ -2290,6 +2452,7 @@ function render() {
   }
   drawMapBanner();
   drawMinimap();
+  drawQuestLog();
   drawNpcDialogue();
   drawTransitionOverlay();
   drawWZCursor();
@@ -2911,6 +3074,26 @@ function bindInput() {
     const cx = (e.clientX - rect.left) * (canvasEl.width / rect.width);
     const cy = (e.clientY - rect.top) * (canvasEl.height / rect.height);
 
+    // Quest log clicks
+    if (_questLogVisible && _questLogBounds) {
+      const b = _questLogBounds;
+      if (cx >= b.x && cx <= b.x + b.w && cy >= b.y && cy <= b.y + b.h) {
+        for (const hb of _questLogHitBoxes) {
+          if (cx >= hb.x && cx <= hb.x + hb.w && cy >= hb.y && cy <= hb.y + hb.h) {
+            if (hb.action === "close") { _questLogVisible = false; return; }
+            if (hb.action === "tab") { _questLogTab = hb.tabIndex; _questLogScroll = 0; return; }
+            if (hb.action === "forfeit") {
+              if (confirm(`Give up quest "${hb.questName}"?`)) {
+                forfeitQuest(hb.questId);
+              }
+              return;
+            }
+          }
+        }
+        return; // clicked inside quest log but not on a button — absorb
+      }
+    }
+
     // If NPC dialogue is open — only buttons/options are clickable
     if (runtime.npcDialogue.active) {
       for (const hb of _npcDialogueOptionHitBoxes) {
@@ -2990,6 +3173,20 @@ function bindInput() {
     }
     setCursorState(nextState);
   });
+
+  canvasEl.addEventListener("wheel", (e) => {
+    if (_questLogVisible && _questLogBounds) {
+      const rect = canvasEl.getBoundingClientRect();
+      const cx = (e.clientX - rect.left) * (canvasEl.width / rect.width);
+      const cy = (e.clientY - rect.top) * (canvasEl.height / rect.height);
+      const b = _questLogBounds;
+      if (cx >= b.x && cx <= b.x + b.w && cy >= b.y && cy <= b.y + b.h) {
+        e.preventDefault();
+        _questLogScroll += e.deltaY > 0 ? 1 : -1;
+        _questLogScroll = Math.max(0, _questLogScroll);
+      }
+    }
+  }, { passive: false });
 
   canvasEl.addEventListener("dblclick", (e) => {
     if (runtime.loading.active || runtime.portalWarpInProgress || runtime.npcDialogue.active) return;
@@ -3074,6 +3271,11 @@ function bindInput() {
         cancelItemDrag();
         return;
       }
+      if (_questLogVisible) {
+        event.preventDefault();
+        _questLogVisible = false;
+        return;
+      }
       if (runtime.npcDialogue.active) {
         event.preventDefault();
         closeNpcDialogue();
@@ -3123,6 +3325,7 @@ function bindInput() {
           event.preventDefault();
           const winActions = { equip: 1, inventory: 1, keybinds: 1, stat: 1 };
           if (winActions[km.id]) { toggleUIWindow(km.id); return; }
+          if (km.id === "questlog") { _questLogVisible = !_questLogVisible; return; }
           if (runtime.input.enabled) {
             if (km.id === "attack") { performAttack(); return; }
             if (km.id === "jump") {
@@ -3162,6 +3365,10 @@ function bindInput() {
     if (event.code === runtime.keybinds.minimap && !event.repeat) {
       runtime.settings.minimapVisible = !runtime.settings.minimapVisible;
       if (settingsMinimapToggleEl) settingsMinimapToggleEl.checked = runtime.settings.minimapVisible;
+      return;
+    }
+    if (event.code === runtime.keybinds.questlog && !event.repeat) {
+      _questLogVisible = !_questLogVisible;
       return;
     }
 

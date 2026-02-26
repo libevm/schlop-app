@@ -1645,10 +1645,14 @@ export function handleClientMessage(
         const clientQuests = msg.quests as Record<string, number>;
         for (const [qid, state] of Object.entries(clientQuests)) {
           const s = Number(state);
-          // Only allow forward progression: 0→1 (accept) or 1→2 (complete)
           const current = client.quests[qid] || 0;
-          if (s > current && s <= 2) {
-            client.quests[qid] = s;
+          // Allow: forward progression (0→1, 1→2) or forfeit (1→0)
+          if (s >= 0 && s <= 2 && (s > current || (current === 1 && s === 0))) {
+            if (s === 0) {
+              delete client.quests[qid]; // forfeit: remove entry
+            } else {
+              client.quests[qid] = s;
+            }
           }
         }
       }
