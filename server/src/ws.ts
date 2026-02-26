@@ -1871,14 +1871,14 @@ export function handleClientMessage(
       client.stats.hp = Math.max(0, (client.stats.hp ?? 0) - dmg);
 
       // Send authoritative stats + calculated damage back to client
-      ws.send(JSON.stringify({
+      sendDirect(client, {
         type: "stats_update",
         stats: buildStatsPayload(client),
-      }));
-      ws.send(JSON.stringify({
+      });
+      sendDirect(client, {
         type: "damage_result",
         damage: dmg,
-      }));
+      });
 
       // Broadcast to other players
       const direction = msg.direction ?? 0;
@@ -1947,16 +1947,16 @@ export function handleClientMessage(
       client.stats.mp = newMp;
 
       // Send inventory update
-      ws.send(JSON.stringify({
+      sendDirect(client, {
         type: "inventory_update",
         inventory: client.inventory,
-      }));
+      });
 
       // Send stats update
-      ws.send(JSON.stringify({
+      sendDirect(client, {
         type: "stats_update",
         stats: buildStatsPayload(client),
-      }));
+      });
 
       // Persist
       persistClientState(client, _moduleDb);
