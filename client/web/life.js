@@ -2188,8 +2188,13 @@ export function drawNpcDialogue() {
   const d = runtime.npcDialogue;
   const currentLine = d.lines[d.lineIndex] ?? "";
   const isOptionLine = typeof currentLine === "object" && currentLine.options;
-  const text = isOptionLine ? currentLine.text : String(currentLine);
-  const options = isOptionLine ? currentLine.options : [];
+  const isQuestAction = typeof currentLine === "object" && currentLine.type === "option";
+  const text = isQuestAction ? ""
+    : isOptionLine ? currentLine.text
+    : String(currentLine);
+  const options = isOptionLine ? currentLine.options
+    : isQuestAction ? [{ label: currentLine.label, action: currentLine.action }]
+    : [];
 
   // Get NPC sprite for the portrait
   let npcImg = null;

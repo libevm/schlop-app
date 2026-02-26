@@ -2923,7 +2923,11 @@ function bindInput() {
             return;
           }
           const currentLine = runtime.npcDialogue.lines[runtime.npcDialogue.lineIndex];
-          if (typeof currentLine === "object" && currentLine.options && currentLine.options[hb.index]) {
+          if (typeof currentLine === "object" && currentLine.type === "option" && currentLine.action) {
+            // Quest accept/complete action
+            rlog(`Quest option selected: ${currentLine.label}`);
+            currentLine.action();
+          } else if (typeof currentLine === "object" && currentLine.options && currentLine.options[hb.index]) {
             rlog(`NPC option selected: ${currentLine.options[hb.index].label}`);
             currentLine.options[hb.index].action();
           }

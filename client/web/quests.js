@@ -231,6 +231,10 @@ function isQuestAvailable(qid) {
   const def = _questDefs.get(qid);
   if (!def) return false;
 
+  // Skip Korean-only quests
+  const info = _questInfo.get(qid);
+  if (info?.name && isKorean(info.name)) return false;
+
   // Already started or completed?
   const state = playerQuestStates.get(qid) || 0;
   if (state > 0) return false;
@@ -476,6 +480,11 @@ const JOB_NAME_TO_ID = {
   "Thief": 400, "Assassin": 410, "Bandit": 420,
   "Pirate": 500, "Brawler": 510, "Gunslinger": 520,
 };
+
+/** Returns true if text contains Korean characters. */
+function isKorean(text) {
+  return /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/.test(text);
+}
 
 export function getQuestInfo(qid) { return _questInfo.get(String(qid)); }
 export function getQuestDef(qid) { return _questDefs.get(String(qid)); }
