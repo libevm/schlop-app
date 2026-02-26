@@ -302,6 +302,7 @@ export const runtime = {
     face4: "Digit4", face5: "Digit5", face6: "Digit6",
     face7: "Digit7", face8: "Digit8", face9: "Digit9",
   },
+  keymap: null, // initialized by loadKeymap() in app.js
   mouseWorld: { x: 0, y: 0 },
   characterData: null, characterHeadData: null,
   characterFaceData: null, characterHairData: null,

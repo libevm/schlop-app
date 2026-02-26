@@ -500,6 +500,7 @@ export function buildCharacterSave() {
       category: it.category || null,
     })),
     achievements: { ...runtime.player.achievements },
+    keymap: runtime.keymap || {},
     version: 1,
     saved_at: new Date().toISOString(),
   };
@@ -581,6 +582,9 @@ export function applyCharacterSave(save) {
   // Achievements (server-authoritative, loaded from save)
   const savedAch = save.achievements;
   p.achievements = (savedAch && typeof savedAch === "object" && !Array.isArray(savedAch)) ? { ...savedAch } : {};
+
+  // Load keymap from save data or localStorage
+  if (fn.loadKeymap) fn.loadKeymap(save.keymap);
 
   refreshUIWindows();
   rlog(`applyCharacterSave: ${p.name} Lv${p.level} ${p.job}`);
@@ -881,6 +885,20 @@ export function buildSlotEl(icon, label, qty, tooltipData, clickData) {
       }
     });
     slot._cancelPendingClick = () => clearTimeout(_slotClickTimer);
+
+    // HTML5 drag for dropping items onto keyboard config
+    if (clickData.item && clickData.source === "inv") {
+      slot.draggable = true;
+      slot.addEventListener("dragstart", (e) => {
+        e.dataTransfer.setData("text/plain", JSON.stringify({
+          item_id: clickData.item.id,
+          name: clickData.item.name || "",
+          iconKey: clickData.item.iconKey || "",
+          qty: clickData.item.qty || 1,
+        }));
+        e.dataTransfer.effectAllowed = "copy";
+      });
+    }
   }
   return slot;
 }

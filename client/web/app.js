@@ -393,50 +393,196 @@ function _showPowError(message) {
 // (findFreeSlot is now in save.js)
 
 // (draggedItem, INV_TABS, currentInvTab are now in state.js)
-// ── Keybind labels ──
-const KEYBIND_LABELS = {
-  moveLeft: "Move Left",
-  moveRight: "Move Right",
-  moveUp: "Move Up / Portal",
-  moveDown: "Move Down / Crouch",
-  attack: "Attack",
-  jump: "Jump",
-  loot: "Loot",
-  equip: "Equipment",
-  inventory: "Inventory",
-  keybinds: "Keyboard Mappings",
-  face1: "😣 Pain",
-  face2: "😊 Happy",
-  face3: "😟 Troubled",
-  face4: "😢 Cry",
-  face5: "😠 Angry",
-  face6: "😲 Surprised",
-  face7: "😵 Shocked",
-  face8: "😛 Tongue",
-  face9: "😴 Snoozing",
+
+// ─── Keyboard Layout (C++ UIKeyConfig-style) ──────────────────────────────────
+
+const FIXED_KEY_ACTIONS = {
+  Escape: "Menu", Enter: "Chat", ArrowLeft: "←", ArrowRight: "→",
+  ArrowUp: "↑ Portal", ArrowDown: "↓ Crouch",
 };
+
+const ACTION_LABELS = {
+  attack: "Attack", jump: "Jump", loot: "Loot",
+  equip: "Equip", inventory: "Items", stat: "Stats", keybinds: "Keys",
+  face1: "😣", face2: "😊", face3: "😟", face4: "😢", face5: "😠",
+  face6: "😲", face7: "😵", face8: "😛", face9: "😴",
+};
+
+const KB_LAYOUT = [
+  [
+    { code: "Escape", label: "Esc", fixed: true },
+    { code: "F1", label: "F1" }, { code: "F2", label: "F2" }, { code: "F3", label: "F3" },
+    { code: "F4", label: "F4" }, { code: "F5", label: "F5" }, { code: "F6", label: "F6" },
+    { code: "F7", label: "F7" }, { code: "F8", label: "F8" },
+  ],
+  [
+    { code: "Backquote", label: "`" },
+    { code: "Digit1", label: "1" }, { code: "Digit2", label: "2" }, { code: "Digit3", label: "3" },
+    { code: "Digit4", label: "4" }, { code: "Digit5", label: "5" }, { code: "Digit6", label: "6" },
+    { code: "Digit7", label: "7" }, { code: "Digit8", label: "8" }, { code: "Digit9", label: "9" },
+    { code: "Digit0", label: "0" }, { code: "Minus", label: "-" }, { code: "Equal", label: "=" },
+  ],
+  [
+    { code: "KeyQ", label: "Q" }, { code: "KeyW", label: "W" }, { code: "KeyE", label: "E" },
+    { code: "KeyR", label: "R" }, { code: "KeyT", label: "T" }, { code: "KeyY", label: "Y" },
+    { code: "KeyU", label: "U" }, { code: "KeyI", label: "I" }, { code: "KeyO", label: "O" },
+    { code: "KeyP", label: "P" }, { code: "BracketLeft", label: "[" }, { code: "BracketRight", label: "]" },
+  ],
+  [
+    { code: "KeyA", label: "A" }, { code: "KeyS", label: "S" }, { code: "KeyD", label: "D" },
+    { code: "KeyF", label: "F" }, { code: "KeyG", label: "G" }, { code: "KeyH", label: "H" },
+    { code: "KeyJ", label: "J" }, { code: "KeyK", label: "K" }, { code: "KeyL", label: "L" },
+    { code: "Semicolon", label: ";" }, { code: "Quote", label: "'" },
+  ],
+  [
+    { code: "ShiftLeft", label: "Shift", wide: true, fixed: true },
+    { code: "KeyZ", label: "Z" }, { code: "KeyX", label: "X" }, { code: "KeyC", label: "C" },
+    { code: "KeyV", label: "V" }, { code: "KeyB", label: "B" }, { code: "KeyN", label: "N" },
+    { code: "KeyM", label: "M" }, { code: "Comma", label: "," }, { code: "Period", label: "." },
+    { code: "ShiftRight", label: "Shift", wide: true, fixed: true },
+  ],
+  [
+    { code: "ControlLeft", label: "Ctrl", wide: true },
+    { code: "AltLeft", label: "Alt", wide: true },
+    { code: "Space", label: "Space", space: true },
+    { code: "AltRight", label: "Alt", wide: true },
+    { code: "ControlRight", label: "Ctrl", wide: true },
+  ],
+];
+
+function getDefaultKeymap() {
+  return {
+    ControlLeft: { type: "action", id: "attack" },
+    ControlRight: { type: "action", id: "attack" },
+    AltLeft: { type: "action", id: "jump" },
+    AltRight: { type: "action", id: "jump" },
+    Space: { type: "action", id: "jump" },
+    KeyZ: { type: "action", id: "loot" },
+    KeyE: { type: "action", id: "equip" },
+    KeyI: { type: "action", id: "inventory" },
+    KeyS: { type: "action", id: "stat" },
+    KeyK: { type: "action", id: "keybinds" },
+    F1: { type: "action", id: "face1" },
+    F2: { type: "action", id: "face2" },
+    F3: { type: "action", id: "face3" },
+    F5: { type: "action", id: "face4" },
+    F6: { type: "action", id: "face5" },
+    F7: { type: "action", id: "face6" },
+    F8: { type: "action", id: "face7" },
+  };
+}
+
+if (!runtime.keymap) runtime.keymap = getDefaultKeymap();
 
 function buildKeybindsUI() {
   if (!keybindsGridEl) return;
   keybindsGridEl.innerHTML = "";
-  for (const [action, label] of Object.entries(KEYBIND_LABELS)) {
-    const row = document.createElement("div");
-    row.className = "kb-row";
 
-    const lbl = document.createElement("span");
-    lbl.className = "kb-label";
-    lbl.textContent = label;
+  for (const row of KB_LAYOUT) {
+    const rowEl = document.createElement("div");
+    rowEl.className = "kb-row";
 
-    const btn = document.createElement("button");
-    btn.className = "keybind-btn";
-    btn.dataset.action = action;
-    btn.textContent = keyCodeToDisplay(runtime.keybinds[action]);
-    btn.title = "Click to rebind";
-    btn.addEventListener("click", () => startKeybindListening(btn));
+    for (const key of row) {
+      const el = document.createElement("div");
+      el.className = "kb-key";
+      if (key.wide) el.classList.add("kb-key-wide");
+      if (key.space) el.classList.add("kb-key-space");
+      if (key.fixed) el.classList.add("kb-key-fixed");
+      el.dataset.code = key.code;
 
-    row.appendChild(lbl);
-    row.appendChild(btn);
-    keybindsGridEl.appendChild(row);
+      const lbl = document.createElement("span");
+      lbl.className = "kb-key-label";
+      lbl.textContent = key.label;
+      el.appendChild(lbl);
+
+      if (FIXED_KEY_ACTIONS[key.code]) {
+        const act = document.createElement("span");
+        act.className = "kb-key-action";
+        act.textContent = FIXED_KEY_ACTIONS[key.code];
+        el.appendChild(act);
+      } else {
+        const mapping = runtime.keymap[key.code];
+        if (mapping) {
+          if (mapping.type === "action") {
+            const act = document.createElement("span");
+            act.className = "kb-key-action";
+            act.textContent = ACTION_LABELS[mapping.id] || mapping.id;
+            el.appendChild(act);
+          } else if (mapping.type === "item") {
+            el.classList.add("kb-has-item");
+            const iconUri = fn.getIconDataUri ? fn.getIconDataUri(mapping.iconKey) : null;
+            if (iconUri) {
+              const img = document.createElement("img");
+              img.className = "kb-key-icon";
+              img.src = iconUri;
+              el.appendChild(img);
+            } else {
+              const act = document.createElement("span");
+              act.className = "kb-key-action";
+              act.textContent = mapping.name || `#${mapping.id}`;
+              el.appendChild(act);
+            }
+            if (mapping.qty > 1) {
+              const qtyEl = document.createElement("span");
+              qtyEl.className = "slot-qty";
+              qtyEl.textContent = mapping.qty;
+              el.appendChild(qtyEl);
+            }
+          }
+        }
+      }
+
+      // Drag-and-drop from inventory
+      if (!key.fixed) {
+        el.addEventListener("dragover", (e) => { e.preventDefault(); el.classList.add("kb-drag-over"); });
+        el.addEventListener("dragleave", () => el.classList.remove("kb-drag-over"));
+        el.addEventListener("drop", (e) => {
+          e.preventDefault();
+          el.classList.remove("kb-drag-over");
+          try {
+            const data = JSON.parse(e.dataTransfer.getData("text/plain"));
+            if (data && data.item_id) {
+              runtime.keymap[key.code] = {
+                type: "item", id: data.item_id, name: data.name || "",
+                iconKey: data.iconKey || "", qty: data.qty || 1,
+              };
+              buildKeybindsUI();
+              saveKeymap();
+            }
+          } catch {}
+        });
+        // Right-click to clear
+        el.addEventListener("contextmenu", (e) => {
+          e.preventDefault();
+          if (runtime.keymap[key.code]) {
+            delete runtime.keymap[key.code];
+            buildKeybindsUI();
+            saveKeymap();
+          }
+        });
+      }
+
+      rowEl.appendChild(el);
+    }
+    keybindsGridEl.appendChild(rowEl);
+  }
+}
+
+function saveKeymap() {
+  try { localStorage.setItem("shlop.keymap", JSON.stringify(runtime.keymap)); } catch {}
+}
+
+function loadKeymap(savedKeymap) {
+  if (savedKeymap && typeof savedKeymap === "object" && Object.keys(savedKeymap).length > 0) {
+    runtime.keymap = savedKeymap;
+  } else {
+    try {
+      const stored = localStorage.getItem("shlop.keymap");
+      if (stored) runtime.keymap = JSON.parse(stored);
+    } catch {}
+  }
+  if (!runtime.keymap || Object.keys(runtime.keymap).length === 0) {
+    runtime.keymap = getDefaultKeymap();
   }
 }
 
@@ -2533,7 +2679,7 @@ function bindInput() {
       // Close any open UI windows
       {
         let closed = false;
-        for (const k of ["settings", "equip", "inventory", "keybinds"]) {
+        for (const k of ["settings", "equip", "inventory", "keybinds", "stat"]) {
           if (isUIWindowVisible(k)) {
             const el = getUIWindowEl(k);
             if (el) el.classList.add("hidden");
@@ -2551,7 +2697,15 @@ function bindInput() {
       return;
     }
 
-    // UI window toggles — work even when mouse is over a game window (input disabled)
+    // UI window toggles — driven by keymap
+    if (!event.repeat) {
+      const km = runtime.keymap?.[event.code];
+      if (km && km.type === "action") {
+        const winActions = { equip: 1, inventory: 1, keybinds: 1, stat: 1 };
+        if (winActions[km.id]) { toggleUIWindow(km.id); return; }
+      }
+    }
+    // Legacy keybinds fallback for window toggles
     if (event.code === runtime.keybinds.equip && !event.repeat) { toggleUIWindow("equip"); return; }
     if (event.code === runtime.keybinds.inventory && !event.repeat) { toggleUIWindow("inventory"); return; }
     if (event.code === runtime.keybinds.keybinds && !event.repeat) { toggleUIWindow("keybinds"); return; }
@@ -3022,6 +3176,7 @@ Object.assign(fn, {
   getIconDataUri, getItemSlotMax, hideTooltip, inventoryTypeById, isItemStackable,
   loadEquipIcon, loadItemIcon, loadItemName, loadItemWzInfo,
   refreshUIWindows, saveCharacter,
+  loadKeymap, saveKeymap,
 });
 
 // ── Character load / create → first map load ──

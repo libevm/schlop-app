@@ -868,53 +868,86 @@ body:has(.canvas-wrapper.fixed-res) {
   letter-spacing: 0.02em;
 }
 
-/* ── Keybinds grid ── */
-.keybinds-grid {
-  padding: 6px 8px;
+/* ── Key Config — keyboard layout (C++ UIKeyConfig parity) ── */
+.keybinds-keyboard {
+  padding: 6px 8px 8px;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  min-width: 200px;
-  max-height: 280px;
-  overflow-y: auto;
+  gap: 2px;
+  user-select: none;
 }
-
-.keybinds-grid .kb-row {
+.kb-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 2px;
 }
-
-.keybinds-grid .kb-label {
-  font-size: 11px;
-  color: #2a3650;
-  white-space: nowrap;
-}
-
-.keybinds-grid .keybind-btn {
-  min-width: 56px;
-  padding: 2px 8px;
-  font-size: 11px;
-  font-family: monospace;
-  text-align: center;
+.kb-key {
+  position: relative;
+  width: 36px;
+  height: 36px;
   border: 1px solid #8a9bb5;
   border-radius: 3px;
-  background: linear-gradient(180deg, #eef1f6, #d8dee8);
-  color: #2a3650;
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.3) inset;
+  background: linear-gradient(180deg, #e8ecf2 0%, #d4dae4 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-family: "Dotum", "Arial", sans-serif;
+  transition: border-color 0.1s, box-shadow 0.1s;
+  flex-shrink: 0;
 }
-
-.keybinds-grid .keybind-btn:hover {
-  background: linear-gradient(180deg, #f4f6fa, #e0e6f0);
+.kb-key:hover {
+  border-color: #6080b0;
+  background: linear-gradient(180deg, #f0f3f8, #dce2ec);
+  box-shadow: 0 0 0 1px rgba(96, 128, 176, 0.25);
+}
+.kb-key.kb-key-wide { width: 50px; }
+.kb-key.kb-key-wider { width: 60px; }
+.kb-key.kb-key-space { flex: 1; }
+.kb-key.kb-key-fixed { pointer-events: none; opacity: 0.5; }
+.kb-key-label {
+  font-size: 8px;
+  font-weight: 600;
+  color: #5a6a80;
+  line-height: 1;
+  position: absolute;
+  top: 2px;
+  left: 3px;
+}
+.kb-key-icon {
+  width: 24px;
+  height: 24px;
+  image-rendering: pixelated;
+  pointer-events: none;
+  margin-top: 4px;
+}
+.kb-key-action {
+  font-size: 7px;
+  color: #3a5070;
+  text-align: center;
+  line-height: 1.1;
+  max-width: 34px;
+  overflow: hidden;
+  pointer-events: none;
+  margin-top: 2px;
+}
+.kb-key.kb-has-item {
+  background: linear-gradient(180deg, #e6eef8 0%, #ccd8ea 100%);
   border-color: #6080b0;
 }
-
-.keybinds-grid .keybind-btn.listening {
-  border-color: #d4a020;
-  background: #fff8e0;
-  color: #8a6800;
-  animation: keybind-pulse 0.8s infinite;
+.kb-key.kb-drag-over {
+  border-color: #fbbf24;
+  box-shadow: 0 0 6px rgba(251, 191, 36, 0.5);
+  background: linear-gradient(180deg, #fff8e8 0%, #f0e8d0 100%);
+}
+.kb-key .slot-qty {
+  position: absolute;
+  bottom: 1px;
+  right: 2px;
+  font-size: 8px;
+  font-weight: 700;
+  color: #fff;
+  text-shadow: 0 0 3px #000, 0 1px 1px #000;
+  pointer-events: none;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
