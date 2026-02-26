@@ -510,12 +510,16 @@ const KB_LAYOUT = [
     { code: "Digit4", label: "4" }, { code: "Digit5", label: "5" }, { code: "Digit6", label: "6" },
     { code: "Digit7", label: "7" }, { code: "Digit8", label: "8" }, { code: "Digit9", label: "9" },
     { code: "Digit0", label: "0" }, { code: "Minus", label: "-" }, { code: "Equal", label: "=" },
+    { code: "_nav_gap", label: "", gap: true },
+    { code: "Insert", label: "Ins" }, { code: "Home", label: "Hm" }, { code: "PageUp", label: "PU" },
   ],
   [
     { code: "KeyQ", label: "Q" }, { code: "KeyW", label: "W" }, { code: "KeyE", label: "E" },
     { code: "KeyR", label: "R" }, { code: "KeyT", label: "T" }, { code: "KeyY", label: "Y" },
     { code: "KeyU", label: "U" }, { code: "KeyI", label: "I" }, { code: "KeyO", label: "O" },
     { code: "KeyP", label: "P" }, { code: "BracketLeft", label: "[" }, { code: "BracketRight", label: "]" },
+    { code: "_nav_gap", label: "", gap: true },
+    { code: "Delete", label: "Del" }, { code: "End", label: "End" }, { code: "PageDown", label: "PD" },
   ],
   [
     { code: "KeyA", label: "A" }, { code: "KeyS", label: "S" }, { code: "KeyD", label: "D" },
@@ -541,15 +545,12 @@ const KB_LAYOUT = [
 
 function getDefaultKeymap() {
   return {
-    ControlLeft: { type: "action", id: "attack" },
-    ControlRight: { type: "action", id: "attack" },
-    AltLeft: { type: "action", id: "jump" },
-    AltRight: { type: "action", id: "jump" },
     Space: { type: "action", id: "jump" },
+    KeyC: { type: "action", id: "attack" },
     KeyZ: { type: "action", id: "loot" },
+    KeyS: { type: "action", id: "stat" },
     KeyE: { type: "action", id: "equip" },
     KeyI: { type: "action", id: "inventory" },
-    KeyS: { type: "action", id: "stat" },
     KeyK: { type: "action", id: "keybinds" },
     F1: { type: "action", id: "face1" },
     F2: { type: "action", id: "face2" },
@@ -630,6 +631,12 @@ function buildKeybindsUI() {
     rowEl.className = "kb-row";
 
     for (const key of row) {
+      if (key.gap) {
+        const gap = document.createElement("div");
+        gap.className = "kb-nav-gap";
+        rowEl.appendChild(gap);
+        continue;
+      }
       const el = document.createElement("div");
       el.className = "kb-key";
       if (key.wide) el.classList.add("kb-key-wide");

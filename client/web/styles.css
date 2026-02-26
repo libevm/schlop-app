@@ -950,6 +950,11 @@ body:has(.canvas-wrapper.fixed-res) {
   background: linear-gradient(180deg, #f0f3f8, #dce2ec);
   box-shadow: 0 0 0 1px rgba(96, 128, 176, 0.25);
 }
+/* Spacer between main keys and nav block */
+.kb-nav-gap {
+  width: 8px;
+  flex-shrink: 0;
+}
 .kb-key.kb-key-wide {
   width: 50px;
 }
