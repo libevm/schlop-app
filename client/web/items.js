@@ -1075,12 +1075,15 @@ export function createDropFromServer(dropData, animate) {
   });
 }
 
+const statWindowEl = document.getElementById("stat-window");
+
 export function getUIWindowEl(key) {
   if (key === "equip") return equipWindowEl;
   if (key === "inventory") return inventoryWindowEl;
   if (key === "keybinds") return keybindsWindowEl;
   if (key === "settings") return settingsModalEl;
   if (key === "ping") return pingWindowEl;
+  if (key === "stat") return statWindowEl;
   return null;
 }
 

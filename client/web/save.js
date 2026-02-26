@@ -915,16 +915,22 @@ function updateStatusBar() {
 
 function updateStatWindow() {
   const p = runtime.player;
-  const el = (id) => document.getElementById(id);
-  const set = (id, v) => { const e = el(id); if (e) e.textContent = v; };
+  const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+  set("stat-name", p.name);
   set("stat-level", p.level);
   set("stat-job", p.job);
+  set("stat-fame", "0");
+  set("stat-damage", `${Math.floor(p.minDamage)} ~ ${Math.floor(p.maxDamage)}`);
+  set("stat-hp", `${p.hp} / ${p.maxHp}`);
+  set("stat-mp", `${p.mp} / ${p.maxMp}`);
   set("stat-str", p.str);
   set("stat-dex", p.dex);
   set("stat-int", p.int);
   set("stat-luk", p.luk);
-  set("stat-hp", `${p.hp}/${p.maxHp}`);
-  set("stat-mp", `${p.mp}/${p.maxMp}`);
+  set("stat-speed", `${p.stats.speed}%`);
+  set("stat-jump", `${p.stats.jump}%`);
+  set("stat-crit", `${p.critical}%`);
+  set("stat-acc", p.accuracy);
 }
 
 export function refreshEquipGrid() {

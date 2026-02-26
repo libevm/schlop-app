@@ -489,6 +489,12 @@ export function handleServerMessage(msg) {
         if (typeof s.int === "number") runtime.player.int = s.int;
         if (typeof s.luk === "number") runtime.player.luk = s.luk;
         if (typeof s.job === "string") runtime.player.job = s.job;
+        if (typeof s.speed === "number") runtime.player.stats.speed = s.speed;
+        if (typeof s.jump === "number") runtime.player.stats.jump = s.jump;
+        if (typeof s.min_damage === "number") runtime.player.minDamage = s.min_damage;
+        if (typeof s.max_damage === "number") runtime.player.maxDamage = s.max_damage;
+        if (typeof s.accuracy === "number") runtime.player.accuracy = s.accuracy;
+        if (typeof s.critical === "number") runtime.player.critical = s.critical;
       }
       fn.refreshUIWindows();
       break;

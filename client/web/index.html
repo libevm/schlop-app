@@ -220,20 +220,38 @@
         </div>
       </div>
 
-      <div id="stat-window" class="game-window hidden" style="top:60px;left:200px;min-width:160px">
+      <div id="stat-window" class="game-window hidden" style="top:60px;left:200px;width:200px">
         <div class="game-window-titlebar" data-window="stat">
           <span class="game-window-title">Character Stat</span>
           <button class="game-window-close" data-close="stat">&times;</button>
         </div>
         <div class="stat-window-body">
-          <div class="stat-row"><span class="stat-label">Level</span><span id="stat-level" class="stat-value">1</span></div>
-          <div class="stat-row"><span class="stat-label">Job</span><span id="stat-job" class="stat-value">Beginner</span></div>
-          <div class="stat-row"><span class="stat-label">STR</span><span id="stat-str" class="stat-value">12</span></div>
-          <div class="stat-row"><span class="stat-label">DEX</span><span id="stat-dex" class="stat-value">5</span></div>
-          <div class="stat-row"><span class="stat-label">INT</span><span id="stat-int" class="stat-value">4</span></div>
-          <div class="stat-row"><span class="stat-label">LUK</span><span id="stat-luk" class="stat-value">4</span></div>
-          <div class="stat-row"><span class="stat-label">HP</span><span id="stat-hp" class="stat-value">50/50</span></div>
-          <div class="stat-row"><span class="stat-label">MP</span><span id="stat-mp" class="stat-value">5/5</span></div>
+          <div class="stat-section">
+            <div class="stat-row"><span class="stat-label">Name</span><span id="stat-name" class="stat-value stat-value-name"></span></div>
+            <div class="stat-row"><span class="stat-label">Job</span><span id="stat-job" class="stat-value">Beginner</span></div>
+            <div class="stat-row"><span class="stat-label">Level</span><span id="stat-level" class="stat-value">1</span></div>
+            <div class="stat-row"><span class="stat-label">Fame</span><span id="stat-fame" class="stat-value">0</span></div>
+          </div>
+          <div class="stat-divider"></div>
+          <div class="stat-section">
+            <div class="stat-row"><span class="stat-label">Damage</span><span id="stat-damage" class="stat-value">1 ~ 1</span></div>
+            <div class="stat-row"><span class="stat-label">HP</span><span id="stat-hp" class="stat-value">50 / 50</span></div>
+            <div class="stat-row"><span class="stat-label">MP</span><span id="stat-mp" class="stat-value">5 / 5</span></div>
+          </div>
+          <div class="stat-divider"></div>
+          <div class="stat-section">
+            <div class="stat-row"><span class="stat-label">STR</span><span id="stat-str" class="stat-value">12</span></div>
+            <div class="stat-row"><span class="stat-label">DEX</span><span id="stat-dex" class="stat-value">5</span></div>
+            <div class="stat-row"><span class="stat-label">INT</span><span id="stat-int" class="stat-value">4</span></div>
+            <div class="stat-row"><span class="stat-label">LUK</span><span id="stat-luk" class="stat-value">4</span></div>
+          </div>
+          <div class="stat-divider"></div>
+          <div class="stat-section">
+            <div class="stat-row"><span class="stat-label">Speed</span><span id="stat-speed" class="stat-value">100%</span></div>
+            <div class="stat-row"><span class="stat-label">Jump</span><span id="stat-jump" class="stat-value">100%</span></div>
+            <div class="stat-row"><span class="stat-label">Critical</span><span id="stat-crit" class="stat-value">5%</span></div>
+            <div class="stat-row"><span class="stat-label">Accuracy</span><span id="stat-acc" class="stat-value">6</span></div>
+          </div>
         </div>
       </div>
 
