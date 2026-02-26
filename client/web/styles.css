@@ -79,6 +79,15 @@
   .table {
     display: table;
   }
+  .flex-shrink {
+    flex-shrink: 1;
+  }
+  .flex-grow {
+    flex-grow: 1;
+  }
+  .grow {
+    flex-grow: 1;
+  }
   .border-collapse {
     border-collapse: collapse;
   }
@@ -91,12 +100,23 @@
   .flex-wrap {
     flex-wrap: wrap;
   }
+  .truncate {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .rounded {
     border-radius: 0.25rem;
   }
   .border {
     border-style: var(--tw-border-style);
     border-width: 1px;
+  }
+  .mask-repeat {
+    mask-repeat: repeat;
+  }
+  .text-justify {
+    text-align: justify;
   }
   .shadow {
     --tw-shadow: 0 1px 3px 0 var(--tw-shadow-color, rgb(0 0 0 / 0.1)), 0 1px 2px -1px var(--tw-shadow-color, rgb(0 0 0 / 0.1));
@@ -105,6 +125,10 @@
   .ring {
     --tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(1px + var(--tw-ring-offset-width)) var(--tw-ring-color, currentcolor);
     box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
+  }
+  .outline {
+    outline-style: var(--tw-outline-style);
+    outline-width: 1px;
   }
   .blur {
     --tw-blur: blur(8px);
@@ -506,7 +530,7 @@ body:has(.canvas-wrapper.fixed-res) {
 .status-gauge {
   position: relative;
   flex: 1;
-  height: 18px;
+  height: 22px;
   border-radius: 3px;
   overflow: hidden;
   border: 1px solid rgba(40, 55, 80, 0.9);
@@ -582,7 +606,7 @@ body:has(.canvas-wrapper.fixed-res) {
   display: flex;
 }
 .exp-gauge {
-  height: 14px;
+  height: 18px;
 }
 .stat-window-body {
   padding: 6px 10px 8px;
@@ -1457,6 +1481,11 @@ body:has(.canvas-wrapper.fixed-res) {
   inherits: false;
   initial-value: 0 0 #0000;
 }
+@property --tw-outline-style {
+  syntax: "*";
+  inherits: false;
+  initial-value: solid;
+}
 @property --tw-blur {
   syntax: "*";
   inherits: false;
@@ -1537,6 +1566,7 @@ body:has(.canvas-wrapper.fixed-res) {
       --tw-ring-offset-width: 0px;
       --tw-ring-offset-color: #fff;
       --tw-ring-offset-shadow: 0 0 #0000;
+      --tw-outline-style: solid;
       --tw-blur: initial;
       --tw-brightness: initial;
       --tw-contrast: initial;

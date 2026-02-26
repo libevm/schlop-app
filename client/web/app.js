@@ -486,10 +486,10 @@ function getDefaultKeymap() {
     F1: { type: "action", id: "face1" },
     F2: { type: "action", id: "face2" },
     F3: { type: "action", id: "face3" },
-    F5: { type: "action", id: "face4" },
-    F6: { type: "action", id: "face5" },
-    F7: { type: "action", id: "face6" },
-    F8: { type: "action", id: "face7" },
+    F4: { type: "action", id: "face4" },
+    F5: { type: "action", id: "face5" },
+    F6: { type: "action", id: "face6" },
+    F7: { type: "action", id: "face7" },
   };
 }
 
