@@ -245,21 +245,15 @@ function getAfterimageRange(aiName: string, stance: string, weaponLevel: number)
  * C++ checks `range.overlaps(mob_sprite_bounds)` — the mob's full sprite rect.
  * Server only has the mob's foot position (x,y). To compensate:
  * - Expand the attack rect by estimated mob sprite dimensions.
- * - Typical mob sprites: ~50-80px wide (±40px from center), ~40-80px tall (above feet).
- *
- * This effectively checks: "would the attack rect overlap a mob sprite at this position?"
+ * This mirrors C++ Combat::apply_move range construction exactly.
  */
-const MOB_SPRITE_HALF_WIDTH = 40;  // mobs extend ~40px left/right of their position
-const MOB_SPRITE_HEIGHT = 60;      // mobs extend ~60px above their foot position
-
 function buildAttackRect(px: number, py: number, facingLeft: boolean, range: { left: number; right: number; top: number; bottom: number }): { l: number; r: number; t: number; b: number } {
   // C++ Combat::apply_move: hrange = range.left * attack.hrange (hrange=1.0)
   const hrange = range.left; // negative value = distance in front
 
-  let rect: { l: number; r: number; t: number; b: number };
   if (facingLeft) {
     // Facing left: hitbox is to the LEFT of player
-    rect = {
+    return {
       l: px + hrange,           // px + (-84) = px - 84
       r: px + range.right,      // px + (-20) = px - 20
       t: py + range.top,
@@ -267,23 +261,71 @@ function buildAttackRect(px: number, py: number, facingLeft: boolean, range: { l
     };
   } else {
     // Facing right: hitbox is to the RIGHT of player (mirrored)
-    rect = {
+    return {
       l: px - range.right,      // px - (-20) = px + 20
       r: px - hrange,           // px - (-84) = px + 84
       t: py + range.top,
       b: py + range.bottom,
     };
   }
+}
 
-  // Expand attack rect by mob sprite dimensions to simulate sprite-bounds overlap.
-  // If a mob's sprite (centered at mob.x, extending mob.y-height to mob.y) would overlap
-  // the attack rect, we want the mob's foot position to be "in range".
-  rect.l -= MOB_SPRITE_HALF_WIDTH;
-  rect.r += MOB_SPRITE_HALF_WIDTH;
-  rect.t -= MOB_SPRITE_HEIGHT;
-  rect.b += MOB_SPRITE_HEIGHT;
+/**
+ * Cache: mobId → { lt: {x,y}, rb: {x,y} } — mob sprite bounds from WZ (stand frame 0).
+ * Matches C++ Mob::is_in_range which uses animations.at(stance).get_bounds().
+ */
+const _mobBoundsCache = new Map<string, { ltx: number; lty: number; rbx: number; rby: number }>();
+const MOB_BOUNDS_FALLBACK = { ltx: -40, lty: -60, rbx: 40, rby: 0 };
 
-  return rect;
+function getMobBounds(mobId: string): { ltx: number; lty: number; rbx: number; rby: number } {
+  if (_mobBoundsCache.has(mobId)) return _mobBoundsCache.get(mobId)!;
+
+  const { resolve: rp } = require("path");
+  const { existsSync: ex, readFileSync: rf } = require("fs");
+  const { parseWzXml: pz } = require("./wz-xml.ts");
+  const PROJECT_ROOT = rp(__dirname, "../..");
+  const padded = mobId.padStart(7, "0");
+  const fp = rp(PROJECT_ROOT, "resourcesv3", "Mob.wz", `${padded}.img.xml`);
+
+  let result = MOB_BOUNDS_FALLBACK;
+  if (ex(fp)) {
+    try {
+      const json = pz(rf(fp, "utf-8"));
+      // Try stand first, then move — mirrors C++ which uses current stance but stand is most common
+      for (const stanceName of ["stand", "move"]) {
+        const stance = json?.$$?.find((s: any) => s.$imgdir === stanceName);
+        if (!stance?.$$) continue;
+        const frame0 = stance.$$.find((c: any) => c.$canvas === "0" || c.$imgdir === "0");
+        if (!frame0?.$$) continue;
+        const lt = frame0.$$.find((c: any) => c.$vector === "lt");
+        const rb = frame0.$$.find((c: any) => c.$vector === "rb");
+        if (lt && rb) {
+          result = { ltx: Number(lt.x), lty: Number(lt.y), rbx: Number(rb.x), rby: Number(rb.y) };
+          break;
+        }
+      }
+    } catch {}
+  }
+  _mobBoundsCache.set(mobId, result);
+  return result;
+}
+
+/**
+ * Check if attack rect overlaps with a mob's sprite bounds (shifted by mob position).
+ * Mirrors C++ Mob::is_in_range: `range.overlaps(bounds.shift(get_position()))`.
+ */
+function attackOverlapsMob(
+  attackRect: { l: number; r: number; t: number; b: number },
+  mobX: number, mobY: number,
+  mobBounds: { ltx: number; lty: number; rbx: number; rby: number },
+): boolean {
+  // Mob sprite rect in world space
+  const ml = mobX + mobBounds.ltx;
+  const mr = mobX + mobBounds.rbx;
+  const mt = mobY + mobBounds.lty;
+  const mb = mobY + mobBounds.rby;
+  // Rectangle overlap: both horizontal and vertical ranges must overlap
+  return attackRect.l <= mr && attackRect.r >= ml && attackRect.t <= mb && attackRect.b >= mt;
 }
 
 /**
@@ -2201,37 +2243,22 @@ export function handleClientMessage(
       }
 
       // Find closest alive mob in range (mobcount=1 for regular attack)
+      // Mirrors C++ Combat::find_closest + Mob::is_in_range:
+      //   range.overlaps(mob_sprite_bounds.shift(mob_position))
+      const mobIds = _mapMobIds.get(client.mapId);
       let bestIdx = -1;
       let bestDist = Infinity;
-      let debugClosestMiss = { idx: -1, dist: Infinity, mx: 0, my: 0, reason: "" };
       for (const [idx, mob] of mobStates) {
         if (mob.dead) continue;
+        // Get this mob's sprite bounds from WZ (cached)
+        const mobId = mobIds?.get(idx) ?? "";
+        const bounds = getMobBounds(mobId);
+        if (!attackOverlapsMob(attackRect, mob.x, mob.y, bounds)) continue;
         const dist = Math.abs(mob.x - px) + Math.abs(mob.y - py);
-        if (mob.x < attackRect.l || mob.x > attackRect.r ||
-            mob.y < attackRect.t || mob.y > attackRect.b) {
-          // Track closest miss for debug
-          if (dist < debugClosestMiss.dist) {
-            const reason = mob.x < attackRect.l ? `x ${mob.x} < l ${attackRect.l}`
-              : mob.x > attackRect.r ? `x ${mob.x} > r ${attackRect.r}`
-              : mob.y < attackRect.t ? `y ${mob.y} < t ${attackRect.t}`
-              : `y ${mob.y} > b ${attackRect.b}`;
-            debugClosestMiss = { idx, dist, mx: mob.x, my: mob.y, reason };
-          }
-          continue;
-        }
         if (dist < bestDist) {
           bestDist = dist;
           bestIdx = idx;
         }
-      }
-      // Always log attack result for debugging
-      if (bestIdx >= 0) {
-        const hitMob = mobStates.get(bestIdx)!;
-        console.log(`[ATTACK HIT] player(${px},${py}) facing=${facingLeft?"L":"R"} stance=${msg.stance} rect=[${Math.round(attackRect.l)},${Math.round(attackRect.r)}]x[${Math.round(attackRect.t)},${Math.round(attackRect.b)}] → mob#${bestIdx}(${hitMob.x},${hitMob.y}) dist=${bestDist}`);
-      } else if (debugClosestMiss.idx >= 0) {
-        console.log(`[ATTACK MISS] player(${px},${py}) facing=${facingLeft?"L":"R"} stance=${msg.stance} rect=[${Math.round(attackRect.l)},${Math.round(attackRect.r)}]x[${Math.round(attackRect.t)},${Math.round(attackRect.b)}] closestMob#${debugClosestMiss.idx}(${debugClosestMiss.mx},${debugClosestMiss.my}) dist=${debugClosestMiss.dist} reason=${debugClosestMiss.reason}`);
-      } else {
-        console.log(`[ATTACK MISS] player(${px},${py}) facing=${facingLeft?"L":"R"} stance=${msg.stance} — no alive mobs on map`);
       }
 
       // Broadcast attack animation to other players
