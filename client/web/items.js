@@ -680,7 +680,7 @@ export function standUpFromChair() {
 export function updateGroundDrops(dt) {
   // Update meso animation (shared across all meso drops)
   updateMesoAnimation(dt);
-  const ticks = Math.max(1, Math.round(dt * 125)); // C++ parity: 125 TPS (TIMESTEP=8ms)
+  const ticks = Math.max(1, Math.round(dt * 60)); // 60 TPS — one tick per frame at 60fps
   for (let i = groundDrops.length - 1; i >= 0; i--) {
     const drop = groundDrops[i];
 
