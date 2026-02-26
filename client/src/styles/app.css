@@ -960,11 +960,18 @@ body:has(.canvas-wrapper.fixed-res) {
 .kb-palette-items {
   display: flex;
   flex-wrap: wrap;
-  gap: 3px;
+  gap: 2px;
 }
 .kb-action-chip {
-  padding: 3px 8px;
-  font-size: 10px;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2px;
+  font-size: 8px;
+  line-height: 1.1;
   font-family: "Dotum", "Arial", sans-serif;
   color: #2a3650;
   background: linear-gradient(180deg, #e8ecf2 0%, #d4dae4 100%);
@@ -973,6 +980,8 @@ body:has(.canvas-wrapper.fixed-res) {
   cursor: pointer;
   transition: border-color 0.1s, background 0.1s;
   user-select: none;
+  overflow: hidden;
+  word-break: break-word;
 }
 .kb-action-chip:hover {
   background: linear-gradient(180deg, #f0f3f8 0%, #dce2ec 100%);
