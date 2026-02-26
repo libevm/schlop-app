@@ -202,8 +202,19 @@ Reactors and drops are drawn per-layer via callback hooks passed to `drawMapLaye
 - Quest list: "⚡ AVAILABLE QUESTS" gold header, entries as `▸ (Lv.XX) Name`
 - Category indicators: ✦ green (completable), ◆ blue (in-progress), ▸ dark (available)
 - Hover turns text red (matching reference)
-- "END CHAT" green button (left), "NEXT ▸" blue button (right)
-- Click quest → drill into specific dialogue with Accept/Complete buttons
+- Footer buttons match C++ UINpcTalk button types:
+  - Accept page: ACCEPT (green) + DECLINE (grey) — C++ QYES/QNO
+  - Complete page: COMPLETE (green) + NOT YET (grey) — C++ QCYES/QCNO
+  - Regular: END CHAT (green) + NEXT ▸ (blue) — C++ OK/NEXT
+- Click quest → drill into specific dialogue
+
+### Quest Log HUD (`app.js`, C++ UIQuestLog parity)
+- Toggle with Q key (default, matching C++ KeyAction::QUESTLOG)
+- 3 tabs: Available (TAB0), In Progress (TAB1), Completed (TAB2)
+- Available: gold ⚡ prefix, In Progress: blue ◆ (click to forfeit), Completed: green ✓
+- Scrollable (mouse wheel), max 10 visible rows, close with X/Escape
+- `forfeitQuest()` resets state 1→0, server allows backward transition
+- `getQuestsByState(state)`, `getAvailableQuests()` for populating tabs
 
 ---
 
