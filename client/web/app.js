@@ -687,8 +687,9 @@ function buildKeybindsUI() {
             const iconUri = fn.getIconDataUri ? fn.getIconDataUri(mapping.iconKey) : null;
             if (iconUri) {
               const img = document.createElement("img");
-              img.className = "kb-key-icon";
+              img.className = "kb-item-overlay";
               img.src = iconUri;
+              img.draggable = false;
               el.appendChild(img);
             } else {
               const act = document.createElement("span");
@@ -801,8 +802,9 @@ function buildKeybindsUI() {
             const iconUri = fn.getIconDataUri ? fn.getIconDataUri(mapping.iconKey) : null;
             if (iconUri) {
               const img = document.createElement("img");
-              img.className = "kb-key-icon";
+              img.className = "kb-item-overlay";
               img.src = iconUri;
+              img.draggable = false;
               el.appendChild(img);
             }
           }

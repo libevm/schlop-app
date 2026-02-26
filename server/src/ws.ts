@@ -242,31 +242,48 @@ function getAfterimageRange(aiName: string, stance: string, weaponLevel: number)
 /**
  * Build world-space attack rectangle from afterimage range (mirrors C++ Combat::apply_move).
  *
- * C++ uses mob sprite bounds for overlap check; server uses mob position point,
- * so we add MOB_HITBOX_PADDING to vertical range to compensate.
+ * C++ checks `range.overlaps(mob_sprite_bounds)` — the mob's full sprite rect.
+ * Server only has the mob's foot position (x,y). To compensate:
+ * - Expand the attack rect by estimated mob sprite dimensions.
+ * - Typical mob sprites: ~50-80px wide (±40px from center), ~40-80px tall (above feet).
+ *
+ * This effectively checks: "would the attack rect overlap a mob sprite at this position?"
  */
-const MOB_HITBOX_PADDING_Y = 30; // mobs are roughly 30-60px tall
+const MOB_SPRITE_HALF_WIDTH = 40;  // mobs extend ~40px left/right of their position
+const MOB_SPRITE_HEIGHT = 60;      // mobs extend ~60px above their foot position
 
 function buildAttackRect(px: number, py: number, facingLeft: boolean, range: { left: number; right: number; top: number; bottom: number }): { l: number; r: number; t: number; b: number } {
   // C++ Combat::apply_move: hrange = range.left * attack.hrange (hrange=1.0)
   const hrange = range.left; // negative value = distance in front
 
+  let rect: { l: number; r: number; t: number; b: number };
   if (facingLeft) {
     // Facing left: hitbox is to the LEFT of player
-    return {
+    rect = {
       l: px + hrange,           // px + (-84) = px - 84
       r: px + range.right,      // px + (-20) = px - 20
-      t: py + range.top - MOB_HITBOX_PADDING_Y,
-      b: py + range.bottom + MOB_HITBOX_PADDING_Y,
+      t: py + range.top,
+      b: py + range.bottom,
     };
   } else {
     // Facing right: hitbox is to the RIGHT of player (mirrored)
-    return {
+    rect = {
       l: px - range.right,      // px - (-20) = px + 20
       r: px - hrange,           // px - (-84) = px + 84
-      t: py + range.top - MOB_HITBOX_PADDING_Y,
-      b: py + range.bottom + MOB_HITBOX_PADDING_Y,
+      t: py + range.top,
+      b: py + range.bottom,
     };
+  }
+
+  // Expand attack rect by mob sprite dimensions to simulate sprite-bounds overlap.
+  // If a mob's sprite (centered at mob.x, extending mob.y-height to mob.y) would overlap
+  // the attack rect, we want the mob's foot position to be "in range".
+  rect.l -= MOB_SPRITE_HALF_WIDTH;
+  rect.r += MOB_SPRITE_HALF_WIDTH;
+  rect.t -= MOB_SPRITE_HEIGHT;
+  rect.b += MOB_SPRITE_HEIGHT;
+
+  return rect;
   }
 }
 /**
