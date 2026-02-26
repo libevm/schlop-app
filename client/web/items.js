@@ -685,12 +685,16 @@ export function updateGroundDrops(dt) {
     const drop = groundDrops[i];
 
     if (drop.pickingUp) {
-      // C++ PICKEDUP: vspeed = -4.5, opacity -= 1/48 per tick, fly toward looter
+      // C++ PICKEDUP: fly toward looter's *current* position (tracks movement)
       const elapsed = performance.now() - drop.pickupStart;
       const t = Math.min(1, elapsed / LOOT_ANIM_DURATION);
-      // Fly toward the looter (local player or remote player)
-      const tx = drop._lootTargetX ?? runtime.player.x;
-      const ty = drop._lootTargetY ?? (runtime.player.y - 40);
+      // Resolve live target position — player may have moved since pickup started
+      let tx, ty;
+      if (drop._lootTargetId) {
+        const rp = remotePlayers.get(drop._lootTargetId);
+        if (rp) { tx = rp.renderX; ty = rp.renderY - 40; }
+      }
+      if (tx === undefined) { tx = runtime.player.x; ty = runtime.player.y - 40; }
       const hdelta = tx - drop.x;
       const vdelta = ty - drop.y;
       drop.x += hdelta * 0.12;
@@ -883,8 +887,7 @@ export function tryLootDrop() {
 export function lootDropLocally(drop) {
   drop.pickingUp = true;
   drop.pickupStart = performance.now();
-  drop._lootTargetX = runtime.player.x;
-  drop._lootTargetY = runtime.player.y - 40;
+  drop._lootTargetId = null; // null = local player (tracked live each frame)
 
   // Meso drops: add to meso balance, don't touch inventory
   if (drop.meso) {
@@ -977,16 +980,8 @@ export function animateDropPickup(dropId, looterId) {
   if (drop && !drop.pickingUp) {
     drop.pickingUp = true;
     drop.pickupStart = performance.now();
-    // Fly toward the looter's position
-    const rp = remotePlayers.get(looterId);
-    if (rp) {
-      drop._lootTargetX = rp.renderX;
-      drop._lootTargetY = rp.renderY - 40;
-    } else {
-      // Fallback to local player (shouldn't happen, but safe)
-      drop._lootTargetX = runtime.player.x;
-      drop._lootTargetY = runtime.player.y - 40;
-    }
+    // Store looter ID — position is resolved live each frame in updateGroundDrops
+    drop._lootTargetId = looterId || null;
   }
 }
 
