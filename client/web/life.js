@@ -45,6 +45,7 @@ import {
 } from "./util.js";
 import { wsSend, _wsConnected, _isMobAuthority } from "./net.js";
 import { canvasToImageBitmap } from "./wz-canvas-decode.js";
+import { getNpcQuestIconType, drawQuestIcon, updateQuestIconAnimation, getQuestDialogueForNpc, acceptQuest, completeQuest } from "./quests.js";
 
 // ─── Life (Mob/NPC) Sprite System ─────────────────────────────────────────────
 // (lifeAnimations moved to state.js)
@@ -1426,6 +1427,12 @@ export function drawLifeSprites(filterLayer, lifeEntriesForLayer = null) {
       if (bubble && bubble.text && performance.now() < bubble.expiresAt) {
         drawNpcAmbientBubble(screenX, screenY - frame.originY, bubble.text, bubble.expiresAt);
       }
+
+      // Draw quest icon above NPC if they have an available/completable quest
+      const questIconType = getNpcQuestIconType(life.id);
+      if (questIconType !== null) {
+        drawQuestIcon(screenX, screenY - frame.originY, questIconType);
+      }
     }
   }
 }
@@ -2100,23 +2107,39 @@ export function openNpcDialogue(npcResult) {
 
   // No range check — player can click any visible NPC to talk
 
-  // Build dialogue lines based on NPC type
-  const scriptDef = anim.scriptId ? NPC_SCRIPTS[anim.scriptId] : null;
-
   const npcWzId = String(life.id); // WZ NPC ID (e.g. "1012000") — sent to server for validation
 
+  // Check for quest dialogue first (highest priority)
+  const questDialogue = getQuestDialogueForNpc(npcWzId);
+
   let lines;
-  if (scriptDef) {
-    // Known script — use specific handler
-    lines = buildScriptDialogue(scriptDef, npcWzId, npcX, npcY);
-  } else if (anim.scriptId) {
-    // Has a script but no explicit handler — show flavor text + travel options
-    lines = buildFallbackScriptDialogue(anim.name, npcWzId, anim.dialogue);
-  } else if (anim.dialogue && anim.dialogue.length > 0) {
-    // No script — just show flavor text
-    lines = anim.dialogue;
+  if (questDialogue) {
+    // Quest dialogue — convert to displayable lines
+    lines = questDialogue.lines.map(l => {
+      if (typeof l === "object" && l.type === "quest_accept") {
+        return { type: "option", label: l.text, action: () => { acceptQuest(l.questId); closeNpcDialogue(); } };
+      }
+      if (typeof l === "object" && l.type === "quest_complete") {
+        return { type: "option", label: l.text, action: () => { completeQuest(l.questId); closeNpcDialogue(); } };
+      }
+      return l;
+    });
   } else {
-    lines = ["..."];
+    // Build dialogue lines based on NPC type
+    const scriptDef = anim.scriptId ? NPC_SCRIPTS[anim.scriptId] : null;
+
+    if (scriptDef) {
+      // Known script — use specific handler
+      lines = buildScriptDialogue(scriptDef, npcWzId, npcX, npcY);
+    } else if (anim.scriptId) {
+      // Has a script but no explicit handler — show flavor text + travel options
+      lines = buildFallbackScriptDialogue(anim.name, npcWzId, anim.dialogue);
+    } else if (anim.dialogue && anim.dialogue.length > 0) {
+      // No script — just show flavor text
+      lines = anim.dialogue;
+    } else {
+      lines = ["..."];
+    }
   }
 
   runtime.npcDialogue = {
@@ -2129,9 +2152,10 @@ export function openNpcDialogue(npcResult) {
     npcWorldY: npcY,
     npcIdx: idx,
     hoveredOption: -1,
-    scriptId: anim.scriptId || "",
+    scriptId: questDialogue ? "" : (anim.scriptId || ""),
+    questId: questDialogue?.questId || null,
   };
-  rlog(`NPC dialogue opened: ${anim.name} (${life.id}), script=${anim.scriptId || "none"}, ${lines.length} lines`);
+  rlog(`NPC dialogue opened: ${anim.name} (${life.id}), script=${anim.scriptId || "none"}, quest=${questDialogue?.questId || "none"}, ${lines.length} lines`);
 }
 
 export function closeNpcDialogue() {

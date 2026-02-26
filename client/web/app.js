@@ -144,6 +144,10 @@ import {
   loadDamageNumberSprites, damageNumbers,
 } from './life.js';
 
+import {
+  loadQuestData, loadQuestIcons, updateQuestIconAnimation,
+} from './quests.js';
+
 // Player physics, foothold helpers, wall collision, camera
 import {
   findGroundLanding, findFootholdAtXNearY, findFootholdById, findFootholdBelow,
@@ -2299,6 +2303,7 @@ function update(dt) {
   updatePortalAnimations(dt * 1000);
   updateFaceAnimation(dt);
   updateLifeAnimations(dt * 1000);
+  updateQuestIconAnimation(dt * 1000);
   updateMobTouchCollisions();
   updateMobCombatStates(dt * 1000);
   updateDamageNumbers(dt);
@@ -2431,6 +2436,9 @@ async function loadMap(mapId, spawnPortalName = null, spawnFromPortalTransfer = 
   loadMapStringData().catch(() => {});
   // Preload WZ damage number digit sprites (non-blocking)
   loadDamageNumberSprites().catch(() => {});
+  // Load quest data and quest icons (non-blocking)
+  loadQuestData().catch(() => {});
+  loadQuestIcons().catch(() => {});
 
   try {
     const requestedMapId = String(mapId).trim();
