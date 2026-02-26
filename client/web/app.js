@@ -2701,7 +2701,7 @@ function bindInput() {
       const km = runtime.keymap?.[event.code];
       if (km && km.type === "action") {
         const winActions = { equip: 1, inventory: 1, keybinds: 1, stat: 1 };
-        if (winActions[km.id]) { toggleUIWindow(km.id); return; }
+        if (winActions[km.id]) { event.preventDefault(); toggleUIWindow(km.id); return; }
       }
     }
     // Legacy keybinds fallback for window toggles
@@ -2718,7 +2718,9 @@ function bindInput() {
     }
 
     if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Space",
-         "PageUp", "PageDown", "Home", "End", "Tab"].includes(event.code)) {
+         "PageUp", "PageDown", "Home", "End", "Tab",
+         "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8",
+         "F9", "F10", "F11", "F12"].includes(event.code)) {
       event.preventDefault();
     }
 
