@@ -530,7 +530,7 @@ body:has(.canvas-wrapper.fixed-res) {
 .status-gauge {
   position: relative;
   flex: 1;
-  height: 22px;
+  height: 18px;
   border-radius: 3px;
   overflow: hidden;
   border: 1px solid rgba(40, 55, 80, 0.9);
@@ -606,7 +606,7 @@ body:has(.canvas-wrapper.fixed-res) {
   display: flex;
 }
 .exp-gauge {
-  height: 18px;
+  height: 14px;
 }
 .stat-window-body {
   padding: 6px 10px 8px;
@@ -645,9 +645,9 @@ body:has(.canvas-wrapper.fixed-res) {
 }
 .pickup-journal {
   position: absolute;
+  bottom: 84px;
   right: 10px;
-  bottom: 90px;
-  z-index: 21;
+  z-index: 16;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -950,21 +950,6 @@ body:has(.canvas-wrapper.fixed-res) {
   background: linear-gradient(180deg, #f0f3f8, #dce2ec);
   box-shadow: 0 0 0 1px rgba(96, 128, 176, 0.25);
 }
-/* Row layout: main keys left, nav keys right */
-.kb-row-main {
-  display: flex;
-  gap: 2px;
-  flex: 1;
-  min-width: 0;
-}
-.kb-row-nav {
-  display: flex;
-  gap: 2px;
-  margin-left: 10px;
-  flex-shrink: 0;
-  /* Fixed width: 3 keys × 36px + 2 gaps × 2px = 112px */
-  width: 112px;
-}
 .kb-key.kb-key-wide {
   width: 50px;
 }
@@ -987,34 +972,16 @@ body:has(.canvas-wrapper.fixed-res) {
   top: 2px;
   left: 3px;
 }
-/* Item icon — covers the whole key as overlay (like face icons) */
-.kb-item-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
+.kb-key-icon {
+  width: 24px;
+  height: 24px;
   image-rendering: pixelated;
   pointer-events: none;
-  opacity: 0.8;
-  padding: 2px;
-  box-sizing: border-box;
-}
-/* Key with a text action bound (Equip, Items, Stats, etc.) */
-.kb-key.kb-has-action {
-  background: linear-gradient(180deg, #d4e4f8 0%, #b8cce8 100%);
-  border-color: #5080c0;
-  box-shadow: inset 0 0 0 1px rgba(80, 128, 192, 0.15);
-}
-.kb-key.kb-has-action:hover {
-  background: linear-gradient(180deg, #dceafc 0%, #c4d6f0 100%);
-  border-color: #4070b0;
+  margin-top: 4px;
 }
 .kb-key-action {
   font-size: 7px;
-  color: #1a3a6a;
-  font-weight: 600;
+  color: #3a5070;
   text-align: center;
   line-height: 1.1;
   max-width: 34px;
@@ -1022,43 +989,9 @@ body:has(.canvas-wrapper.fixed-res) {
   pointer-events: none;
   margin-top: 2px;
 }
-/* Face emotion icon — covers the whole key as overlay */
-.kb-key.kb-has-face {
-  background: linear-gradient(180deg, #e0daf0 0%, #c8c0dc 100%);
-  border-color: #8878b0;
-}
-.kb-key.kb-has-face:hover {
-  background: linear-gradient(180deg, #eae4f6 0%, #d4cce6 100%);
-  border-color: #7060a0;
-}
-.kb-face-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  image-rendering: pixelated;
-  pointer-events: none;
-  opacity: 0.75;
-  padding: 2px;
-  box-sizing: border-box;
-}
-/* Face icon in palette chip / ghost */
-.kb-action-chip-face {
-  background: linear-gradient(180deg, #e0daf0 0%, #c8c0dc 100%);
-  border-color: #8878b0;
-}
-.kb-action-chip-face:hover {
-  background: linear-gradient(180deg, #eae4f6 0%, #d4cce6 100%);
-  border-color: #7060a0;
-}
-.kb-face-chip-icon {
-  width: 28px;
-  height: 28px;
-  object-fit: contain;
-  image-rendering: pixelated;
-  pointer-events: none;
+.kb-key-action.kb-key-emoji {
+  font-size: 16px;
+  margin-top: 0;
 }
 .kb-key.kb-key-empty {
   opacity: 0.4;

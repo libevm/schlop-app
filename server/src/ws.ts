@@ -75,7 +75,7 @@ const CHAT_COOLDOWN_MS = 1000;       // Max 1 chat msg/sec
 const CHAT_MAX_LENGTH = 200;         // Max characters per chat message
 const LOOT_COOLDOWN_MS = 400;        // Max ~2.5 loots/sec
 const FACE_COOLDOWN_MS = 500;        // Max 2 face changes/sec
-const MOB_STATE_MAX_MOVE_PX = 30;    // Max mob move per update tick (prevents teleporting mobs)
+const MOB_STATE_MAX_MOVE_PX = 200;   // Max mob move per update tick (allows knockback/gravity, prevents teleporting)
 const DROP_PROXIMITY_PX = 300;       // Max distance from player to drop position
 
 export interface InventoryItem {
@@ -284,8 +284,8 @@ function buildAttackRect(px: number, py: number, facingLeft: boolean, range: { l
   rect.b += MOB_SPRITE_HEIGHT;
 
   return rect;
-  }
 }
+
 /**
  * Player damage constants — mirrors C++ CharStats::close_totalstats() for beginners.
  *
@@ -2123,20 +2123,13 @@ export function handleClientMessage(
       if (roomManager.mobAuthority.get(client.mapId) !== client.id) break;
 
       // Update server-side mob positions from authority (used for range checks)
-      // Validate: mob can only move a limited distance per update to prevent teleporting
       const mobStates = _mapMobStates.get(client.mapId);
       if (mobStates && Array.isArray(msg.mobs)) {
         for (const m of msg.mobs) {
           const st = mobStates.get(m.idx);
           if (st && !st.dead) {
-            const dx = Math.abs(Number(m.x) - st.x);
-            const dy = Math.abs(Number(m.y) - st.y);
-            // Allow reasonable movement per tick; reject teleports
-            if (dx <= MOB_STATE_MAX_MOVE_PX && dy <= MOB_STATE_MAX_MOVE_PX) {
-              st.x = Number(m.x);
-              st.y = Number(m.y);
-            }
-            // else: silently ignore this mob's position update
+            st.x = Number(m.x);
+            st.y = Number(m.y);
           }
         }
       }
@@ -2210,15 +2203,35 @@ export function handleClientMessage(
       // Find closest alive mob in range (mobcount=1 for regular attack)
       let bestIdx = -1;
       let bestDist = Infinity;
+      let debugClosestMiss = { idx: -1, dist: Infinity, mx: 0, my: 0, reason: "" };
       for (const [idx, mob] of mobStates) {
         if (mob.dead) continue;
-        if (mob.x < attackRect.l || mob.x > attackRect.r) continue;
-        if (mob.y < attackRect.t || mob.y > attackRect.b) continue;
         const dist = Math.abs(mob.x - px) + Math.abs(mob.y - py);
+        if (mob.x < attackRect.l || mob.x > attackRect.r ||
+            mob.y < attackRect.t || mob.y > attackRect.b) {
+          // Track closest miss for debug
+          if (dist < debugClosestMiss.dist) {
+            const reason = mob.x < attackRect.l ? `x ${mob.x} < l ${attackRect.l}`
+              : mob.x > attackRect.r ? `x ${mob.x} > r ${attackRect.r}`
+              : mob.y < attackRect.t ? `y ${mob.y} < t ${attackRect.t}`
+              : `y ${mob.y} > b ${attackRect.b}`;
+            debugClosestMiss = { idx, dist, mx: mob.x, my: mob.y, reason };
+          }
+          continue;
+        }
         if (dist < bestDist) {
           bestDist = dist;
           bestIdx = idx;
         }
+      }
+      // Always log attack result for debugging
+      if (bestIdx >= 0) {
+        const hitMob = mobStates.get(bestIdx)!;
+        console.log(`[ATTACK HIT] player(${px},${py}) facing=${facingLeft?"L":"R"} stance=${msg.stance} rect=[${Math.round(attackRect.l)},${Math.round(attackRect.r)}]x[${Math.round(attackRect.t)},${Math.round(attackRect.b)}] → mob#${bestIdx}(${hitMob.x},${hitMob.y}) dist=${bestDist}`);
+      } else if (debugClosestMiss.idx >= 0) {
+        console.log(`[ATTACK MISS] player(${px},${py}) facing=${facingLeft?"L":"R"} stance=${msg.stance} rect=[${Math.round(attackRect.l)},${Math.round(attackRect.r)}]x[${Math.round(attackRect.t)},${Math.round(attackRect.b)}] closestMob#${debugClosestMiss.idx}(${debugClosestMiss.mx},${debugClosestMiss.my}) dist=${debugClosestMiss.dist} reason=${debugClosestMiss.reason}`);
+      } else {
+        console.log(`[ATTACK MISS] player(${px},${py}) facing=${facingLeft?"L":"R"} stance=${msg.stance} — no alive mobs on map`);
       }
 
       // Broadcast attack animation to other players
