@@ -829,7 +829,8 @@ body:has(.canvas-wrapper.fixed-res) {
   cursor: default;
   user-select: none;
 }
-.quest-row:hover { background: rgba(100, 150, 220, 0.12); }
+.quest-row:hover { background: rgba(100, 150, 220, 0.12); cursor: pointer; }
+.quest-row.selected { background: rgba(74, 100, 144, 0.18); border-left: 2px solid #4a6490; }
 .quest-row .quest-prefix {
   margin-right: 4px;
   font-size: 10px;
@@ -856,6 +857,104 @@ body:has(.canvas-wrapper.fixed-res) {
   text-align: center;
   font-family: "Dotum", Arial, sans-serif;
 }
+/* Quest detail panel */
+.quest-detail {
+  border-top: 1px solid #9aabbc;
+  padding: 8px;
+  background: #e8edf4;
+  font-family: "Dotum", Arial, sans-serif;
+  font-size: 11px;
+  color: #2a3650;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.quest-detail::-webkit-scrollbar { width: 6px; }
+.quest-detail::-webkit-scrollbar-thumb { background: rgba(100, 130, 170, 0.4); border-radius: 3px; }
+.quest-detail-header {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 6px;
+  gap: 8px;
+}
+.quest-detail-npc {
+  width: 60px;
+  min-width: 60px;
+  text-align: center;
+}
+.quest-detail-npc img {
+  max-width: 56px;
+  max-height: 64px;
+  image-rendering: pixelated;
+}
+.quest-detail-npc-name {
+  font-size: 9px;
+  color: #5a6a80;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.quest-detail-info { flex: 1; }
+.quest-detail-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #2a3650;
+  margin-bottom: 2px;
+}
+.quest-detail-parent {
+  font-size: 9px;
+  color: #6080a0;
+  margin-bottom: 4px;
+}
+.quest-detail-desc {
+  font-size: 11px;
+  color: #3a4a60;
+  line-height: 1.4;
+  margin-bottom: 6px;
+}
+.quest-detail-section {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid #c8d0dc;
+}
+.quest-detail-section-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: #5a6a80;
+  margin-bottom: 2px;
+}
+.quest-detail-item {
+  font-size: 10px;
+  color: #3a4a60;
+  padding: 1px 0;
+}
+.quest-detail-item .done { color: #208040; }
+.quest-detail-item .need { color: #a04040; }
+.quest-detail-reward {
+  font-size: 10px;
+  color: #906800;
+  padding: 1px 0;
+}
+.quest-detail-actions {
+  margin-top: 6px;
+  display: flex;
+  gap: 6px;
+}
+.quest-detail-btn {
+  padding: 3px 10px;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: "Dotum", Arial, sans-serif;
+  border-radius: 3px;
+  border: 1px solid;
+  cursor: pointer;
+}
+.quest-detail-btn.forfeit {
+  background: #f0e0e0;
+  border-color: #c08080;
+  color: #a04040;
+}
+.quest-detail-btn.forfeit:hover { background: #e8c0c0; }
 
 .equip-grid {
   display: grid;

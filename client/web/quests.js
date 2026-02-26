@@ -182,12 +182,17 @@ export async function loadQuestData() {
   // ── Parse QuestInfo.img (metadata) ──
   for (const quest of infoJson?.$$ || []) {
     const qid = quest.$imgdir;
-    const info = { name: "", summary: "", demandSummary: "", rewardSummary: "" };
+    const info = { name: "", parent: "", summary: "", demandSummary: "", rewardSummary: "", desc: {} };
     for (const c of quest.$$ || []) {
       if (c.$string === "name") info.name = String(c.value);
+      if (c.$string === "parent") info.parent = String(c.value);
       if (c.$string === "summary") info.summary = String(c.value);
       if (c.$string === "demandSummary") info.demandSummary = String(c.value);
       if (c.$string === "rewardSummary") info.rewardSummary = String(c.value);
+      // Numbered descriptions: "0" = not started, "1" = in progress, "2" = completed
+      if (c.$string !== undefined && /^\d+$/.test(c.$string)) {
+        info.desc[c.$string] = formatQuestText(String(c.value));
+      }
     }
     _questInfo.set(qid, info);
   }
@@ -618,7 +623,7 @@ export function drawQuestIcon(screenX, topY, iconType) {
   if (!img) return;
 
   const dx = screenX - frame.originX;
-  const dy = topY - frame.originY - 4; // 4px gap above head
+  const dy = topY - img.height - 8; // position icon fully above NPC head with 8px gap
   ctx.drawImage(img, dx, dy);
 }
 
@@ -790,6 +795,8 @@ export function getAvailableQuests() {
   return results;
 }
 
+export function getQuestAct(qid) { return _questAct.get(String(qid)); }
 export function getQuestInfo(qid) { return _questInfo.get(String(qid)); }
 export function getQuestDef(qid) { return _questDefs.get(String(qid)); }
 export function isDataLoaded() { return _questDataLoaded; }
+export { countItemInInventory };

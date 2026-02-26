@@ -147,9 +147,9 @@ import {
 import {
   loadQuestData, loadQuestIcons, updateQuestIconAnimation,
   getQuestSpecificDialogue, acceptQuest, completeQuest,
-  playerQuestStates, getQuestInfo, getQuestDef,
+  playerQuestStates, getQuestInfo, getQuestDef, getQuestAct,
   serializeQuestStates, forfeitQuest,
-  getQuestsByState, getAvailableQuests,
+  getQuestsByState, getAvailableQuests, countItemInInventory,
 } from './quests.js';
 
 // Player physics, foothold helpers, wall collision, camera
@@ -1515,9 +1515,11 @@ function drawMapBanner() {
 
 // ── Quest Log HUD (HTML window) ────────────────────────────────────────────
 let _questLogTab = "available"; // "available" | "progress" | "completed"
+let _questLogSelectedQid = null;
 
 function refreshQuestLog() {
   const listEl = document.getElementById("quest-list");
+  const detailEl = document.getElementById("quest-detail");
   if (!listEl) return;
   listEl.innerHTML = "";
 
@@ -1533,12 +1535,20 @@ function refreshQuestLog() {
       : _questLogTab === "progress" ? "No quests in progress"
       : "No completed quests";
     listEl.appendChild(empty);
+    if (detailEl) { detailEl.style.display = "none"; }
+    _questLogSelectedQid = null;
     return;
+  }
+
+  // Auto-select first quest if none selected or selection not in list
+  if (!_questLogSelectedQid || !quests.find(q => q.qid === _questLogSelectedQid)) {
+    _questLogSelectedQid = quests[0].qid;
   }
 
   for (const q of quests) {
     const row = document.createElement("div");
     row.className = "quest-row";
+    if (q.qid === _questLogSelectedQid) row.classList.add("selected");
 
     const prefix = document.createElement("span");
     prefix.className = "quest-prefix " + (_questLogTab === "available" ? "avail" : _questLogTab === "progress" ? "prog" : "done");
@@ -1551,19 +1561,161 @@ function refreshQuestLog() {
     name.textContent = `${lvText}${q.info?.name || "Quest " + q.qid}`;
     row.appendChild(name);
 
-    if (_questLogTab === "progress") {
-      const btn = document.createElement("span");
-      btn.className = "quest-forfeit";
-      btn.textContent = "Give up";
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        forfeitQuest(q.qid);
-        refreshQuestLog();
-      });
-      row.appendChild(btn);
-    }
+    row.addEventListener("click", () => {
+      _questLogSelectedQid = q.qid;
+      refreshQuestLog();
+    });
 
     listEl.appendChild(row);
+  }
+
+  // Show detail panel for selected quest
+  showQuestDetail(_questLogSelectedQid);
+}
+
+function showQuestDetail(qid) {
+  const detailEl = document.getElementById("quest-detail");
+  if (!detailEl || !qid) { if (detailEl) detailEl.style.display = "none"; return; }
+
+  const info = getQuestInfo(qid);
+  const def = getQuestDef(qid);
+  const state = playerQuestStates.get(qid) || 0;
+  if (!info) { detailEl.style.display = "none"; return; }
+
+  detailEl.style.display = "";
+  detailEl.innerHTML = "";
+
+  // Header: NPC portrait + quest name
+  const header = document.createElement("div");
+  header.className = "quest-detail-header";
+
+  // NPC portrait
+  const npcId = state >= 1 ? def?.endNpc : def?.startNpc;
+  if (npcId) {
+    const npcDiv = document.createElement("div");
+    npcDiv.className = "quest-detail-npc";
+    // Try to get the NPC sprite from loaded life animations
+    const cacheKey = `n:${npcId}`;
+    const anim = lifeAnimations.get(cacheKey);
+    if (anim) {
+      const stance = anim.stances["stand"] || Object.values(anim.stances)[0];
+      if (stance?.frames?.[0]) {
+        const img = getImageByKey(stance.frames[0].key);
+        if (img) {
+          const imgEl = document.createElement("canvas");
+          const s = Math.min(1, 56 / img.width, 64 / img.height);
+          imgEl.width = Math.round(img.width * s);
+          imgEl.height = Math.round(img.height * s);
+          imgEl.getContext("2d").drawImage(img, 0, 0, imgEl.width, imgEl.height);
+          npcDiv.appendChild(imgEl);
+        }
+      }
+      if (anim.name) {
+        const nameEl = document.createElement("div");
+        nameEl.className = "quest-detail-npc-name";
+        nameEl.textContent = anim.name;
+        npcDiv.appendChild(nameEl);
+      }
+    }
+    header.appendChild(npcDiv);
+  }
+
+  // Quest info
+  const infoDiv = document.createElement("div");
+  infoDiv.className = "quest-detail-info";
+
+  const nameEl = document.createElement("div");
+  nameEl.className = "quest-detail-name";
+  nameEl.textContent = info.name || "Quest " + qid;
+  infoDiv.appendChild(nameEl);
+
+  if (info.parent) {
+    const parentEl = document.createElement("div");
+    parentEl.className = "quest-detail-parent";
+    parentEl.textContent = info.parent;
+    infoDiv.appendChild(parentEl);
+  }
+
+  // Description based on state
+  const descKey = String(state); // "0"=not started, "1"=in progress, "2"=completed
+  const desc = info.desc?.[descKey] || info.summary || "";
+  if (desc) {
+    const descEl = document.createElement("div");
+    descEl.className = "quest-detail-desc";
+    descEl.textContent = desc;
+    infoDiv.appendChild(descEl);
+  }
+
+  header.appendChild(infoDiv);
+  detailEl.appendChild(header);
+
+  // Requirements section (for in-progress quests)
+  if (state === 1 && def?.endItems?.length) {
+    const section = document.createElement("div");
+    section.className = "quest-detail-section";
+    const title = document.createElement("div");
+    title.className = "quest-detail-section-title";
+    title.textContent = "Requirements";
+    section.appendChild(title);
+
+    for (const req of def.endItems) {
+      const item = document.createElement("div");
+      item.className = "quest-detail-item";
+      const have = countItemInInventory(req.id);
+      const cls = have >= req.count ? "done" : "need";
+      item.innerHTML = `Item ${req.id}: <span class="${cls}">${have}/${req.count}</span>`;
+      section.appendChild(item);
+    }
+    detailEl.appendChild(section);
+  }
+
+  // Rewards section
+  const act = getQuestAct(qid);
+  const reward = state >= 1 ? act?.["1"] : act?.["0"];
+  const endReward = act?.["1"];
+  if (endReward && (endReward.exp || endReward.meso || endReward.items?.length)) {
+    const section = document.createElement("div");
+    section.className = "quest-detail-section";
+    const title = document.createElement("div");
+    title.className = "quest-detail-section-title";
+    title.textContent = "Rewards";
+    section.appendChild(title);
+
+    if (endReward.exp) {
+      const r = document.createElement("div");
+      r.className = "quest-detail-reward";
+      r.textContent = `EXP: ${endReward.exp}`;
+      section.appendChild(r);
+    }
+    if (endReward.meso) {
+      const r = document.createElement("div");
+      r.className = "quest-detail-reward";
+      r.textContent = `Meso: ${endReward.meso}`;
+      section.appendChild(r);
+    }
+    for (const it of (endReward.items || []).filter(i => i.count > 0)) {
+      const r = document.createElement("div");
+      r.className = "quest-detail-reward";
+      r.textContent = `Item ${it.id} ×${it.count}`;
+      section.appendChild(r);
+    }
+    detailEl.appendChild(section);
+  }
+
+  // Actions
+  if (_questLogTab === "progress") {
+    const actions = document.createElement("div");
+    actions.className = "quest-detail-actions";
+    const forfeitBtn = document.createElement("button");
+    forfeitBtn.className = "quest-detail-btn forfeit";
+    forfeitBtn.textContent = "Give Up";
+    forfeitBtn.addEventListener("click", () => {
+      forfeitQuest(qid);
+      _questLogSelectedQid = null;
+      refreshQuestLog();
+    });
+    actions.appendChild(forfeitBtn);
+    detailEl.appendChild(actions);
   }
 }
 
@@ -1573,6 +1725,7 @@ document.querySelectorAll(".quest-tab").forEach(btn => {
     document.querySelectorAll(".quest-tab").forEach(t => t.classList.remove("active"));
     btn.classList.add("active");
     _questLogTab = btn.dataset.qtab;
+    _questLogSelectedQid = null;
     refreshQuestLog();
   });
 });
