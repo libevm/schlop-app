@@ -417,28 +417,26 @@ export function trapWorldBounds(obj, meta, nowMs) {
   return normalizedRect(left, left + width, top, top + height);
 }
 
-export function applyPlayerTouchHit(damage, sourceCenterX, nowMs) {
+/**
+ * Apply mob/trap touch hit.
+ * Client handles: invincibility timer, knockback, blink visuals.
+ * Server handles: damage calculation, HP deduction (via damage_taken → stats_update).
+ * @param {string|null} mobId  WZ mob ID (e.g. "100100") — null for traps
+ * @param {number} damage      estimated damage (used for traps; mob damage comes from server)
+ * @param {number} sourceCenterX  X position of the damage source
+ * @param {number} nowMs       current timestamp
+ */
+export function applyPlayerTouchHit(mobId, damage, sourceCenterX, nowMs) {
   const player = runtime.player;
-  const resolvedDamage = Math.max(1, Math.round(safeNumber(damage, 1)));
 
-  player.hp = Math.max(0, player.hp - resolvedDamage);
   player.trapInvincibleUntil = nowMs + TRAP_HIT_INVINCIBILITY_MS;
   player.lastTrapHitAt = nowMs;
-  player.lastTrapHitDamage = resolvedDamage;
 
   fn.triggerPlayerHitVisuals(nowMs);
-  spawnDamageNumber(player.x - 10, player.y, resolvedDamage, false);
 
-  // C++ Player::damage knockback logic:
-  //   bool immovable = ladder || state == DIED;
-  //   bool knockback = !missed && !immovable;
-  //   if (knockback && randomizer.above(stance)) { hspeed = ±1.5; vforce -= 3.5; }
-  const missed = resolvedDamage <= 0;
+  // Knockback: no KB while climbing (C++ immovable = ladder)
   const immovable = player.climbing || player.hp <= 0;
-  const doKnockback = !missed && !immovable;
-
-  if (doKnockback) {
-    // Stance check: random(0,1) > stance%. Beginners have 0% stance = always knocked back.
+  if (!immovable) {
     const stance = (runtime.player.stance ?? 0) / 100;
     if (Math.random() > stance) {
       const hitFromLeft = sourceCenterX > player.x;
@@ -458,14 +456,19 @@ export function applyPlayerTouchHit(damage, sourceCenterX, nowMs) {
     player.x = clampXToSideWalls(player.x, runtime.map);
   }
 
-  // Notify server of damage taken (server deducts HP authoritatively)
+  // Tell server — it calculates real damage and deducts HP
   const direction = sourceCenterX > player.x ? 0 : 1;
-  wsSend({ type: "damage_taken", damage: resolvedDamage, direction });
+  if (mobId) {
+    wsSend({ type: "damage_taken", mob_id: mobId, direction });
+  } else {
+    // Trap damage: server trusts client value (traps are map-defined, not exploitable)
+    wsSend({ type: "damage_taken", trap_damage: damage, direction });
+  }
 }
 
 export function applyTrapHit(damage, trapBounds, nowMs) {
   const trapCenterX = (trapBounds.left + trapBounds.right) * 0.5;
-  applyPlayerTouchHit(damage, trapCenterX, nowMs);
+  applyPlayerTouchHit(null, damage, trapCenterX, nowMs);
 }
 
 export function mobFrameWorldBounds(life, state, anim) {
@@ -511,7 +514,7 @@ export function updateMobTouchCollisions() {
     if (!rectsOverlap(touchBounds, mobBounds)) continue;
 
     const mobX = state.phobj ? state.phobj.x : life.x;
-    applyPlayerTouchHit(anim.touchAttack, mobX, nowMs);
+    applyPlayerTouchHit(String(life.id), anim.touchAttack, mobX, nowMs);
     break;
   }
 }

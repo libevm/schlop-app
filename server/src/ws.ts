@@ -1835,23 +1835,60 @@ export function handleClientMessage(
     }
 
     case "damage_taken": {
-      const dmg = Math.max(0, Math.floor(Number(msg.damage) || 0));
-      if (dmg <= 0) break;
-      // Deduct HP (server-authoritative)
+      if ((client.stats.hp ?? 0) <= 0) break; // already dead
+
+      let dmg = 0;
+      const mobId = msg.mob_id ? String(msg.mob_id) : null;
+      const trapDmg = msg.trap_damage ? Math.floor(Number(msg.trap_damage)) : 0;
+
+      if (mobId) {
+        // Server-authoritative: look up mob attack, calculate damage
+        const mobStats = getMobStats(mobId);
+        if (!mobStats || !mobStats.bodyAttack) break;
+        const mobAtk = mobStats.watk;
+        if (mobAtk <= 0) break;
+
+        // C++ CharStats::calculate_damage(mobatk):
+        //   if (wdef == 0) return mobatk;
+        //   reduceatk = mobatk / 2 + mobatk / wdef;
+        //   return reduceatk - reduceatk * reducedamage;
+        const playerWdef = client.stats.level ?? 1; // beginner wdef ≈ level
+        if (playerWdef <= 0) {
+          dmg = mobAtk;
+        } else {
+          dmg = Math.floor(mobAtk / 2 + mobAtk / playerWdef);
+        }
+      } else if (trapDmg > 0) {
+        // Trap damage: capped to prevent abuse
+        dmg = Math.min(trapDmg, client.stats.maxHp ?? 9999);
+      } else {
+        break;
+      }
+
+      dmg = Math.max(1, dmg);
+
+      // Deduct HP
       client.stats.hp = Math.max(0, (client.stats.hp ?? 0) - dmg);
-      // Send stats update back to the damaged player
+
+      // Send authoritative stats + calculated damage back to client
       ws.send(JSON.stringify({
         type: "stats_update",
         stats: buildStatsPayload(client),
       }));
-      // Broadcast to other players for visual effects
+      ws.send(JSON.stringify({
+        type: "damage_result",
+        damage: dmg,
+      }));
+
+      // Broadcast to other players
+      const direction = msg.direction ?? 0;
       roomManager.broadcastToRoom(client.mapId, {
         type: "player_damage",
         id: client.id,
         damage: dmg,
-        direction: msg.direction,
+        direction,
       }, client.id);
-      // Persist
+
       persistClientState(client, _moduleDb);
       break;
     }

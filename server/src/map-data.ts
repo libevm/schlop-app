@@ -101,10 +101,12 @@ export function findGroundY(footholds: FootholdInfo[], x: number, y: number): nu
 export interface MobStats {
   level: number;
   maxHP: number;
+  watk: number;    // PADamage (touch attack power)
   wdef: number;    // PDDamage
   avoid: number;   // eva
   knockback: number; // pushed
   exp: number;
+  bodyAttack: boolean; // whether mob deals contact damage
 }
 
 const _mobStatsCache = new Map<string, MobStats | null>();
@@ -130,19 +132,21 @@ export function getMobStats(mobId: string): MobStats | null {
     const info = sections.find((s: any) => s.$imgdir === "info");
     if (!info?.$$) { _mobStatsCache.set(mobId, null); return null; }
 
-    let level = 1, maxHP = 100, wdef = 0, avoid = 0, knockback = 1, exp = 0;
+    let level = 1, maxHP = 100, watk = 0, wdef = 0, avoid = 0, knockback = 1, exp = 0, bodyAttack = true;
     for (const child of info.$$) {
       const name = child.$int ?? child.$short ?? "";
       const val = Number(child.value) || 0;
       if (name === "level") level = val;
       else if (name === "maxHP") maxHP = val;
+      else if (name === "PADamage") watk = val;
       else if (name === "PDDamage") wdef = val;
       else if (name === "eva") avoid = val;
       else if (name === "pushed") knockback = val;
       else if (name === "exp") exp = val;
+      else if (name === "bodyAttack") bodyAttack = val !== 0;
     }
 
-    const stats: MobStats = { level, maxHP, wdef, avoid, knockback, exp };
+    const stats: MobStats = { level, maxHP, watk, wdef, avoid, knockback, exp, bodyAttack };
     _mobStatsCache.set(mobId, stats);
     return stats;
   } catch {

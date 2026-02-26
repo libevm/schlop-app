@@ -420,6 +420,16 @@ export function handleServerMessage(msg) {
       break;
     }
 
+    case "damage_result": {
+      // Server calculated actual damage — show damage number
+      const dmg = msg.damage || 0;
+      if (dmg > 0) {
+        const { spawnDamageNumber } = await import("./life.js");
+        spawnDamageNumber(runtime.player.x - 10, runtime.player.y, dmg, false);
+      }
+      break;
+    }
+
     case "player_damage":
     case "player_die":
     case "player_respawn":

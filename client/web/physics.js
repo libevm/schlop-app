@@ -747,8 +747,8 @@ export function updatePlayer(dt) {
           player.onGround = false;
           player.footholdId = null;
           player.knockbackClimbLockUntil = nowMs + 600;
-          // Notify server
-          wsSend({ type: "damage_taken", damage, direction: hitFromLeft ? 0 : 1 });
+          // Notify server (fall damage as trap)
+          wsSend({ type: "damage_taken", trap_damage: damage, direction: hitFromLeft ? 0 : 1 });
         }
       } else {
         player.onGround = false;
