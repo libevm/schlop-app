@@ -412,9 +412,18 @@ const ACTION_LABELS = {
  * face action ID → C++ KeyAction ID (100–106).
  * Icons are stored in UI.wz/UIWindow.img.xml → KeyConfig → icon → {id}.
  */
-const FACE_ACTION_IDS = {
+const FACE_KEYCONFIG_IDS = {
   face1: 100, face2: 101, face3: 102, face4: 103,
   face5: 104, face6: 105, face7: 106,
+};
+
+/**
+ * Extra face actions (beyond F1-F7) use cash shop emoticon item icons.
+ * Item.wz/Cash/0516.img.xml → {itemId}/info/icon
+ */
+const FACE_CASH_ITEM_IDS = {
+  face8: "05160003",  // Smoochies → chu (tongue/kiss)
+  face9: "05160012",  // Drool → hum (snooze/sleep)
 };
 
 /** Cached data URLs for face action icons: faceActionId → dataUrl */
@@ -422,28 +431,43 @@ const _faceIconCache = new Map();
 let _faceIconsLoading = false;
 
 /**
- * Load face expression icons from UI.wz KeyConfig icon sprites.
- * These are the standard 32×32 emotion icons (same for all characters),
- * matching C++ UIKeyConfig which reads UI["StatusBar3.img"]["KeyConfig"]["icon"].
- * Our v83 WZ stores them in UI.wz/UIWindow.img.xml → KeyConfig → icon.
+ * Load face expression icons:
+ * - face1-7: from UI.wz/UIWindow.img.xml → KeyConfig → icon (standard 32×32 icons)
+ * - face8-9: from Item.wz/Cash/0516.img.xml → {itemId}/info/icon (cash emoticon icons)
  */
 async function loadFaceExpressionIcons() {
   if (_faceIconsLoading || _faceIconCache.size > 0) return;
   _faceIconsLoading = true;
 
   try {
+    // Load KeyConfig icons for face1-7
     const uiJson = await fetchJson("/resourcesv3/UI.wz/UIWindow.img.xml");
     const keyConfig = uiJson?.$$?.find(n => n.$imgdir === "KeyConfig");
     const iconNode = keyConfig?.$$?.find(n => n.$imgdir === "icon");
-    if (!iconNode?.$$) { _faceIconsLoading = false; return; }
+    if (iconNode?.$$) {
+      for (const [actionId, wzId] of Object.entries(FACE_KEYCONFIG_IDS)) {
+        const canvasNode = iconNode.$$.find(n => n.$canvas === String(wzId));
+        if (!canvasNode?.basedata) continue;
+        try {
+          const dataUrl = await canvasToDataUrl(canvasNode);
+          if (dataUrl) _faceIconCache.set(actionId, dataUrl);
+        } catch {}
+      }
+    }
 
-    for (const [actionId, wzId] of Object.entries(FACE_ACTION_IDS)) {
-      const canvasNode = iconNode.$$.find(n => n.$canvas === String(wzId));
-      if (!canvasNode?.basedata) continue;
-      try {
-        const dataUrl = await canvasToDataUrl(canvasNode);
-        if (dataUrl) _faceIconCache.set(actionId, dataUrl);
-      } catch {}
+    // Load cash emoticon icons for face8-9
+    const cashJson = await fetchJson("/resourcesv3/Item.wz/Cash/0516.img.xml");
+    if (cashJson?.$$) {
+      for (const [actionId, itemId] of Object.entries(FACE_CASH_ITEM_IDS)) {
+        const itemNode = cashJson.$$.find(n => n.$imgdir === itemId);
+        const info = itemNode?.$$?.find(n => n.$imgdir === "info");
+        const iconCanvas = info?.$$?.find(n => n.$canvas === "icon");
+        if (!iconCanvas?.basedata) continue;
+        try {
+          const dataUrl = await canvasToDataUrl(iconCanvas);
+          if (dataUrl) _faceIconCache.set(actionId, dataUrl);
+        } catch {}
+      }
     }
   } catch {}
 
