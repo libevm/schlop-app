@@ -645,8 +645,8 @@ body:has(.canvas-wrapper.fixed-res) {
 }
 .pickup-journal {
   position: absolute;
-  bottom: 84px;
   right: 10px;
+  bottom: 40%;
   z-index: 16;
   display: flex;
   flex-direction: column;
@@ -950,10 +950,20 @@ body:has(.canvas-wrapper.fixed-res) {
   background: linear-gradient(180deg, #f0f3f8, #dce2ec);
   box-shadow: 0 0 0 1px rgba(96, 128, 176, 0.25);
 }
-/* Spacer between main keys and nav block */
-.kb-nav-gap {
-  width: 8px;
+/* Row layout: main keys left, nav keys right */
+.kb-row-main {
+  display: flex;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.kb-row-nav {
+  display: flex;
+  gap: 2px;
+  margin-left: 10px;
   flex-shrink: 0;
+  /* Fixed width: 3 keys × 36px + 2 gaps × 2px = 112px */
+  width: 112px;
 }
 .kb-key.kb-key-wide {
   width: 50px;

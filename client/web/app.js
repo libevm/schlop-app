@@ -496,51 +496,52 @@ const BINDABLE_ACTIONS = [
   { id: "face9", label: "Snooze" },
 ];
 
+/** Each row has `keys` (main section) and optional `nav` (right nav block). */
 const KB_LAYOUT = [
-  [
+  { keys: [
     { code: "Escape", label: "Esc", fixed: true },
     { code: "F1", label: "F1" }, { code: "F2", label: "F2" }, { code: "F3", label: "F3" },
     { code: "F4", label: "F4" }, { code: "F5", label: "F5" }, { code: "F6", label: "F6" },
     { code: "F7", label: "F7" }, { code: "F8", label: "F8" },
     { code: "F9", label: "F9" }, { code: "F10", label: "F10" }, { code: "F11", label: "F11" }, { code: "F12", label: "F12" },
-  ],
-  [
+  ]},
+  { keys: [
     { code: "Backquote", label: "`" },
     { code: "Digit1", label: "1" }, { code: "Digit2", label: "2" }, { code: "Digit3", label: "3" },
     { code: "Digit4", label: "4" }, { code: "Digit5", label: "5" }, { code: "Digit6", label: "6" },
     { code: "Digit7", label: "7" }, { code: "Digit8", label: "8" }, { code: "Digit9", label: "9" },
     { code: "Digit0", label: "0" }, { code: "Minus", label: "-" }, { code: "Equal", label: "=" },
-    { code: "_nav_gap", label: "", gap: true },
+  ], nav: [
     { code: "Insert", label: "Ins" }, { code: "Home", label: "Hm" }, { code: "PageUp", label: "PU" },
-  ],
-  [
+  ]},
+  { keys: [
     { code: "KeyQ", label: "Q" }, { code: "KeyW", label: "W" }, { code: "KeyE", label: "E" },
     { code: "KeyR", label: "R" }, { code: "KeyT", label: "T" }, { code: "KeyY", label: "Y" },
     { code: "KeyU", label: "U" }, { code: "KeyI", label: "I" }, { code: "KeyO", label: "O" },
     { code: "KeyP", label: "P" }, { code: "BracketLeft", label: "[" }, { code: "BracketRight", label: "]" },
-    { code: "_nav_gap", label: "", gap: true },
+  ], nav: [
     { code: "Delete", label: "Del" }, { code: "End", label: "End" }, { code: "PageDown", label: "PD" },
-  ],
-  [
+  ]},
+  { keys: [
     { code: "KeyA", label: "A" }, { code: "KeyS", label: "S" }, { code: "KeyD", label: "D" },
     { code: "KeyF", label: "F" }, { code: "KeyG", label: "G" }, { code: "KeyH", label: "H" },
     { code: "KeyJ", label: "J" }, { code: "KeyK", label: "K" }, { code: "KeyL", label: "L" },
     { code: "Semicolon", label: ";" }, { code: "Quote", label: "'" },
-  ],
-  [
+  ]},
+  { keys: [
     { code: "ShiftLeft", label: "Shift", wide: true, fixed: true },
     { code: "KeyZ", label: "Z" }, { code: "KeyX", label: "X" }, { code: "KeyC", label: "C" },
     { code: "KeyV", label: "V" }, { code: "KeyB", label: "B" }, { code: "KeyN", label: "N" },
     { code: "KeyM", label: "M" }, { code: "Comma", label: "," }, { code: "Period", label: "." },
     { code: "ShiftRight", label: "Shift", wide: true, fixed: true },
-  ],
-  [
+  ]},
+  { keys: [
     { code: "ControlLeft", label: "Ctrl", wide: true },
     { code: "AltLeft", label: "Alt", wide: true },
     { code: "Space", label: "Space", space: true },
     { code: "AltRight", label: "Alt", wide: true },
     { code: "ControlRight", label: "Ctrl", wide: true },
-  ],
+  ]},
 ];
 
 function getDefaultKeymap() {
@@ -630,13 +631,10 @@ function buildKeybindsUI() {
     const rowEl = document.createElement("div");
     rowEl.className = "kb-row";
 
-    for (const key of row) {
-      if (key.gap) {
-        const gap = document.createElement("div");
-        gap.className = "kb-nav-gap";
-        rowEl.appendChild(gap);
-        continue;
-      }
+    const mainSection = document.createElement("div");
+    mainSection.className = "kb-row-main";
+
+    for (const key of row.keys) {
       const el = document.createElement("div");
       el.className = "kb-key";
       if (key.wide) el.classList.add("kb-key-wide");
@@ -757,8 +755,106 @@ function buildKeybindsUI() {
         });
       }
 
-      rowEl.appendChild(el);
+      mainSection.appendChild(el);
     }
+    rowEl.appendChild(mainSection);
+
+    if (row.nav) {
+      const navSection = document.createElement("div");
+      navSection.className = "kb-row-nav";
+      for (const key of row.nav) {
+        const el = document.createElement("div");
+        el.className = "kb-key";
+        el.dataset.code = key.code;
+
+        const lbl = document.createElement("span");
+        lbl.className = "kb-key-label";
+        lbl.textContent = key.label;
+        el.appendChild(lbl);
+
+        const mapping = runtime.keymap[key.code];
+        if (mapping) {
+          if (mapping.type === "action") {
+            const isFace = mapping.id.startsWith("face");
+            const faceUrl = isFace ? _faceIconCache.get(mapping.id) : null;
+            if (faceUrl) {
+              el.classList.add("kb-has-face");
+              const img = document.createElement("img");
+              img.className = "kb-face-overlay";
+              img.src = faceUrl;
+              img.draggable = false;
+              el.appendChild(img);
+            } else {
+              el.classList.add("kb-has-action");
+              const act = document.createElement("span");
+              act.className = "kb-key-action";
+              act.textContent = ACTION_LABELS[mapping.id] || mapping.id;
+              el.appendChild(act);
+            }
+          } else if (mapping.type === "item") {
+            el.classList.add("kb-has-item");
+            const iconUri = fn.getIconDataUri ? fn.getIconDataUri(mapping.iconKey) : null;
+            if (iconUri) {
+              const img = document.createElement("img");
+              img.className = "kb-key-icon";
+              img.src = iconUri;
+              el.appendChild(img);
+            }
+          }
+        }
+
+        if (_kbDrag || draggedItem.active) el.classList.add("kb-drag-over");
+
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (_kbDrag) {
+            if (runtime.keymap[key.code]) delete runtime.keymap[key.code];
+            const { sourceCode, ...binding } = _kbDrag;
+            runtime.keymap[key.code] = binding;
+            saveKeymap();
+            _kbDrag = null;
+            if (_kbGhost) { _kbGhost.remove(); _kbGhost = null; }
+            buildKeybindsUI();
+            return;
+          }
+          if (draggedItem.active && draggedItem.id) {
+            runtime.keymap[key.code] = {
+              type: "item", id: draggedItem.id, name: draggedItem.name || "",
+              iconKey: draggedItem.iconKey || "", qty: draggedItem.qty || 1,
+            };
+            cancelItemDrag();
+            buildKeybindsUI();
+            saveKeymap();
+            return;
+          }
+          if (mapping) {
+            const m = { ...runtime.keymap[key.code], sourceCode: key.code };
+            delete runtime.keymap[key.code];
+            saveKeymap();
+            _kbPickUp(m);
+          }
+        });
+
+        el.addEventListener("contextmenu", (e) => {
+          e.preventDefault();
+          if (_kbDrag) { _kbCancel(); return; }
+          if (runtime.keymap[key.code]) {
+            delete runtime.keymap[key.code];
+            buildKeybindsUI();
+            saveKeymap();
+          }
+        });
+
+        navSection.appendChild(el);
+      }
+      rowEl.appendChild(navSection);
+    } else {
+      // Empty placeholder to keep rows the same width as those with nav keys
+      const navPlaceholder = document.createElement("div");
+      navPlaceholder.className = "kb-row-nav kb-row-nav-empty";
+      rowEl.appendChild(navPlaceholder);
+    }
+
     keybindsGridEl.appendChild(rowEl);
   }
 
