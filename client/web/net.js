@@ -420,6 +420,17 @@ export function handleServerMessage(msg) {
       break;
     }
 
+    case "item_used": {
+      // Server confirmed item consumption — play use sound
+      // C++ loads Sound.wz/Item.img/{paddedId}/Use, fallback to 02000000/Use
+      const usedId = msg.item_id;
+      if (usedId) {
+        const padded = String(usedId).padStart(8, "0");
+        fn.playSfxWithFallback?.("Item", `${padded}/Use`, "02000000/Use");
+      }
+      break;
+    }
+
     case "damage_result": {
       // Server calculated actual damage — show damage number
       const dmg = msg.damage || 0;

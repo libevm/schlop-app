@@ -615,8 +615,8 @@ const _itemSpecCache = new Map<number, ItemSpec | null>();
 function getItemSpec(itemId: number): ItemSpec | null {
   if (_itemSpecCache.has(itemId)) return _itemSpecCache.get(itemId)!;
 
-  const prefix = String(itemId).slice(0, 4); // e.g. "0200"
   const padded = String(itemId).padStart(8, "0");
+  const prefix = padded.slice(0, 4); // e.g. "0200"
   const { resolve: rp } = require("path");
   const { existsSync: ex, readFileSync: rf } = require("fs");
   const { parseWzXml: pz } = require("./wz-xml.ts");
@@ -1946,13 +1946,12 @@ export function handleClientMessage(
       client.stats.hp = newHp;
       client.stats.mp = newMp;
 
-      // Send inventory update
+      // Send confirmation + inventory + stats
+      sendDirect(client, { type: "item_used", item_id: useItemId });
       sendDirect(client, {
         type: "inventory_update",
         inventory: client.inventory,
       });
-
-      // Send stats update
       sendDirect(client, {
         type: "stats_update",
         stats: buildStatsPayload(client),
