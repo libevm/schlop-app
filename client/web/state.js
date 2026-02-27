@@ -214,10 +214,11 @@ export const MAP_ID_REDIRECTS = {
 };
 
 // ─── Viewport Helpers ────────────────────────────────────────────────────────
+export const CAMERA_Y_HUD_OFFSET = 100;
+
 export function cameraHeightBias() {
-  // fixedRes: shift camera down 100px so the bottom HUD doesn't cover footholds
-  if (runtime.settings.fixedRes) return -100;
-  return Math.max(0, (canvasEl.height - BG_REFERENCE_HEIGHT) / 2);
+  if (runtime.settings.fixedRes) return -CAMERA_Y_HUD_OFFSET;
+  return Math.max(0, (canvasEl.height - BG_REFERENCE_HEIGHT) / 2) - CAMERA_Y_HUD_OFFSET;
 }
 
 export function newCharacterDefaults(gender) {
