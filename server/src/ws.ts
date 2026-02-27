@@ -956,6 +956,7 @@ export class RoomManager {
   start(): void {
     // Load quest definitions from WZ (for server-authoritative quest validation)
     loadQuestData();
+    console.log("[room] Quest data loaded for server-authoritative validation");
 
     // Heartbeat: disconnect inactive clients (no message for 30s)
     this.heartbeatInterval = setInterval(() => {

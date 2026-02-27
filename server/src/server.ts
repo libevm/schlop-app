@@ -584,6 +584,7 @@ export function createServer(
               equipment: Array<{ slot_type: string; item_id: number }>;
               inventory: Array<{ item_id: number; qty: number; inv_type: string; slot: number; category: string | null }>;
               achievements?: Record<string, number>;
+              quests?: Record<string, number>;
             } | null;
 
             if (!charData) {

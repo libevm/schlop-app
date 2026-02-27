@@ -39,7 +39,9 @@ let _loaded = false;
 // ─── Loading ────────────────────────────────────────────────────────
 
 function wzPath(rel: string): string {
-  return resolve(process.cwd(), "resourcesv3", rel);
+  // Use __dirname-relative path so it works regardless of CWD
+  // server/src/quest-data.ts → ../../resourcesv3
+  return resolve(__dirname, "../../resourcesv3", rel);
 }
 
 function loadWzXml(relPath: string): any {

@@ -568,6 +568,7 @@ export function getQuestSpecificDialogue(qid, category) {
 export function acceptQuest(qid) {
   qid = String(qid);
   const info = _questInfo.get(qid);
+  console.log(`[quests] acceptQuest(${qid}), wsConnected=${_wsConnected}, name=${info?.name || "unknown"}`);
 
   if (_wsConnected) {
     wsSend({ type: "quest_accept", questId: qid });
@@ -623,6 +624,7 @@ export function completeQuest(qid) {
  * Handle quest_result from server.
  */
 export function handleQuestResult(msg) {
+  console.log(`[quests] handleQuestResult:`, JSON.stringify(msg));
   const qid = String(msg.questId || "");
   const info = _questInfo.get(qid);
   const name = info?.name || "Quest " + qid;
@@ -659,6 +661,7 @@ export function handleQuestResult(msg) {
  * Handle quests_update from server — replace all quest states with server-authoritative data.
  */
 export function handleQuestsUpdate(quests) {
+  console.log(`[quests] handleQuestsUpdate received:`, JSON.stringify(quests));
   playerQuestStates.clear();
   for (const [qid, state] of Object.entries(quests)) {
     const s = Number(state);
