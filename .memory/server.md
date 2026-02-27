@@ -214,6 +214,7 @@ SQLite WAL mode. Path: `./data/maple.db`.
 - Server handlers: `quest_accept`, `quest_complete`, `quest_forfeit`
 - NPC-on-map validation: start NPC must be on player's map for accept, end NPC for complete
 - Re-do prevention: completed quests (state=2) cannot be re-accepted
+- **CRITICAL**: quest-data.ts must use `__dirname`-relative paths (not `process.cwd()`) — server runs from `server/` CWD via `bun run --cwd server dev`
 - `applyQuestReward()`: EXP with level-up, meso, item add/remove
 - `quests_update` sent on every map join + after quest actions
 - Client falls back to local quest logic when offline
