@@ -474,6 +474,9 @@ export function getQuestDialogueForNpc(npcId) {
     });
   }
 
+  // Sort each category by quest name ascending
+  questOptions.sort((a, b) => a.label.localeCompare(b.label));
+
   return {
     phase: "quest_list",
     questOptions,

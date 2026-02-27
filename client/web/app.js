@@ -1554,6 +1554,9 @@ function refreshQuestLog() {
   else if (_questLogTab === "progress") quests = getQuestsByState(1);
   else quests = getQuestsByState(2);
 
+  // Sort by quest name ascending
+  quests.sort((a, b) => (a.info?.name || "").localeCompare(b.info?.name || ""));
+
   if (quests.length === 0) {
     const empty = document.createElement("div");
     empty.className = "quest-empty";
