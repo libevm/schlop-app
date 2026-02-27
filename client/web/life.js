@@ -3556,19 +3556,21 @@ export function clampCameraXToMapBounds(map, desiredCenterX) {
 export function clampCameraYToMapBounds(map, desiredCenterY) {
   const { top: mapTop, bottom: mapBottom } = mapVisibleBounds(map);
   const halfHeight = gameViewHeight() / 2;
+  const hudOffset = -cameraHeightBias(); // positive value (100px) — how far down the camera shifts
   const mapHeight = mapBottom - mapTop;
 
   if (mapHeight >= gameViewHeight()) {
-    // Normal: clamp so camera doesn't see past VR edges
+    // Normal: clamp so camera doesn't see past VR edges.
+    // Extend bottom bound by hudOffset so the camera can shift down
+    // to keep footholds visible above the bottom HUD bar.
     const minCenterY = mapTop + halfHeight;
-    const maxCenterY = mapBottom - halfHeight;
+    const maxCenterY = mapBottom - halfHeight + hudOffset;
     return Math.max(minCenterY, Math.min(maxCenterY, desiredCenterY));
   }
 
-  // C++ Camera::update parity: when map shorter than viewport, pin TOP edge
-  // of VR bounds to TOP edge of viewport (overflow appears at the bottom).
-  // C++: next_y = vbounds.first() = -mapTop → camWorldY = VHEIGHT/2 + mapTop
-  return mapTop + halfHeight;
+  // Map shorter than viewport: pin top edge, but still apply HUD offset
+  // so the map content shifts up above the bottom bar.
+  return mapTop + halfHeight + hudOffset;
 }
 
 export function portalMomentumEase(t) {
