@@ -805,4 +805,50 @@ describe("WebSocket server", () => {
     clientA.close();
     clientB.close();
   });
+
+  test("quest_accept: server validates and rejects re-accept", async () => {
+    const session = await createCharacter("", "QuestTester");
+    const client = await openWS(wsUrl);
+    await authAndJoin(client, session);
+    // Drain stats_update and quests_update from map join
+    await client.waitForMessage("stats_update");
+    await client.waitForMessage("quests_update");
+
+    // Quest 1000 starts at NPC 2101 — may or may not be on spawn map
+    client.send({ type: "quest_accept", questId: "1000" });
+    const result = await client.waitForMessage("quest_result");
+    expect(result.action).toBe("accept");
+    expect(result.questId).toBe("1000");
+    expect(typeof result.ok).toBe("boolean");
+    if (result.ok) {
+      // Should also receive state updates
+      await client.waitForMessage("stats_update");
+      await client.waitForMessage("inventory_update");
+      const qu = await client.waitForMessage("quests_update");
+      expect(qu.quests["1000"]).toBe(1);
+
+      // Try re-accept — should fail
+      client.send({ type: "quest_accept", questId: "1000" });
+      const result2 = await client.waitForMessage("quest_result");
+      expect(result2.ok).toBe(false);
+      expect(result2.reason).toContain("already started");
+    }
+    client.close();
+  });
+
+  test("quest_forfeit: rejects if quest not in progress", async () => {
+    const session = await createCharacter("", "ForfeitTest");
+    const client = await openWS(wsUrl);
+    await authAndJoin(client, session);
+    await client.waitForMessage("stats_update");
+    await client.waitForMessage("quests_update");
+
+    // Forfeit a quest that's not in progress — should fail
+    client.send({ type: "quest_forfeit", questId: "1000" });
+    const r1 = await client.waitForMessage("quest_result");
+    expect(r1.ok).toBe(false);
+    expect(r1.reason).toContain("not in progress");
+
+    client.close();
+  });
 });

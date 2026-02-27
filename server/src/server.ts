@@ -462,7 +462,7 @@ export function createServer(
 
     // Room manager for WebSocket multiplayer
     const roomManager = new RoomManager();
-    if (db) roomManager.start();
+    roomManager.start();
     roomManager.startDropSweep();
     roomManager.startReactorTick();
 

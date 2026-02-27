@@ -19,7 +19,6 @@ import {
   isValidNpcDestination,
   getNpcOnMap,
   findGroundY,
-  getMapData,
   getMobStats,
   PORTAL_RANGE_PX,
 } from "./map-data.ts";
@@ -1734,11 +1733,19 @@ export function handleClientMessage(
     case "quest_accept": {
       const qid = String(msg.questId || "");
       if (!qid) break;
+      if (_debugMode) console.log(`[quest] ${client.name} quest_accept ${qid} on map ${client.mapId}`);
 
       const jobId = JOB_NAME_TO_ID[client.stats.job] ?? 0;
       const check = canAcceptQuest(qid, client.stats.level, jobId, client.quests);
       if (!check.ok) {
         sendDirect(client, { type: "quest_result", action: "accept", questId: qid, ok: false, reason: check.reason });
+        break;
+      }
+
+      // Validate start NPC is on the player's current map
+      const acceptDef = getQuestDef(qid);
+      if (acceptDef?.startNpc && !isNpcOnMap(client.mapId, acceptDef.startNpc)) {
+        sendDirect(client, { type: "quest_result", action: "accept", questId: qid, ok: false, reason: "Quest NPC not on this map" });
         break;
       }
 
@@ -1764,6 +1771,7 @@ export function handleClientMessage(
     case "quest_complete": {
       const qid = String(msg.questId || "");
       if (!qid) break;
+      if (_debugMode) console.log(`[quest] ${client.name} quest_complete ${qid} on map ${client.mapId}`);
 
       const check = canCompleteQuest(qid, client.quests, (id) => countItemInInventory(client, id));
       if (!check.ok) {
@@ -1771,8 +1779,14 @@ export function handleClientMessage(
         break;
       }
 
-      // Remove required items
+      // Validate end NPC is on the player's current map
       const def = getQuestDef(qid);
+      if (def?.endNpc && !isNpcOnMap(client.mapId, def.endNpc)) {
+        sendDirect(client, { type: "quest_result", action: "complete", questId: qid, ok: false, reason: "Quest NPC not on this map" });
+        break;
+      }
+
+      // Remove required items
       if (def?.endItems) {
         for (const req of def.endItems) {
           removeItemFromInventory(client, req.id, req.count);
