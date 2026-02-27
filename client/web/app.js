@@ -102,7 +102,7 @@ import {
 // Life system: mobs, NPCs, combat, damage, reactors, spatial, map data, portals
 import {
   lifeAnimationPromises,
-  VICTORIA_TOWNS, ALL_MAJOR_TOWNS, NPC_SCRIPTS, JQ_DISPLAY_NAMES,
+  NPC_SCRIPTS, JQ_DISPLAY_NAMES,
   NPC_AMBIENT_MESSAGES, _npcAmbientBubbles,
   NPC_AMBIENT_INTERVAL_MIN, NPC_AMBIENT_INTERVAL_MAX, NPC_AMBIENT_DURATION,
   _npcDialogueOptionHitBoxes, _npcDialogueBoxBounds,
@@ -113,8 +113,8 @@ import {
   WEAPON_SFX_BY_PREFIX,
   MOB_TPS, MOB_HSPEED_DEADZONE, MOB_DEFAULT_HP, MOB_HP_SHOW_MS,
   loadLifeAnimation,
-  updateNpcAmbientBubbles, runNpcMapTransition, requestJqReward,
-  buildScriptDialogue, buildFallbackScriptDialogue,
+  updateNpcAmbientBubbles, requestJqReward,
+  buildScriptDialogue,
   fhGroundAt, fhSlope, fhLeft, fhRight, fhIsWall,
   fhIdBelow, fhEdge, fhWall,
   mobNextMove, mobPhysicsUpdate,

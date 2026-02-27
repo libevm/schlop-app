@@ -16,7 +16,6 @@ import {
   hasValidTarget,
   distance,
   isNpcOnMap,
-  isValidNpcDestination,
   getNpcOnMap,
   findGroundY,
   getMobStats,
@@ -1928,39 +1927,26 @@ export function handleClientMessage(
     }
 
     case "npc_warp": {
-      // NPC travel — server validates NPC is on the current map and destination is allowed
+      // NPC map transition — server validates NPC exists on current map + destination map exists.
+      // Used by JQ challenge/exit NPCs. No hardcoded destination whitelist — WZ is source of truth.
       const npcId = String(msg.npc_id ?? "").trim();
       const targetMapId = Number(msg.map_id ?? 0);
       if (!npcId || !targetMapId || !client.mapId) {
         sendDirect(client, { type: "portal_denied", reason: "Invalid NPC warp request" });
         break;
       }
-
-      // Don't allow while already transitioning
       if (client.pendingMapId) {
         sendDirect(client, { type: "portal_denied", reason: "Already transitioning" });
         break;
       }
-
-      // Verify the NPC is actually on the client's current map
       if (!isNpcOnMap(client.mapId, npcId)) {
         sendDirect(client, { type: "portal_denied", reason: "NPC not on this map" });
         break;
       }
-
-      // Verify the destination is in the NPC's allowed destinations
-      if (!isValidNpcDestination(npcId, targetMapId)) {
-        sendDirect(client, { type: "portal_denied", reason: "Invalid destination for this NPC" });
-        break;
-      }
-
-      // Verify destination map file exists
       if (!mapExists(String(targetMapId))) {
         sendDirect(client, { type: "portal_denied", reason: "Destination map not found" });
         break;
       }
-
-      // All checks passed
       if (_moduleDb) appendLog(_moduleDb, client.name, `npc_warp via npc#${npcId} to map ${targetMapId}`, client.ip);
       roomManager.initiateMapChange(client.id, String(targetMapId), "");
       break;

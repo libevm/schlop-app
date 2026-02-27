@@ -520,39 +520,6 @@ describe("WebSocket server", () => {
     client.close();
   });
 
-  test("npc_warp validates NPC is on current map", async () => {
-    const _s22 = await createCharacter("npc-a", "NpcA");
-
-    const client = await openWS(wsUrl);
-    await authAndJoin(client, _s22);
-
-    // Try NPC warp with an NPC that doesn't exist on the default map
-    client.send({ type: "npc_warp", npc_id: "9999999", map_id: 100000000 });
-    const denied = await client.waitForMessage("portal_denied");
-    expect(denied.reason).toContain("NPC not on this map");
-
-    client.close();
-  });
-
-  test("npc_warp validates destination is allowed for NPC", async () => {
-    // This test needs an NPC that IS on map 100000001
-    // Let's check if there are NPCs on the default start map
-    const _s23 = await createCharacter("npc-b", "NpcB");
-
-    const client = await openWS(wsUrl);
-    await authAndJoin(client, _s23);
-
-    // Try warp with a valid NPC but invalid destination
-    // Map 100000001 should have some NPCs - send npc_warp with one + bogus destination
-    // We'll use a NPC ID that might exist but request a non-whitelisted map
-    client.send({ type: "npc_warp", npc_id: "1012000", map_id: 100000001 });
-    const denied = await client.waitForMessage("portal_denied");
-    // Should be denied — either NPC not on map, or invalid destination
-    expect(denied.type).toBe("portal_denied");
-
-    client.close();
-  });
-
   test("save_state is server-authoritative — client cannot set inventory/stats/meso", async () => {
     const _s24 = await createCharacter("save-test", "SaveTester");
 

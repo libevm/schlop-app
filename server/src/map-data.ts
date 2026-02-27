@@ -155,101 +155,10 @@ export function getMobStats(mobId: string): MobStats | null {
   }
 }
 
-// ─── NPC Script Destinations (server-authoritative) ─────────────────
-
-export interface NpcDestination {
-  label: string;
-  mapId: number;
-}
-
-const VICTORIA_TOWNS: NpcDestination[] = [
-  { label: "Henesys", mapId: 100000000 },
-  { label: "Ellinia", mapId: 101000000 },
-  { label: "Perion", mapId: 102000000 },
-  { label: "Kerning City", mapId: 103000000 },
-  { label: "Lith Harbor", mapId: 104000000 },
-  { label: "Sleepywood", mapId: 105040300 },
-  { label: "Nautilus Harbor", mapId: 120000000 },
-];
-
-const ALL_MAJOR_TOWNS: NpcDestination[] = [
-  ...VICTORIA_TOWNS,
-  { label: "Orbis", mapId: 200000000 },
-  { label: "El Nath", mapId: 211000000 },
-  { label: "Ludibrium", mapId: 220000000 },
-  { label: "Aquarium", mapId: 230000000 },
-  { label: "Leafre", mapId: 240000000 },
-  { label: "Mu Lung", mapId: 250000000 },
-  { label: "Herb Town", mapId: 251000000 },
-  { label: "Ariant", mapId: 260000000 },
-  { label: "Magatia", mapId: 261000000 },
-  { label: "Singapore", mapId: 540000000 },
-  { label: "Malaysia", mapId: 550000000 },
-  { label: "New Leaf City", mapId: 600000000 },
-];
-
-const OSSYRIA_TOWNS: NpcDestination[] = [
-  { label: "Orbis", mapId: 200000000 },
-  { label: "El Nath", mapId: 211000000 },
-  { label: "Ludibrium", mapId: 220000000 },
-  { label: "Aquarium", mapId: 230000000 },
-  { label: "Leafre", mapId: 240000000 },
-];
-
-/**
- * scriptId → allowed destinations.
- * Must match client-side NPC_SCRIPTS in app.js.
- */
-export const NPC_SCRIPT_DESTINATIONS: Record<string, NpcDestination[]> = {
-  // Victoria Island taxi NPCs
-  taxi1: VICTORIA_TOWNS,
-  taxi2: VICTORIA_TOWNS,
-  taxi3: VICTORIA_TOWNS,
-  taxi4: VICTORIA_TOWNS,
-  taxi5: VICTORIA_TOWNS,
-  taxi6: VICTORIA_TOWNS,
-  mTaxi: VICTORIA_TOWNS,
-  NLC_Taxi: [...VICTORIA_TOWNS, { label: "New Leaf City", mapId: 600000000 }],
-  // Ossyria taxi
-  ossyria_taxi: OSSYRIA_TOWNS,
-  // Aqua taxi
-  aqua_taxi: [
-    { label: "Aquarium", mapId: 230000000 },
-    { label: "Herb Town", mapId: 251000000 },
-  ],
-  // Town-specific go NPCs
-  goHenesys: [{ label: "Henesys", mapId: 100000000 }],
-  goElinia: [{ label: "Ellinia", mapId: 101000000 }],
-  goPerion: [{ label: "Perion", mapId: 102000000 }],
-  goKerningCity: [{ label: "Kerning City", mapId: 103000000 }],
-  goNautilus: [{ label: "Nautilus Harbor", mapId: 120000000 }],
-  go_victoria: VICTORIA_TOWNS,
-  // Spinel — World Tour Guide
-  world_trip: ALL_MAJOR_TOWNS,
-  // Jump quest challenge NPC (Maya on map 100000001)
-  jq_challenge: [
-    { label: "Shumi's Lost Coin", mapId: 103000900 },
-    { label: "Shumi's Lost Bundle of Money", mapId: 103000903 },
-    { label: "Shumi's Lost Sack of Money", mapId: 103000906 },
-    { label: "John's Pink Flower Basket", mapId: 105040310 },
-    { label: "John's Present", mapId: 105040312 },
-    { label: "John's Last Present", mapId: 105040314 },
-    { label: "The Forest of Patience", mapId: 101000100 },
-    { label: "Breath of Lava", mapId: 280020000 },
-  ],
-  // Jump quest exit NPCs
-  subway_out: [{ label: "Leave", mapId: 100000001 }],
-  flower_out: [{ label: "Leave", mapId: 100000001 }],
-  herb_out: [{ label: "Leave", mapId: 100000001 }],
-  Zakum06: [{ label: "Leave", mapId: 100000001 }],
-  // Forest of Patience JQ reward NPCs (scripts: viola_pink, viola_blue, bush1)
-  // These use jq_reward handler, not npc_warp — no destinations needed
-  // but listed here so getNpcDestinations returns non-null (NPC has a script)
-};
-
 /**
  * npcId → scriptId mapping.
  * Lazily populated from Npc.wz files on first lookup.
+ * Used by JQ reward system to identify reward NPCs by script.
  */
 const npcScriptCache = new Map<string, string>();
 
@@ -320,29 +229,7 @@ export function getNpcScriptId(npcId: string): string {
   return scriptId;
 }
 
-/**
- * Get valid destinations for an NPC, considering its script.
- * Returns null if NPC has no known script / no travel destinations.
- * Falls back to ALL_MAJOR_TOWNS for NPCs with an unknown script (matching client fallback behavior).
- */
-export function getNpcDestinations(npcId: string): NpcDestination[] | null {
-  const scriptId = getNpcScriptId(npcId);
-  if (!scriptId) return null; // NPC has no script → no travel
-  const dests = NPC_SCRIPT_DESTINATIONS[scriptId];
-  if (dests) return dests;
-  // NPC has a script but no explicit destination table → fallback to all towns
-  // (matches client buildFallbackScriptDialogue behavior)
-  return ALL_MAJOR_TOWNS;
-}
 
-/**
- * Check if a specific mapId is a valid destination for the given NPC.
- */
-export function isValidNpcDestination(npcId: string, targetMapId: number): boolean {
-  const dests = getNpcDestinations(npcId);
-  if (!dests) return false;
-  return dests.some(d => d.mapId === targetMapId);
-}
 
 /**
  * Get the NPC life entry for a specific NPC on a specific map.

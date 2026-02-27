@@ -430,67 +430,7 @@ export async function loadDamageNumberSprites() {
 // Server-side NPC scripts are not available, so common NPCs get hardcoded dialogue
 // with selectable options. Script IDs come from Npc.wz info/script nodes.
 
-export const VICTORIA_TOWNS = [
-  { label: "Henesys", mapId: 100000000 },
-  { label: "Ellinia", mapId: 101000000 },
-  { label: "Perion", mapId: 102000000 },
-  { label: "Kerning City", mapId: 103000000 },
-  { label: "Lith Harbor", mapId: 104000000 },
-  { label: "Sleepywood", mapId: 105040300 },
-  { label: "Nautilus Harbor", mapId: 120000000 },
-];
-
-export const ALL_MAJOR_TOWNS = [
-  ...VICTORIA_TOWNS,
-  { label: "Orbis", mapId: 200000000 },
-  { label: "El Nath", mapId: 211000000 },
-  { label: "Ludibrium", mapId: 220000000 },
-  { label: "Aquarium", mapId: 230000000 },
-  { label: "Leafre", mapId: 240000000 },
-  { label: "Mu Lung", mapId: 250000000 },
-  { label: "Herb Town", mapId: 251000000 },
-  { label: "Ariant", mapId: 260000000 },
-  { label: "Magatia", mapId: 261000000 },
-  { label: "Singapore", mapId: 540000000 },
-  { label: "Malaysia", mapId: 550000000 },
-  { label: "New Leaf City", mapId: 600000000 },
-];
-
 export const NPC_SCRIPTS = {
-  // Victoria Island taxi NPCs
-  taxi1: { greeting: "Hello! I drive the Regular Cab. Where would you like to go?", destinations: VICTORIA_TOWNS },
-  taxi2: { greeting: "Hey there! Need a ride? Pick a destination!", destinations: VICTORIA_TOWNS },
-  taxi3: { greeting: "Where would you like to go? I'll take you there!", destinations: VICTORIA_TOWNS },
-  taxi4: { greeting: "Hop in! Where are you headed?", destinations: VICTORIA_TOWNS },
-  taxi5: { greeting: "Welcome aboard! Choose your destination.", destinations: VICTORIA_TOWNS },
-  taxi6: { greeting: "Need a lift? I can take you anywhere on the island!", destinations: VICTORIA_TOWNS },
-  mTaxi: { greeting: "I'm a VIP Cab driver. Where shall I take you?", destinations: VICTORIA_TOWNS },
-  NLC_Taxi: { greeting: "Welcome to the NLC Taxi! Where to?", destinations: [
-    ...VICTORIA_TOWNS,
-    { label: "New Leaf City", mapId: 600000000 },
-  ]},
-  // Ossyria taxi
-  ossyria_taxi: { greeting: "I can take you around Ossyria. Where to?", destinations: [
-    { label: "Orbis", mapId: 200000000 },
-    { label: "El Nath", mapId: 211000000 },
-    { label: "Ludibrium", mapId: 220000000 },
-    { label: "Aquarium", mapId: 230000000 },
-    { label: "Leafre", mapId: 240000000 },
-  ]},
-  // Aqua taxi
-  aqua_taxi: { greeting: "Need an underwater ride?", destinations: [
-    { label: "Aquarium", mapId: 230000000 },
-    { label: "Herb Town", mapId: 251000000 },
-  ]},
-  // Town-specific go NPCs
-  goHenesys: { greeting: "I can take you to Henesys!", destinations: [{ label: "Henesys", mapId: 100000000 }] },
-  goElinia: { greeting: "Off to Ellinia?", destinations: [{ label: "Ellinia", mapId: 101000000 }] },
-  goPerion: { greeting: "Headed to Perion?", destinations: [{ label: "Perion", mapId: 102000000 }] },
-  goKerningCity: { greeting: "Kerning City awaits!", destinations: [{ label: "Kerning City", mapId: 103000000 }] },
-  goNautilus: { greeting: "To Nautilus Harbor!", destinations: [{ label: "Nautilus Harbor", mapId: 120000000 }] },
-  go_victoria: { greeting: "I'll take you back to Victoria Island!", destinations: VICTORIA_TOWNS },
-  // Spinel — World Tour Guide
-  world_trip: { greeting: "How about traveling to a new world? I can take you to many places!", destinations: ALL_MAJOR_TOWNS },
   // Jump quest challenge NPC (Maya on map 100000001)
   jq_challenge: { pages: [
     { text: "Cough... cough... Oh, a brave adventurer! You look like you could handle a real challenge. I know of several perilous trials scattered across Victoria Island and beyond..." },
@@ -654,6 +594,11 @@ export function updateNpcAmbientBubbles(now) {
  * Online: sends npc_warp { npc_id, map_id } to server (server validates NPC + destination).
  * Offline: loads map directly.
  */
+/**
+ * NPC-triggered map transition (used by JQ challenge/exit NPCs).
+ * Online: sends npc_warp { npc_id, map_id } to server for validation.
+ * Offline: loads map directly.
+ */
 export async function runNpcMapTransition(npcId, mapId) {
   const targetMapId = String(mapId);
   rlog(`npcMapTransition START → npc=${npcId} map=${targetMapId} online=${_wsConnected}`);
@@ -665,19 +610,16 @@ export async function runNpcMapTransition(npcId, mapId) {
 
   try {
     if (_wsConnected) {
-      // Online: server validates NPC is on current map + destination is allowed
       const result = await fn.requestServerMapChange({ type: "npc_warp", npc_id: npcId, map_id: targetMapId });
       await fn.loadMap(result.map_id, result.spawn_portal || null, !!result.spawn_portal);
       fn.saveCharacter();
       wsSend({ type: "map_loaded" });
     } else {
-      // Offline: direct load
       await fn.loadMap(targetMapId, null, false);
       fn.saveCharacter();
     }
   } catch (err) {
     rlog(`npcMapTransition ERROR: ${err?.message ?? err}`);
-    rlog(`Travel failed: ${err?.message ?? err}`);
   } finally {
     runtime.portalWarpInProgress = false;
     runtime.transition.alpha = 1;
@@ -793,30 +735,7 @@ export function buildScriptDialogue(scriptDef, npcId, npcWorldX, npcWorldY) {
   return lines;
 }
 
-/**
- * Build a fallback dialogue for any NPC with a script but no explicit handler.
- * Uses the NPC's flavor text + offers travel to all major towns.
- * npcId is the NPC's WZ ID, sent to server for validation.
- */
-export function buildFallbackScriptDialogue(npcName, npcId, flavourLines) {
-  const lines = [];
-  // Show flavor text first if available
-  if (flavourLines && flavourLines.length > 0) {
-    for (const fl of flavourLines) lines.push(fl);
-  }
-  // Then offer travel options
-  lines.push({
-    text: `Where would you like to go?`,
-    options: ALL_MAJOR_TOWNS.map((d) => ({
-      label: d.label,
-      action: () => {
-        closeNpcDialogue();
-        runNpcMapTransition(npcId, d.mapId);
-      },
-    })),
-  });
-  return lines;
-}
+
 
 
 /** Get Y on a foothold at X, or null if X is outside range or foothold is a wall. */
@@ -2120,17 +2039,14 @@ export function openNpcDialogue(npcResult) {
     // Quest list — lines contain quest_list, quest_accept, quest_complete types
     lines = questDialogue.lines;
   } else {
-    // Build dialogue lines based on NPC type
+    // Check for JQ-specific scripts (jump quest challenge, rewards, exits, leaderboard)
     const scriptDef = anim.scriptId ? NPC_SCRIPTS[anim.scriptId] : null;
 
     if (scriptDef) {
-      // Known script — use specific handler
+      // Known JQ script — use specific handler
       lines = buildScriptDialogue(scriptDef, npcWzId, npcX, npcY);
-    } else if (anim.scriptId) {
-      // Has a script but no explicit handler — show flavor text + travel options
-      lines = buildFallbackScriptDialogue(anim.name, npcWzId, anim.dialogue);
     } else if (anim.dialogue && anim.dialogue.length > 0) {
-      // No script — just show flavor text
+      // WZ flavor text — source of truth for NPC dialogue
       lines = anim.dialogue;
     } else {
       lines = ["..."];
@@ -2234,8 +2150,14 @@ export function drawNpcDialogue() {
   let contentItemsH = 0;
   if (isQuestList) {
     const qo = currentLine.questOptions;
-    // "AVAILABLE QUESTS" header + quest entries
-    contentItemsH = 28 + qo.length * optionLineHeight + 8;
+    // Count sections that have quests for height calculation
+    const cats = ["completable", "in-progress", "available"];
+    let sectionCount = 0;
+    for (const cat of cats) {
+      if (qo.some(q => q.category === cat)) sectionCount++;
+    }
+    // Each section: 16px header + 4px separator + quests + 6px spacing
+    contentItemsH = sectionCount * (16 + 4 + 6) + qo.length * optionLineHeight;
   } else {
     const wrappedLines = wrapText(ctx, text, textAreaW);
     contentItemsH = wrappedLines.length * lineHeight;
@@ -2311,52 +2233,64 @@ export function drawNpcDialogue() {
   let curY = insetY + 10;
 
   if (isQuestList) {
-    // ── Quest list view (MapleStory style) ──
+    // ── Quest list view — grouped by category ──
     const qo = currentLine.questOptions;
 
-    // "AVAILABLE QUESTS" header
-    ctx.font = 'bold 12px "Dotum", Arial, sans-serif';
-    ctx.fillStyle = "#c09020";
-    ctx.fillText("⚡ AVAILABLE QUESTS", textX, curY);
-    curY += 24;
-
-    // Thin separator line
-    ctx.strokeStyle = "#d0d8e4";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(textX, curY);
-    ctx.lineTo(textX + textAreaW - 8, curY);
-    ctx.stroke();
-    curY += 6;
-
-    // Quest entries
-    ctx.font = '12px "Dotum", Arial, sans-serif';
+    // Group quests by category in display order: completable → in-progress → available
+    const sections = [
+      { key: "completable", label: "✦ Completable", color: "#208020", quests: [] },
+      { key: "in-progress", label: "◆ In Progress", color: "#6080b0", quests: [] },
+      { key: "available",   label: "⚡ Available",  color: "#c09020", quests: [] },
+    ];
     for (let i = 0; i < qo.length; i++) {
-      const optY = curY + i * optionLineHeight;
-      const isHovered = d.hoveredOption === i;
-      const q = qo[i];
+      const sec = sections.find(s => s.key === qo[i].category);
+      if (sec) sec.quests.push({ ...qo[i], globalIdx: i });
+    }
 
-      // Category indicator
-      let catColor = "#2a3650";
-      let prefix = "▸ ";
-      if (q.category === "completable") { catColor = "#208020"; prefix = "✦ "; }
-      else if (q.category === "in-progress") { catColor = "#6080b0"; prefix = "◆ "; }
+    for (const sec of sections) {
+      if (sec.quests.length === 0) continue;
 
-      if (isHovered) {
-        ctx.fillStyle = "rgba(100, 150, 220, 0.12)";
-        roundRect(ctx, textX - 4, optY - 2, textAreaW, optionLineHeight, 2);
-        ctx.fill();
+      // Section header
+      ctx.font = 'bold 11px "Dotum", Arial, sans-serif';
+      ctx.fillStyle = sec.color;
+      ctx.fillText(sec.label, textX, curY + 2);
+      curY += 16;
+
+      // Separator line
+      ctx.strokeStyle = sec.color + "40"; // 25% opacity
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(textX, curY);
+      ctx.lineTo(textX + textAreaW - 8, curY);
+      ctx.stroke();
+      curY += 4;
+
+      // Quest entries for this section
+      ctx.font = '12px "Dotum", Arial, sans-serif';
+      for (const q of sec.quests) {
+        const optY = curY;
+        const isHovered = d.hoveredOption === q.globalIdx;
+
+        if (isHovered) {
+          ctx.fillStyle = "rgba(100, 150, 220, 0.12)";
+          roundRect(ctx, textX - 4, optY - 2, textAreaW, optionLineHeight, 2);
+          ctx.fill();
+        }
+
+        ctx.fillStyle = isHovered ? "#c04040" : sec.color;
+        ctx.font = isHovered ? 'bold 12px "Dotum", Arial, sans-serif' : '12px "Dotum", Arial, sans-serif';
+        ctx.fillText(`▸ ${q.label}`, textX + 8, optY + 4);
+
+        _npcDialogueOptionHitBoxes.push({
+          x: textX - 4, y: optY - 2,
+          w: textAreaW, h: optionLineHeight,
+          index: q.globalIdx,
+        });
+
+        curY += optionLineHeight;
       }
 
-      ctx.fillStyle = isHovered ? "#c04040" : catColor;
-      ctx.font = isHovered ? 'bold 12px "Dotum", Arial, sans-serif' : '12px "Dotum", Arial, sans-serif';
-      ctx.fillText(`${prefix}${q.label}`, textX + 8, optY + 4);
-
-      _npcDialogueOptionHitBoxes.push({
-        x: textX - 4, y: optY - 2,
-        w: textAreaW, h: optionLineHeight,
-        index: i,
-      });
+      curY += 6; // spacing between sections
     }
   } else {
     // ── Regular dialogue / quest-specific view ──

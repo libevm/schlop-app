@@ -281,3 +281,14 @@ CSV export: max 5000 rows.
 All tests use `POW_DIFFICULTY=1` and in-memory SQLite for speed.
 `ws.test.ts` loads real drop pools from `resourcesv3/` at startup.
 `shared-logic.test.ts` re-implements client pure functions (from `util.js`/`save.js`) in TypeScript for DOM-free unit testing.
+
+---
+
+## Pitfalls & Gotchas
+
+| Issue | Cause | Fix |
+|-------|-------|-----|
+| **Quest data loads 0 defs** | `process.cwd()` path in quest-data.ts; CWD is `server/` when run via `bun run --cwd server dev` | Use `__dirname`-relative paths (`resolve(__dirname, "../../resourcesv3", rel)`) — matches map-data.ts/ws.ts pattern |
+| **Two DB files** | `./data/maple.db` (project root, 4KB stale) vs `./server/data/maple.db` (actual, used by dev.ts `dbPath: "./data/maple.db"` relative to CWD=`server/`) | Always inspect `server/data/maple.db` when debugging server state |
+| **Debug log fires before validation** | `quest_accept` debug line prints before `canAcceptQuest()` check | Don't assume log = success — check `quest_result` ok field |
+| **`fn.xxx?.()` no-ops before `Object.assign`** | `fn = {}` in state.js; callbacks wired via `Object.assign(fn, { ... })` at bottom of app.js | Call timing is fine (fn wired before first frame), but avoid calling fn in module top-level init |
